@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import FleetManagement from './FleetManagement';
 
 function Dashboard({ user, onLogout }) {
   const [planets, setPlanets] = useState([]);
@@ -239,6 +240,11 @@ function Dashboard({ user, onLogout }) {
             </div>
           </div>
         )}
+
+        {/* Fleet Management */}
+        <div className="mt-8">
+          <FleetManagement user={user} planets={planets} />
+        </div>
 
         {/* Universe Stats */}
         <div className="mt-8 bg-gray-800 rounded-lg p-6">
