@@ -3,8 +3,14 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from ..database import db
 from ..models import User
 import bcrypt
+import re
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+
+def validate_email(email):
+    """Simple email validation using regex"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -12,6 +18,10 @@ def register():
 
     if not data or not all(k in data for k in ('username', 'email', 'password')):
         return jsonify({'error': 'Missing required fields'}), 400
+
+    # Validate email format
+    if not validate_email(data['email']):
+        return jsonify({'error': 'Invalid email format'}), 400
 
     # Check if user already exists
     if User.query.filter_by(username=data['username']).first():
@@ -58,6 +68,11 @@ def login():
 
     if not user or not bcrypt.checkpw(data['password'].encode('utf-8'), user.password_hash.encode('utf-8')):
         return jsonify({'error': 'Invalid username or password'}), 401
+
+    # Update last login timestamp
+    from datetime import datetime
+    user.last_login = datetime.utcnow()
+    db.session.commit()
 
     # Create access token
     access_token = create_access_token(identity=user.username)

@@ -40,7 +40,7 @@ class TestAuthEndpoints:
                              data=json.dumps(user_data),
                              content_type='application/json')
 
-        assert response.status_code == 400
+        assert response.status_code == 409
         data = json.loads(response.data)
         assert 'error' in data
 
@@ -56,7 +56,7 @@ class TestAuthEndpoints:
                              data=json.dumps(user_data),
                              content_type='application/json')
 
-        assert response.status_code == 400
+        assert response.status_code == 409
         data = json.loads(response.data)
         assert 'error' in data
 

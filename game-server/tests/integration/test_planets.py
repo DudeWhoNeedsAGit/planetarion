@@ -167,7 +167,7 @@ class TestPlanetIntegration:
         sample_planet.crystal_mine = 6
         sample_planet.solar_plant = 12
 
-        from database import db
+        from backend.database import db
         db.session.commit()
 
         # Get planet data
