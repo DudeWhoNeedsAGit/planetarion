@@ -3,9 +3,11 @@ import axios from 'axios';
 import Login from './Login';
 import Register from './Register';
 import Dashboard from './Dashboard';
+import { ToastProvider, useToast } from './ToastContext';
+import { ToastContainer } from './Toast';
 
 // Set up axios defaults
-axios.defaults.baseURL = 'http://localhost:5001';
+axios.defaults.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 // Add token to requests if available
 const token = localStorage.getItem('token');
@@ -13,10 +15,11 @@ if (token) {
   axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 }
 
-function App() {
+function AppContent() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [loading, setLoading] = useState(true);
+  const { toasts, removeToast } = useToast();
 
   useEffect(() => {
     checkAuthStatus();
@@ -96,7 +99,18 @@ function App() {
   }
 
   return (
-    <Dashboard user={user} onLogout={handleLogout} />
+    <>
+      <Dashboard user={user} onLogout={handleLogout} />
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+    </>
+  );
+}
+
+function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   );
 }
 

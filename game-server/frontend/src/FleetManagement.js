@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useToast } from './ToastContext';
+import AnimatedButton from './AnimatedButton';
 
 function FleetManagement({ user, planets }) {
   const [fleets, setFleets] = useState([]);
@@ -7,6 +9,7 @@ function FleetManagement({ user, planets }) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showSendForm, setShowSendForm] = useState(false);
   const [selectedFleet, setSelectedFleet] = useState(null);
+  const { showSuccess, showError } = useToast();
 
   useEffect(() => {
     fetchFleets();
@@ -28,9 +31,9 @@ function FleetManagement({ user, planets }) {
       const response = await axios.post('/api/fleet', fleetData);
       setFleets(prev => [...prev, response.data.fleet]);
       setShowCreateForm(false);
-      alert('Fleet created successfully!');
+      showSuccess('Fleet created successfully!');
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to create fleet');
+      showError(error.response?.data?.error || 'Failed to create fleet');
     }
   };
 
@@ -43,9 +46,9 @@ function FleetManagement({ user, planets }) {
       ));
       setShowSendForm(false);
       setSelectedFleet(null);
-      alert('Fleet sent successfully!');
+      showSuccess('Fleet sent successfully!');
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to send fleet');
+      showError(error.response?.data?.error || 'Failed to send fleet');
     }
   };
 
@@ -55,9 +58,9 @@ function FleetManagement({ user, planets }) {
       setFleets(prev => prev.map(fleet =>
         fleet.id === fleetId ? response.data.fleet : fleet
       ));
-      alert('Fleet recalled successfully!');
+      showSuccess('Fleet recalled successfully!');
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to recall fleet');
+      showError(error.response?.data?.error || 'Failed to recall fleet');
     }
   };
 
@@ -212,6 +215,7 @@ function FleetManagement({ user, planets }) {
 }
 
 function CreateFleetModal({ planets, onCreate, onClose }) {
+  const { showError } = useToast();
   const [formData, setFormData] = useState({
     start_planet_id: '',
     ships: {
@@ -238,7 +242,7 @@ function CreateFleetModal({ planets, onCreate, onClose }) {
     e.preventDefault();
     const totalShips = Object.values(formData.ships).reduce((sum, count) => sum + count, 0);
     if (totalShips === 0) {
-      alert('Fleet must contain at least one ship');
+      showError('Fleet must contain at least one ship');
       return;
     }
     onCreate(formData);

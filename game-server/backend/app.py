@@ -11,7 +11,7 @@ import atexit
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=None)
 
 # Database configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///instance/test.db')
@@ -251,7 +251,7 @@ LOGIN_PAGE_HTML = """
             successDiv.classList.add('hidden');
 
             try {
-                const response = await fetch('http://localhost:5001/api/auth/login', {
+                const response = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
@@ -300,7 +300,7 @@ LOGIN_PAGE_HTML = """
             successDiv.classList.add('hidden');
 
             try {
-                const response = await fetch('http://localhost:5001/api/auth/register', {
+                const response = await fetch('/api/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, email, password })
@@ -356,6 +356,28 @@ def login_page():
 def health():
     return {'status': 'healthy'}
 
+@app.route('/static/<path:path>')
+def serve_static(path):
+    """Serve React static files"""
+    import os
+    # Use absolute path to avoid relative path issues
+    static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/build/static'))
+    print(f"[DEBUG] Static request: {path}")
+    print(f"[DEBUG] Current file: {__file__}")
+    print(f"[DEBUG] Dirname: {os.path.dirname(__file__)}")
+    print(f"[DEBUG] Static dir: {static_dir}")
+    print(f"[DEBUG] Static dir exists: {os.path.exists(static_dir)}")
+    print(f"[DEBUG] Full path: {os.path.join(static_dir, path)}")
+    print(f"[DEBUG] File exists: {os.path.exists(os.path.join(static_dir, path))}")
+    try:
+        return send_from_directory(static_dir, path)
+    except FileNotFoundError as e:
+        print(f"[DEBUG] FileNotFoundError: {e}")
+        return jsonify({'error': 'Static file not found'}), 404
+    except Exception as e:
+        print(f"[DEBUG] Exception: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/dashboard')
 @app.route('/dashboard/<path:path>')
 def serve_dashboard(path=None):
@@ -367,13 +389,6 @@ def serve_dashboard(path=None):
         return send_from_directory('../frontend/build', path)
     else:
         return send_from_directory('../frontend/build', 'index.html')
-
-@app.route('/static/<path:path>')
-def serve_static(path):
-    """Serve React static files"""
-    import os
-    static_dir = os.path.join(os.path.dirname(__file__), '../frontend/build/static')
-    return send_from_directory(static_dir, path)
 
 @app.route('/api/tick', methods=['POST'])
 def manual_tick():
@@ -465,4 +480,5 @@ with app.app_context():
 atexit.register(shutdown_scheduler)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    port = int(os.getenv('PORT', 5001))  # Default to 5001 if PORT not set
+    app.run(host='0.0.0.0', port=port, debug=True)

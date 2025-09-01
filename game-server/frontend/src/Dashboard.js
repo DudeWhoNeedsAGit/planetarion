@@ -3,6 +3,8 @@ import axios from 'axios';
 import Navigation from './Navigation';
 import Overview from './Overview';
 import FleetManagement from './FleetManagement';
+import { useToast } from './ToastContext';
+import AnimatedButton from './AnimatedButton';
 
 function Dashboard({ user, onLogout }) {
   const [activeSection, setActiveSection] = useState('overview');
@@ -10,6 +12,7 @@ function Dashboard({ user, onLogout }) {
   const [selectedPlanet, setSelectedPlanet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
+  const { showSuccess, showError } = useToast();
 
   useEffect(() => {
     fetchPlanets();
@@ -55,9 +58,9 @@ function Dashboard({ user, onLogout }) {
           : p
       ));
 
-      alert('Building upgraded successfully!');
+      showSuccess('Building upgraded successfully!');
     } catch (error) {
-      alert(error.response?.data?.error || 'Upgrade failed');
+      showError(error.response?.data?.error || 'Upgrade failed');
     } finally {
       setUpgrading(false);
     }
@@ -133,9 +136,9 @@ function Dashboard({ user, onLogout }) {
           : p
       ));
 
-      alert(response.data.message);
+      showSuccess(response.data.message);
     } catch (error) {
-      alert(error.response?.data?.error || 'Ship building failed');
+      showError(error.response?.data?.error || 'Ship building failed');
     } finally {
       setUpgrading(false);
     }
