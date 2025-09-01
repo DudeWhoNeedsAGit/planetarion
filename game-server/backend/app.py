@@ -41,9 +41,11 @@ def register_blueprints():
     from routes.users import users_bp
     from routes.planets import planets_bp
     from routes.auth import auth_bp
+    from routes.planet_management import planet_mgmt_bp
     app.register_blueprint(users_bp)
     app.register_blueprint(planets_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(planet_mgmt_bp)
 
 register_blueprints()
 
