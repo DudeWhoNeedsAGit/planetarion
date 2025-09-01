@@ -1,9 +1,12 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 import os
 from dotenv import load_dotenv
 import bcrypt
+import atexit
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +27,9 @@ db.init_app(app)
 migrate.init_app(app, db)
 CORS(app)
 jwt = JWTManager(app)
+
+# Initialize scheduler
+scheduler = BackgroundScheduler()
 
 # Import models
 from models import User, Planet, Fleet, Alliance, TickLog
@@ -85,6 +91,36 @@ def register_blueprints():
     app.register_blueprint(fleet_mgmt_bp)
 
 register_blueprints()
+
+def start_scheduler():
+    """Start the tick scheduler"""
+    from services.tick import run_tick
+
+    # Add tick job to run every 5 minutes
+    scheduler.add_job(
+        func=run_tick,
+        trigger=IntervalTrigger(minutes=5),
+        id='game_tick',
+        name='Game Tick',
+        replace_existing=True
+    )
+
+    # Start the scheduler
+    scheduler.start()
+    app.logger.info("Tick scheduler started - ticks will run every 5 minutes")
+
+def shutdown_scheduler():
+    """Shutdown the scheduler gracefully"""
+    if scheduler.running:
+        scheduler.shutdown()
+        app.logger.info("Tick scheduler shut down")
+
+# Start scheduler when app starts
+with app.app_context():
+    start_scheduler()
+
+# Register shutdown handler
+atexit.register(shutdown_scheduler)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
