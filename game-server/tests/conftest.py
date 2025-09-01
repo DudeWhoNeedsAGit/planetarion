@@ -26,8 +26,8 @@ def app():
     from backend.routes.users import users_bp
     from backend.routes.planets import planets_bp
     from backend.routes.auth import auth_bp
-    from backend.routes.planet_management import planet_mgmt_bp
-    from backend.routes.fleet_management import fleet_mgmt_bp
+    from backend.routes.planet_user import planet_mgmt_bp
+    from backend.routes.fleet import fleet_mgmt_bp
     app.register_blueprint(users_bp)
     app.register_blueprint(planets_bp)
     app.register_blueprint(auth_bp)

@@ -386,15 +386,18 @@ def manual_tick():
     tick_changes = []
 
     for planet in planets:
-        # Calculate production for this tick (simplified - 1 hour worth)
-        metal_produced = planet.metal_mine * 30
-        crystal_produced = planet.crystal_mine * 20
-        deuterium_produced = planet.deuterium_synthesizer * 10
+        # Calculate production for this tick (5 seconds = 1/7200 hour)
+        # Use max(1, ...) to ensure at least 1 resource per tick for active mines
+        metal_produced = max(1, int(planet.metal_mine * 30 * (1.1 ** planet.metal_mine) / 7200)) if planet.metal_mine > 0 else 0
+        crystal_produced = max(1, int(planet.crystal_mine * 20 * (1.1 ** planet.crystal_mine) / 7200)) if planet.crystal_mine > 0 else 0
+        deuterium_produced = max(1, int(planet.deuterium_synthesizer * 10 * (1.1 ** planet.deuterium_synthesizer) / 7200)) if planet.deuterium_synthesizer > 0 else 0
 
         # Update planet resources
         planet.metal += metal_produced
         planet.crystal += crystal_produced
         planet.deuterium += deuterium_produced
+
+        print(f"Manual tick for planet {planet.id}: Metal +{metal_produced}, Crystal +{crystal_produced}, Deuterium +{deuterium_produced}")
 
         tick_changes.append({
             'planet_id': planet.id,
@@ -413,8 +416,8 @@ def manual_tick():
 # Register blueprints after all models are defined
 def register_blueprints():
     from routes.auth import auth_bp
-    from routes.planet_management import planet_mgmt_bp
-    from routes.fleet_management import fleet_mgmt_bp
+    from routes.planet_user import planet_mgmt_bp
+    from routes.fleet import fleet_mgmt_bp
     from routes.shipyard import shipyard_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(planet_mgmt_bp)
@@ -427,10 +430,15 @@ def start_scheduler():
     """Start the tick scheduler"""
     from services.tick import run_tick
 
-    # Add tick job to run every 5 minutes
+    # Wrapper function to provide application context
+    def run_tick_with_context():
+        with app.app_context():
+            run_tick()
+
+    # Add tick job to run every 5 seconds
     scheduler.add_job(
-        func=run_tick,
-        trigger=IntervalTrigger(minutes=5),
+        func=run_tick_with_context,
+        trigger=IntervalTrigger(seconds=5),
         id='game_tick',
         name='Game Tick',
         replace_existing=True
@@ -438,7 +446,7 @@ def start_scheduler():
 
     # Start the scheduler
     scheduler.start()
-    app.logger.info("Tick scheduler started - ticks will run every 5 minutes")
+    app.logger.info("Tick scheduler started - ticks will run every 5 seconds")
 
 def shutdown_scheduler():
     """Shutdown the scheduler gracefully"""

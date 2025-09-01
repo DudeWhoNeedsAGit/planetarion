@@ -1,3 +1,15 @@
+"""
+Fleet Management Routes
+
+This module handles all fleet-related operations including:
+- Creating new fleets with ship composition
+- Sending fleets on missions (attack, transport, colonization)
+- Recalling traveling fleets
+- Retrieving fleet information for authenticated users
+
+All endpoints require JWT authentication and operate on the user's own fleets.
+"""
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import db

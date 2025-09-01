@@ -71,6 +71,7 @@ For detailed information about the game, development, and technical implementati
 - **[🧪 Testing Guide](./game-server/README.md#testing)** - How to test the game
 - **[💻 Development](./game-server/README.md#development)** - Contributing to the project
 - **[🚀 Deployment](./game-server/README.md#deployment)** - Production setup
+- **[⚙️ Automated Testing](./.clinerules)** - CI/CD configuration and automated testing rules
 
 ## 🎮 How to Play
 

@@ -1,3 +1,15 @@
+"""
+User Planet Management Routes
+
+This module handles authenticated user operations on planets including:
+- Retrieving user's planets with resource and production information
+- Upgrading buildings (mines, power plants, research facilities)
+- Managing planet-specific operations
+
+All endpoints require JWT authentication and operate only on the user's owned planets.
+Building upgrades include resource cost calculations and production rate updates.
+"""
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import db

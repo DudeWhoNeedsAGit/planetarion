@@ -1,3 +1,15 @@
+"""
+Shipyard Routes
+
+This module handles ship construction and shipyard operations including:
+- Building ships of various types (colony ships, cargo ships, fighters, etc.)
+- Resource cost calculations for ship construction
+- Fleet integration for newly built ships
+- Ship cost information retrieval
+
+All construction endpoints require JWT authentication and operate on user's planets.
+"""
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import db

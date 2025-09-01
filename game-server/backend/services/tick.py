@@ -5,20 +5,19 @@ from flask import current_app
 import math
 
 def run_tick():
-    """Main tick function that runs every 5 minutes"""
-    with current_app.app_context():
-        tick_number = get_next_tick_number()
-        tick_start_time = datetime.utcnow()
+    """Main tick function that runs every 5 seconds"""
+    tick_number = get_next_tick_number()
+    tick_start_time = datetime.utcnow()
 
-        # Execute tick operations
-        resource_changes = process_resource_generation()
-        fleet_updates = process_fleet_movements(tick_start_time)
+    # Execute tick operations
+    resource_changes = process_resource_generation()
+    fleet_updates = process_fleet_movements(tick_start_time)
 
-        # Log tick completion
-        tick_end_time = datetime.utcnow()
-        log_tick(tick_number, tick_start_time, resource_changes, fleet_updates)
+    # Log tick completion
+    tick_end_time = datetime.utcnow()
+    log_tick(tick_number, tick_start_time, resource_changes, fleet_updates)
 
-        current_app.logger.info(f"Tick {tick_number} completed at {tick_end_time}")
+    print(f"Tick {tick_number} completed at {tick_end_time}")
 
 def get_next_tick_number():
     """Get the next tick number"""
@@ -45,10 +44,11 @@ def process_resource_generation():
         # Apply energy efficiency
         energy_ratio = min(1.0, energy_production / energy_consumption) if energy_consumption > 0 else 1.0
 
-        # Calculate actual production for this tick (5 minutes = 1/12 hour)
-        tick_metal = int(metal_rate * energy_ratio / 12)
-        tick_crystal = int(crystal_rate * energy_ratio / 12)
-        tick_deuterium = int(deuterium_rate * energy_ratio / 12)
+        # Calculate actual production for this tick (5 seconds = 1/7200 hour)
+        # Use max(1, ...) to ensure at least 1 resource per tick for active mines
+        tick_metal = max(1, int(metal_rate * energy_ratio / 7200)) if planet.metal_mine > 0 else 0
+        tick_crystal = max(1, int(crystal_rate * energy_ratio / 7200)) if planet.crystal_mine > 0 else 0
+        tick_deuterium = max(1, int(deuterium_rate * energy_ratio / 7200)) if planet.deuterium_synthesizer > 0 else 0
 
         # Update planet resources
         planet.metal += tick_metal

@@ -37,13 +37,19 @@ planetarion/
 ├── backend/                 # Flask API Server
 │   ├── app.py              # Main Flask application
 │   ├── models.py           # SQLAlchemy database models
+│   ├── database.py         # Database connection and session management
 │   ├── routes/             # API route handlers
 │   │   ├── auth.py         # Authentication endpoints
 │   │   ├── users.py        # User management
-│   │   ├── planets.py      # Planet operations
-│   │   └── fleet.py        # Fleet management
+│   │   ├── planets.py      # Basic planet CRUD (admin/public)
+│   │   ├── planet_user.py  # User-authenticated planet operations
+│   │   ├── fleet.py        # Fleet management and operations
+│   │   └── shipyard.py     # Ship building and construction
 │   ├── services/           # Business logic
 │   │   └── tick.py         # Resource generation system
+│   ├── instance/           # SQLite test database storage
+│   ├── scripts/            # Utility scripts for development
+│   ├── .env               # Environment variables
 │   └── requirements.txt    # Python dependencies
 ├── frontend/               # React Application
 │   ├── src/
@@ -101,8 +107,8 @@ planetarion/
 - ✅ **Resource System**: Metal, Crystal, Deuterium mining
 - ✅ **Building Upgrades**: Mines, power plants, research labs
 - ✅ **Fleet Operations**: Ship construction and movement
-- ✅ **Real-time Updates**: Automatic resource generation
-- ✅ **Tick System**: Scheduled resource production
+- ✅ **Real-time Updates**: Automatic resource generation every 5 seconds
+- ✅ **Tick System**: High-frequency resource production (5-second intervals)
 
 ### User Interface
 - ✅ **Responsive Design**: Works on desktop and mobile

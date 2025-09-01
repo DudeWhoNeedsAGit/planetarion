@@ -1,3 +1,15 @@
+"""
+Basic Planet Operations Routes
+
+This module provides basic CRUD operations for planets:
+- Public/admin access to planet information
+- Planet creation (typically for admin or initial setup)
+- General planet queries without authentication requirements
+
+Note: For user-specific planet operations, see planet_user.py
+This module is primarily for administrative or public planet data access.
+"""
+
 from flask import Blueprint, request, jsonify
 from ..database import db
 from ..models import Planet, User
