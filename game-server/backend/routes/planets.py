@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from ..database import db
 from ..models import Planet, User
 
-planets_bp = Blueprint('planets', __name__)
+planets_bp = Blueprint('planets', __name__, url_prefix='/api')
 
 @planets_bp.route('/planets', methods=['GET'])
 def get_planets():

@@ -14,12 +14,14 @@ class TestFleetEndpoints:
         """Test getting fleets when user has none"""
         # Need to mock JWT since we don't have a real login
         with client.application.app_context():
-            with patch('flask_jwt_extended.get_jwt_identity', return_value=1):
-                response = client.get('/api/fleet')
-                assert response.status_code == 200
-                data = json.loads(response.data)
-                assert isinstance(data, list)
-                assert len(data) == 0
+            with patch('flask_jwt_extended.view_decorators.jwt_required') as mock_jwt:
+                mock_jwt.return_value = lambda f: f
+                with patch('backend.routes.fleet_management.get_jwt_identity', return_value=1):
+                    response = client.get('/api/fleet')
+                    assert response.status_code == 200
+                    data = json.loads(response.data)
+                    assert isinstance(data, list)
+                    assert len(data) == 0
 
     def test_get_user_fleets_with_data(self, client, sample_fleet):
         """Test getting fleets when user has fleets"""
@@ -115,8 +117,8 @@ class TestFleetEndpoints:
     def test_send_fleet_success(self, client, sample_fleet):
         """Test sending a fleet successfully"""
         # Create another planet as target
-        from models import Planet
-        from database import db
+        from backend.models import Planet
+        from backend.database import db
 
         target_planet = Planet(
             name='Target Planet',
@@ -167,7 +169,7 @@ class TestFleetEndpoints:
         """Test sending a fleet that's already moving"""
         # Set fleet to traveling
         sample_fleet.status = 'traveling'
-        from database import db
+        from backend.database import db
         db.session.commit()
 
         send_data = {
@@ -191,7 +193,7 @@ class TestFleetEndpoints:
         # Set fleet to traveling
         sample_fleet.status = 'traveling'
         sample_fleet.arrival_time = datetime.utcnow() + timedelta(hours=2)
-        from database import db
+        from backend.database import db
         db.session.commit()
 
         with client.application.app_context():
@@ -249,8 +251,8 @@ class TestFleetIntegration:
                 fleet_id = json.loads(response.data)['fleet']['id']
 
                 # Create target planet
-                from models import Planet
-                from database import db
+                from backend.models import Planet
+                from backend.database import db
                 target_planet = Planet(
                     name='Target', x=100, y=100, z=100,
                     user_id=sample_user.id
