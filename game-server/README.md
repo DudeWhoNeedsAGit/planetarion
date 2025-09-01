@@ -66,7 +66,7 @@ planetarion/
 
 ### Backend
 - **Framework**: Flask 2.3.3 with Flask-RESTful
-- **Database**: PostgreSQL 15 with SQLAlchemy ORM
+- **Database**: SQLite with SQLAlchemy ORM (development) / PostgreSQL (production)
 - **Authentication**: JWT (JSON Web Tokens)
 - **Migrations**: Flask-Migrate
 - **Scheduling**: APScheduler for automated tasks
@@ -78,12 +78,14 @@ planetarion/
 - **HTTP Client**: Axios 1.4.0
 - **Routing**: React Router (hash-based)
 - **Build Tool**: Create React App
+- **Serving**: Static files served by Flask backend
 
 ### Infrastructure
-- **Containerization**: Docker & Docker Compose
-- **Database**: PostgreSQL in Docker container
+- **Containerization**: Docker & Docker Compose (optional)
+- **Database**: SQLite (automatic setup) / PostgreSQL (production)
 - **Reverse Proxy**: Nginx (for production)
 - **Process Manager**: PM2 (for production)
+- **Static File Serving**: Flask handles React build files
 
 ### Development Tools
 - **Testing**: Python unittest, React Testing Library
@@ -121,21 +123,35 @@ planetarion/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Docker and Docker Compose
+- Python 3.11+ with pip
+- Node.js 18+ with npm (optional, for frontend development)
 - Git
-- 4GB RAM (recommended)
 
 ### One-Command Setup
 ```bash
 git clone https://github.com/DudeWhoNeedsAGit/planetarion.git
-cd planetarion/game-server
-docker compose up --build
+cd planetarion/game-server/backend
+pip install -r requirements.txt
+python app.py
 ```
 
 ### Access Points
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000
-- **Database**: localhost:5432 (for development)
+- **Full Game**: http://localhost:5001 (login + dashboard)
+- **Backend API**: http://localhost:5001/api/*
+- **Database**: SQLite (automatic setup)
+
+### Alternative: Development Setup
+```bash
+# Backend
+cd game-server/backend
+pip install -r requirements.txt
+python app.py
+
+# Frontend (optional, in separate terminal)
+cd game-server/frontend
+npm install
+npm run build
+```
 
 ## 📦 Installation
 

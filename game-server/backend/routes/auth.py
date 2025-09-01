@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from ..database import db
-from ..models import User
+from database import db
+from models import User, Planet
 import bcrypt
 import re
+import random
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -11,6 +12,25 @@ def validate_email(email):
     """Simple email validation using regex"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(pattern, email) is not None
+
+def generate_starting_planet_coordinates():
+    """Generate random unoccupied coordinates for a new user's starting planet"""
+    max_attempts = 100
+    for _ in range(max_attempts):
+        x = random.randint(1, 100)
+        y = random.randint(1, 100)
+        z = random.randint(1, 100)
+
+        # Check if coordinates are already occupied
+        existing_planet = Planet.query.filter_by(x=x, y=y, z=z).first()
+        if not existing_planet:
+            return x, y, z
+
+    # If we can't find empty coordinates after max attempts, use a larger range
+    x = random.randint(1, 500)
+    y = random.randint(1, 500)
+    z = random.randint(1, 500)
+    return x, y, z
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -43,8 +63,29 @@ def register():
     db.session.add(user)
     db.session.commit()
 
+    # Create starting planet for new user
+    x, y, z = generate_starting_planet_coordinates()
+    starting_planet = Planet(
+        name=f"{user.username}'s Homeworld",
+        x=x,
+        y=y,
+        z=z,
+        user_id=user.id,
+        metal=1000,      # Starting resources
+        crystal=500,
+        deuterium=0,
+        metal_mine=1,    # Basic structures
+        crystal_mine=1,
+        deuterium_synthesizer=0,
+        solar_plant=1,
+        fusion_reactor=0
+    )
+
+    db.session.add(starting_planet)
+    db.session.commit()
+
     # Create access token
-    access_token = create_access_token(identity=user.username)
+    access_token = create_access_token(identity=str(user.id))
 
     return jsonify({
         'message': 'User registered successfully',
@@ -75,7 +116,7 @@ def login():
     db.session.commit()
 
     # Create access token
-    access_token = create_access_token(identity=user.username)
+    access_token = create_access_token(identity=str(user.id))
 
     return jsonify({
         'message': 'Login successful',

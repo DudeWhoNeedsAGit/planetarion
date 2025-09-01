@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from ..database import db
-from ..models import User, Planet, Fleet
+from database import db
+from models import User, Planet, Fleet
 from datetime import datetime, timedelta
 import math
 
@@ -25,7 +25,8 @@ def get_user_fleets():
             'light_fighter': fleet.light_fighter,
             'heavy_fighter': fleet.heavy_fighter,
             'cruiser': fleet.cruiser,
-            'battleship': fleet.battleship
+            'battleship': fleet.battleship,
+            'colony_ship': fleet.colony_ship
         },
         'departure_time': fleet.departure_time.isoformat() if fleet.departure_time else None,
         'arrival_time': fleet.arrival_time.isoformat() if fleet.arrival_time else None,
@@ -65,6 +66,7 @@ def create_fleet():
         heavy_fighter=ships.get('heavy_fighter', 0),
         cruiser=ships.get('cruiser', 0),
         battleship=ships.get('battleship', 0),
+        colony_ship=ships.get('colony_ship', 0),
         departure_time=datetime.utcnow(),
         arrival_time=datetime.utcnow()  # Will be updated when sent
     )
@@ -86,7 +88,8 @@ def create_fleet():
                 'light_fighter': fleet.light_fighter,
                 'heavy_fighter': fleet.heavy_fighter,
                 'cruiser': fleet.cruiser,
-                'battleship': fleet.battleship
+                'battleship': fleet.battleship,
+                'colony_ship': fleet.colony_ship
             }
         }
     }), 201
@@ -108,10 +111,31 @@ def send_fleet():
     if fleet.status != 'stationed':
         return jsonify({'error': 'Fleet is not available for sending'}), 400
 
-    # Verify target planet exists
-    target_planet = Planet.query.get(data['target_planet_id'])
-    if not target_planet:
-        return jsonify({'error': 'Target planet not found'}), 404
+    # Handle different mission types
+    if data['mission'] == 'colonize':
+        # Check if coordinates are already occupied
+        target_planet = Planet.query.filter_by(
+            x=data.get('target_x'),
+            y=data.get('target_y'),
+            z=data.get('target_z')
+        ).first()
+        if target_planet:
+            return jsonify({'error': 'Coordinates already occupied'}), 409
+
+        # For colonization, create a temporary planet entry for distance calculation
+        target_planet = Planet(
+            name='Empty Space',
+            x=data['target_x'],
+            y=data['target_y'],
+            z=data['target_z'],
+            user_id=None  # Unowned
+        )
+        # Don't commit this temporary planet to DB yet
+    else:
+        # For other missions, target planet must exist
+        target_planet = Planet.query.get(data['target_planet_id'])
+        if not target_planet:
+            return jsonify({'error': 'Target planet not found'}), 404
 
     # Calculate distance and travel time
     start_planet = Planet.query.get(fleet.start_planet_id)
@@ -123,8 +147,15 @@ def send_fleet():
 
     # Update fleet
     fleet.mission = data['mission']
-    fleet.target_planet_id = data['target_planet_id']
-    fleet.status = 'traveling'
+    if data['mission'] == 'colonize':
+        # Store coordinates in target_planet_id field temporarily (hack for demo)
+        fleet.target_planet_id = 0  # Will be updated when colony is created
+        # Store coordinates in a way we can retrieve them
+        fleet.status = f'colonizing:{data["target_x"]}:{data["target_y"]}:{data["target_z"]}'
+    else:
+        fleet.target_planet_id = data['target_planet_id']
+        fleet.status = 'traveling'
+
     fleet.departure_time = datetime.utcnow()
     fleet.arrival_time = fleet.departure_time + timedelta(hours=travel_time_hours)
     fleet.eta = int(travel_time_hours * 3600)  # ETA in seconds

@@ -284,6 +284,17 @@ function CreateFleetModal({ planets, onCreate, onClose }) {
                   />
                 </div>
               ))}
+              {/* Colony Ship */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Colony Ship</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.ships.colony_ship || 0}
+                  onChange={(e) => handleShipChange('colony_ship', e.target.value)}
+                  className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
             </div>
           </div>
 
@@ -312,6 +323,9 @@ function SendFleetModal({ fleet, planets, onSend, onClose }) {
   const [formData, setFormData] = useState({
     fleet_id: fleet.id,
     target_planet_id: '',
+    target_x: '',
+    target_y: '',
+    target_z: '',
     mission: 'attack'
   });
 
@@ -355,8 +369,43 @@ function SendFleetModal({ fleet, planets, onSend, onClose }) {
               <option value="deploy">Deploy</option>
               <option value="espionage">Espionage</option>
               <option value="recycle">Recycle</option>
+              <option value="colonize">Colonize</option>
             </select>
           </div>
+
+          {/* Coordinates for colonization */}
+          {formData.mission === 'colonize' && (
+            <div className="mb-4">
+              <label className="block text-gray-300 mb-2">Target Coordinates</label>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  type="number"
+                  placeholder="X"
+                  value={formData.target_x}
+                  onChange={(e) => setFormData(prev => ({ ...prev, target_x: e.target.value }))}
+                  className="p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  required
+                />
+                <input
+                  type="number"
+                  placeholder="Y"
+                  value={formData.target_y}
+                  onChange={(e) => setFormData(prev => ({ ...prev, target_y: e.target.value }))}
+                  className="p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  required
+                />
+                <input
+                  type="number"
+                  placeholder="Z"
+                  value={formData.target_z}
+                  onChange={(e) => setFormData(prev => ({ ...prev, target_z: e.target.value }))}
+                  className="p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  required
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Enter coordinates for colonization (must be empty)</p>
+            </div>
+          )}
 
           <div className="flex space-x-3">
             <button

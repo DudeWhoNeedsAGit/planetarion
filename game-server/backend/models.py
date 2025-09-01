@@ -1,5 +1,5 @@
 from datetime import datetime
-from .database import db
+from database import db
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -67,6 +67,7 @@ class Fleet(db.Model):
     heavy_fighter = db.Column(db.Integer, default=0)
     cruiser = db.Column(db.Integer, default=0)
     battleship = db.Column(db.Integer, default=0)
+    colony_ship = db.Column(db.Integer, default=0)
 
     # Fleet status
     status = db.Column(db.String(20), default='stationed')

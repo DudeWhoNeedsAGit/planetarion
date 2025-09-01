@@ -1,6 +1,6 @@
 from datetime import datetime
-from ..database import db
-from ..models import Planet, Fleet, TickLog
+from database import db
+from models import Planet, Fleet, TickLog
 from flask import current_app
 import math
 
@@ -82,11 +82,60 @@ def process_fleet_movements(current_time):
     # Find fleets that have arrived
     arrived_fleets = Fleet.query.filter(
         Fleet.arrival_time <= current_time,
-        Fleet.status.in_(['traveling', 'returning'])
+        Fleet.status.in_(['traveling', 'returning']) |
+        Fleet.status.like('colonizing:%')
     ).all()
 
     for fleet in arrived_fleets:
-        if fleet.status == 'traveling':
+        if fleet.status.startswith('colonizing:'):
+            # Handle colonization
+            coords = fleet.status.split(':')[1:]  # Extract coordinates
+            x, y, z = map(int, coords)
+
+            # Double-check coordinates are still empty
+            existing_planet = Planet.query.filter_by(x=x, y=y, z=z).first()
+            if existing_planet:
+                # Coordinates occupied, fleet returns
+                fleet.status = 'returning'
+                fleet.mission = 'return'
+                fleet.arrival_time = current_time + (fleet.arrival_time - fleet.departure_time)  # Same travel time back
+                updates.append({
+                    'fleet_id': fleet.id,
+                    'event_type': 'colonization_failed',
+                    'description': f'Colonization failed - coordinates {x}:{y}:{z} already occupied'
+                })
+            else:
+                # Create new colony
+                colony = Planet(
+                    name=f"Colony {fleet.user_id}",
+                    x=x,
+                    y=y,
+                    z=z,
+                    user_id=fleet.user_id,
+                    metal=500,      # Colony starting resources
+                    crystal=250,
+                    deuterium=0,
+                    metal_mine=1,   # Basic structures
+                    crystal_mine=1,
+                    deuterium_synthesizer=0,
+                    solar_plant=1,
+                    fusion_reactor=0
+                )
+                db.session.add(colony)
+                db.session.flush()  # Get the colony ID
+
+                # Update fleet
+                fleet.status = 'stationed'
+                fleet.target_planet_id = colony.id
+                fleet.start_planet_id = colony.id  # Fleet is now stationed at the colony
+
+                updates.append({
+                    'fleet_id': fleet.id,
+                    'event_type': 'colonization_success',
+                    'description': f'New colony established at {x}:{y}:{z}'
+                })
+
+        elif fleet.status == 'traveling':
             # Fleet has arrived at destination
             fleet.status = 'stationed'
             fleet.start_planet_id = fleet.target_planet_id  # Update start planet

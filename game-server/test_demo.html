@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planetarion Demo Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto p-8">
+        <h1 class="text-4xl font-bold mb-8 text-center">🌌 Planetarion Demo Test</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Registration Test -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">1. User Registration</h2>
+                <div class="space-y-4">
+                    <input id="reg-username" type="text" placeholder="Username" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <input id="reg-email" type="email" placeholder="Email" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <input id="reg-password" type="password" placeholder="Password" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <button onclick="registerUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded">
+                        Register & Get Starting Planet
+                    </button>
+                </div>
+                <div id="reg-result" class="mt-4 p-3 bg-gray-700 rounded text-sm"></div>
+            </div>
+
+            <!-- Login Test -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">2. User Login</h2>
+                <div class="space-y-4">
+                    <input id="login-username" type="text" placeholder="Username" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <input id="login-password" type="password" placeholder="Password" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <button onclick="loginUser()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded">
+                        Login
+                    </button>
+                </div>
+                <div id="login-result" class="mt-4 p-3 bg-gray-700 rounded text-sm"></div>
+            </div>
+
+            <!-- Planet Info -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">3. Planet Information</h2>
+                <button onclick="getPlanets()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded mb-4">
+                    Get My Planets
+                </button>
+                <div id="planets-result" class="p-3 bg-gray-700 rounded text-sm max-h-40 overflow-y-auto"></div>
+            </div>
+
+            <!-- Shipyard Test -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">4. Build Colony Ship</h2>
+                <div class="space-y-4">
+                    <input id="planet-id" type="number" placeholder="Planet ID" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <input id="ship-quantity" type="number" placeholder="Quantity" value="1" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <button onclick="buildColonyShip()" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-4 rounded">
+                        Build Colony Ship
+                    </button>
+                </div>
+                <div id="shipyard-result" class="mt-4 p-3 bg-gray-700 rounded text-sm"></div>
+            </div>
+
+            <!-- Fleet Management -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">5. Fleet Management</h2>
+                <button onclick="getFleets()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded mb-4">
+                    Get My Fleets
+                </button>
+                <div id="fleets-result" class="p-3 bg-gray-700 rounded text-sm max-h-40 overflow-y-auto"></div>
+            </div>
+
+            <!-- Colonization Test -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">6. Colonization Mission</h2>
+                <div class="space-y-4">
+                    <input id="fleet-id" type="number" placeholder="Fleet ID" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <input id="target-x" type="number" placeholder="Target X" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <input id="target-y" type="number" placeholder="Target Y" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <input id="target-z" type="number" placeholder="Target Z" class="w-full p-3 bg-gray-700 rounded border border-gray-600">
+                    <button onclick="sendColonizationMission()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded">
+                        Send Colonization Mission
+                    </button>
+                </div>
+                <div id="colonization-result" class="mt-4 p-3 bg-gray-700 rounded text-sm"></div>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div class="mt-8 bg-gray-800 p-6 rounded-lg">
+            <h2 class="text-2xl font-bold mb-4">Status</h2>
+            <div id="status" class="p-3 bg-gray-700 rounded text-sm">
+                Backend URL: http://localhost:5001<br>
+                Token: <span id="token-display">Not logged in</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = localStorage.getItem('token') || '';
+
+        // Update token display
+        function updateTokenDisplay() {
+            document.getElementById('token-display').textContent = authToken ? 'Logged in' : 'Not logged in';
+        }
+        updateTokenDisplay();
+
+        async function registerUser() {
+            const username = document.getElementById('reg-username').value;
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+
+            try {
+                const response = await fetch('http://localhost:5001/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password })
+                });
+
+                const data = await response.json();
+                document.getElementById('reg-result').innerHTML = `
+                    <strong>Registration Result:</strong><br>
+                    Status: ${response.status}<br>
+                    Message: ${data.message || 'Success'}<br>
+                    User ID: ${data.user?.id || 'N/A'}<br>
+                    Token: ${data.access_token ? 'Received (' + data.access_token.substring(0, 20) + '...)' : 'None'}
+                `;
+
+                if (data.access_token) {
+                    authToken = data.access_token;
+                    localStorage.setItem('token', authToken);
+                    updateTokenDisplay();
+                    console.log('Token stored:', authToken);
+                }
+            } catch (error) {
+                document.getElementById('reg-result').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function loginUser() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const response = await fetch('http://localhost:5001/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+                document.getElementById('login-result').innerHTML = `
+                    <strong>Login Result:</strong><br>
+                    Status: ${response.status}<br>
+                    Message: ${data.message || 'Success'}<br>
+                    Token: ${data.access_token ? 'Received' : 'None'}
+                `;
+
+                if (data.access_token) {
+                    authToken = data.access_token;
+                    localStorage.setItem('token', authToken);
+                    updateTokenDisplay();
+                }
+            } catch (error) {
+                document.getElementById('login-result').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function getPlanets() {
+            console.log('Getting planets with token:', authToken);
+            try {
+                const response = await fetch('http://localhost:5001/api/planet', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                if (response.status === 401) {
+                    document.getElementById('planets-result').innerHTML = `
+                        <strong>Authentication Error:</strong><br>
+                        Status: ${response.status}<br>
+                        Message: ${data.error || 'Unauthorized'}<br>
+                        Token: ${authToken ? 'Present' : 'Missing'}
+                    `;
+                    return;
+                }
+
+                document.getElementById('planets-result').innerHTML = `
+                    <strong>Planets (${data.length}):</strong><br>
+                    ${data.map(planet => `
+                        ID: ${planet.id}, Name: ${planet.name}, Coords: ${planet.coordinates}<br>
+                        Resources: ${planet.resources.metal} Metal, ${planet.resources.crystal} Crystal, ${planet.resources.deuterium} Deuterium
+                    `).join('<br>')}
+                `;
+            } catch (error) {
+                document.getElementById('planets-result').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function buildColonyShip() {
+            const planetId = document.getElementById('planet-id').value;
+            const quantity = document.getElementById('ship-quantity').value;
+
+            try {
+                const response = await fetch('http://localhost:5001/api/shipyard/build', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        planet_id: parseInt(planetId),
+                        ship_type: 'colony_ship',
+                        quantity: parseInt(quantity)
+                    })
+                });
+
+                const data = await response.json();
+                document.getElementById('shipyard-result').innerHTML = `
+                    <strong>Shipyard Result:</strong><br>
+                    Status: ${response.status}<br>
+                    Message: ${data.message || 'Success'}<br>
+                    Remaining Resources: ${data.planet_resources ? `${data.planet_resources.metal} Metal, ${data.planet_resources.crystal} Crystal, ${data.planet_resources.deuterium} Deuterium` : 'N/A'}
+                `;
+            } catch (error) {
+                document.getElementById('shipyard-result').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function getFleets() {
+            try {
+                const response = await fetch('http://localhost:5001/api/fleet', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+                document.getElementById('fleets-result').innerHTML = `
+                    <strong>Fleets (${data.length}):</strong><br>
+                    ${data.map(fleet => `
+                        ID: ${fleet.id}, Mission: ${fleet.mission}, Status: ${fleet.status}<br>
+                        Ships: ${fleet.ships.colony_ship || 0} Colony Ships
+                    `).join('<br>')}
+                `;
+            } catch (error) {
+                document.getElementById('fleets-result').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function sendColonizationMission() {
+            const fleetId = document.getElementById('fleet-id').value;
+            const targetX = document.getElementById('target-x').value;
+            const targetY = document.getElementById('target-y').value;
+            const targetZ = document.getElementById('target-z').value;
+
+            try {
+                const response = await fetch('http://localhost:5001/api/fleet/send', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        fleet_id: parseInt(fleetId),
+                        mission: 'colonize',
+                        target_x: parseInt(targetX),
+                        target_y: parseInt(targetY),
+                        target_z: parseInt(targetZ)
+                    })
+                });
+
+                const data = await response.json();
+                document.getElementById('colonization-result').innerHTML = `
+                    <strong>Colonization Result:</strong><br>
+                    Status: ${response.status}<br>
+                    Message: ${data.message || 'Success'}<br>
+                    Fleet Status: ${data.fleet?.status || 'N/A'}
+                `;
+            } catch (error) {
+                document.getElementById('colonization-result').textContent = `Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

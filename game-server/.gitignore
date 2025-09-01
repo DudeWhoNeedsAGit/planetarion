@@ -38,6 +38,11 @@ yarn-error.log*
 build/
 .DS_Store
 
+# Playwright
+playwright-report/data/
+
+
+
 # Environment variables
 .env
 .env.local

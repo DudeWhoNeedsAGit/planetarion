@@ -5,7 +5,7 @@ import Register from './Register';
 import Dashboard from './Dashboard';
 
 // Set up axios defaults
-axios.defaults.baseURL = 'http://localhost:5000';
+axios.defaults.baseURL = 'http://localhost:5001';
 
 // Add token to requests if available
 const token = localStorage.getItem('token');

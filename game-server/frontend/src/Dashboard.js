@@ -109,6 +109,57 @@ function Dashboard({ user, onLogout }) {
     );
   };
 
+  const handleBuildShip = async (shipType, quantity) => {
+    if (!selectedPlanet) return;
+
+    setUpgrading(true);
+    try {
+      const response = await axios.post('/api/shipyard/build', {
+        planet_id: selectedPlanet.id,
+        ship_type: shipType,
+        quantity: quantity
+      });
+
+      // Update the selected planet with new resources
+      setSelectedPlanet(prev => ({
+        ...prev,
+        resources: response.data.planet_resources
+      }));
+
+      // Update planets list
+      setPlanets(prev => prev.map(p =>
+        p.id === selectedPlanet.id
+          ? { ...p, resources: response.data.planet_resources }
+          : p
+      ));
+
+      alert(response.data.message);
+    } catch (error) {
+      alert(error.response?.data?.error || 'Ship building failed');
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const canAffordShip = (shipType, quantity) => {
+    if (!selectedPlanet) return false;
+
+    const costs = {
+      'colony_ship': {
+        metal: 10000 * quantity,
+        crystal: 20000 * quantity,
+        deuterium: 10000 * quantity
+      }
+    };
+
+    const cost = costs[shipType];
+    return (
+      selectedPlanet.resources.metal >= cost.metal &&
+      selectedPlanet.resources.crystal >= cost.crystal &&
+      selectedPlanet.resources.deuterium >= cost.deuterium
+    );
+  };
+
   const renderSection = () => {
     switch (activeSection) {
       case 'overview':
@@ -242,6 +293,88 @@ function Dashboard({ user, onLogout }) {
                 <li>• Plasma Technology</li>
               </ul>
             </div>
+          </div>
+        );
+      case 'shipyard':
+        return (
+          <div className="space-y-6">
+            {/* Shipyard Header */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h3 className="text-xl font-bold mb-4 text-white">🚀 Shipyard</h3>
+              <p className="text-gray-400">Build ships to expand your fleet and colonize new planets</p>
+            </div>
+
+            {/* Planet Selection for Shipyard */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h4 className="text-lg font-semibold mb-4 text-white">Select Planet</h4>
+              <div className="flex space-x-4 overflow-x-auto">
+                {planets.map(planet => (
+                  <button
+                    key={planet.id}
+                    onClick={() => setSelectedPlanet(planet)}
+                    className={`px-4 py-2 rounded whitespace-nowrap ${
+                      selectedPlanet?.id === planet.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {planet.name} ({planet.coordinates})
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Ship Construction */}
+            {selectedPlanet && (
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h4 className="text-lg font-semibold mb-4 text-white">Build Ships</h4>
+
+                {/* Colony Ship */}
+                <div className="bg-gray-700 p-4 rounded mb-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <div>
+                      <h5 className="text-white font-medium">🚁 Colony Ship</h5>
+                      <p className="text-gray-400 text-sm">Essential for establishing new colonies</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-gray-400">Cost per ship:</div>
+                      <div className="text-yellow-400 text-sm">
+                        10,000 Metal<br/>
+                        20,000 Crystal<br/>
+                        10,000 Deuterium
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-300">
+                      Available Resources: {selectedPlanet.resources.metal.toLocaleString()} Metal, {selectedPlanet.resources.crystal.toLocaleString()} Crystal, {selectedPlanet.resources.deuterium.toLocaleString()} Deuterium
+                    </div>
+                    <button
+                      onClick={() => handleBuildShip('colony_ship', 1)}
+                      disabled={upgrading || !canAffordShip('colony_ship', 1)}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded"
+                    >
+                      {upgrading ? 'Building...' : 'Build 1 Colony Ship'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Build Multiple */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {[5, 10, 25, 50].map(quantity => (
+                    <button
+                      key={quantity}
+                      onClick={() => handleBuildShip('colony_ship', quantity)}
+                      disabled={upgrading || !canAffordShip('colony_ship', quantity)}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-sm rounded"
+                    >
+                      Build {quantity}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         );
       case 'alliance':

@@ -53,7 +53,7 @@ That's it! The game will automatically set up the database and start all service
 - ✅ **Building Construction**: Upgrade mines, power plants, and research labs
 - ✅ **Fleet Management**: Build and command space fleets
 - ✅ **Real-time Economy**: Resources generate automatically over time
-- ✅ **Strategic Combat**: Fleet vs fleet battles
+- ✅ **Strategic Combat**: Fleet vs fleet battles (coming soon)
 
 ### User Experience
 - ✅ **Modern Web Interface**: Clean, responsive design that works on any device
@@ -61,6 +61,7 @@ That's it! The game will automatically set up the database and start all service
 - ✅ **Intuitive Controls**: Easy-to-use interface for all game mechanics
 - ✅ **Dark Space Theme**: Immersive sci-fi aesthetic
 - ✅ **Progress Tracking**: Detailed statistics and empire overview
+- ✅ **Complete Game Loop**: Login → Dashboard → Planet Management → Fleet Operations
 
 ## 📖 Documentation
 
