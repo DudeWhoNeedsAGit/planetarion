@@ -26,7 +26,7 @@ CORS(app)
 jwt = JWTManager(app)
 
 # Import models
-from models import User, Planet, Fleet
+from models import User, Planet, Fleet, Alliance, TickLog
 
 @app.route('/')
 def hello():

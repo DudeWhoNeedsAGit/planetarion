@@ -8,6 +8,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
+    alliance_id = db.Column(db.Integer, db.ForeignKey('alliances.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
 
@@ -61,8 +62,47 @@ class Fleet(db.Model):
     cruiser = db.Column(db.Integer, default=0)
     battleship = db.Column(db.Integer, default=0)
 
+    # Fleet status and timing
+    status = db.Column(db.String(20), default='stationed')  # stationed, traveling, returning
     departure_time = db.Column(db.DateTime, nullable=False)
     arrival_time = db.Column(db.DateTime, nullable=False)
+    eta = db.Column(db.Integer, default=0)  # Estimated time of arrival in seconds
 
     def __repr__(self):
         return f'<Fleet {self.mission} from {self.start_planet_id} to {self.target_planet_id}>'
+
+class Alliance(db.Model):
+    __tablename__ = 'alliances'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text)
+    leader_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    members = db.relationship('User', backref='alliance', lazy=True, foreign_keys='User.alliance_id')
+
+    def __repr__(self):
+        return f'<Alliance {self.name}>'
+
+class TickLog(db.Model):
+    __tablename__ = 'tick_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tick_number = db.Column(db.Integer, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Resource changes
+    planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'))
+    metal_change = db.Column(db.BigInteger, default=0)
+    crystal_change = db.Column(db.BigInteger, default=0)
+    deuterium_change = db.Column(db.BigInteger, default=0)
+
+    # Fleet events
+    fleet_id = db.Column(db.Integer, db.ForeignKey('fleets.id'))
+    event_type = db.Column(db.String(50))  # arrival, departure, combat, etc.
+    event_description = db.Column(db.Text)
+
+    def __repr__(self):
+        return f'<TickLog tick:{self.tick_number} event:{self.event_type}>'
