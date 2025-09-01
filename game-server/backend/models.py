@@ -1,8 +1,9 @@
 from datetime import datetime
-from database import db
+from .database import db
 
 class User(db.Model):
     __tablename__ = 'users'
+    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -14,12 +15,15 @@ class User(db.Model):
 
     # Relationships
     planets = db.relationship('Planet', backref='owner', lazy=True)
+    fleets = db.relationship('Fleet', backref='owner', lazy=True)
 
     def __repr__(self):
         return f'<User {self.username}>'
 
+
 class Planet(db.Model):
     __tablename__ = 'planets'
+    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -45,12 +49,14 @@ class Planet(db.Model):
     def __repr__(self):
         return f'<Planet {self.name} ({self.x}:{self.y}:{self.z})>'
 
+
 class Fleet(db.Model):
     __tablename__ = 'fleets'
+    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    mission = db.Column(db.String(50), nullable=False)  # attack, transport, etc.
+    mission = db.Column(db.String(50), nullable=False)
     start_planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False)
     target_planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False)
 
@@ -62,17 +68,19 @@ class Fleet(db.Model):
     cruiser = db.Column(db.Integer, default=0)
     battleship = db.Column(db.Integer, default=0)
 
-    # Fleet status and timing
-    status = db.Column(db.String(20), default='stationed')  # stationed, traveling, returning
+    # Fleet status
+    status = db.Column(db.String(20), default='stationed')
     departure_time = db.Column(db.DateTime, nullable=False)
     arrival_time = db.Column(db.DateTime, nullable=False)
-    eta = db.Column(db.Integer, default=0)  # Estimated time of arrival in seconds
+    eta = db.Column(db.Integer, default=0)
 
     def __repr__(self):
         return f'<Fleet {self.mission} from {self.start_planet_id} to {self.target_planet_id}>'
 
+
 class Alliance(db.Model):
     __tablename__ = 'alliances'
+    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
@@ -80,14 +88,31 @@ class Alliance(db.Model):
     leader_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relationships
-    members = db.relationship('User', backref='alliance', lazy=True, foreign_keys='User.alliance_id')
+    # Members relationship
+    members = db.relationship(
+        'User',
+        backref='alliance',
+        lazy=True,
+        primaryjoin='foreign(User.alliance_id) == Alliance.id',
+        foreign_keys='[User.alliance_id]',
+        viewonly=True
+    )
+
+    # Leader relationship
+    leader = db.relationship(
+        'User',
+        foreign_keys='[Alliance.leader_id]',
+        uselist=False,
+        backref='led_alliance'
+    )
 
     def __repr__(self):
         return f'<Alliance {self.name}>'
 
+
 class TickLog(db.Model):
     __tablename__ = 'tick_logs'
+    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     tick_number = db.Column(db.Integer, nullable=False)
@@ -101,7 +126,7 @@ class TickLog(db.Model):
 
     # Fleet events
     fleet_id = db.Column(db.Integer, db.ForeignKey('fleets.id'))
-    event_type = db.Column(db.String(50))  # arrival, departure, combat, etc.
+    event_type = db.Column(db.String(50))
     event_description = db.Column(db.Text)
 
     def __repr__(self):

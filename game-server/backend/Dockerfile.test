@@ -1,0 +1,42 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies for testing
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY backend/requirements.txt backend/
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+# Install testing dependencies
+RUN pip install --no-cache-dir \
+    pytest==7.4.0 \
+    pytest-flask==1.2.0 \
+    Faker==19.3.1 \
+    pytest-cov
+
+# Copy application code (will be mounted as volume)
+COPY . .
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash app \
+    && chown -R app:app /app
+USER app
+
+# Set PYTHONPATH to include both app and backend directories
+ENV PYTHONPATH=/app:/app/backend:$PYTHONPATH
+
+# Debug: Show current directory and PYTHONPATH
+RUN echo "Current directory: $(pwd)" && \
+    echo "PYTHONPATH: $PYTHONPATH" && \
+    ls -la /app && \
+    ls -la /app/backend
+
+EXPOSE 5000
+
+# Default command for testing (run from backend directory)
+CMD ["sh", "-c", "echo '=== DEBUG INFO ===' && pwd && echo 'PYTHONPATH:' $PYTHONPATH && ls -la /app && ls -la /app/backend && echo '=== RUNNING TESTS ===' && python -c 'import sys; print(\"Python path:\", sys.path)' && python -m pytest ../tests -v --tb=short"]

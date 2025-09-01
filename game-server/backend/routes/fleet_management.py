@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from database import db
-from models import User, Planet, Fleet
+from ..database import db
+from ..models import User, Planet, Fleet
 from datetime import datetime, timedelta
 import math
 

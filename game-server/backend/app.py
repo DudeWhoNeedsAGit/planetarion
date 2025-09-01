@@ -22,7 +22,7 @@ app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-jwt-secret-key-
 app.config['JWT_ACCESS_TOKEN_EXPIRE_MINUTES'] = 60  # 1 hour
 
 # Initialize extensions
-from database import db, migrate
+from .database import db, migrate
 db.init_app(app)
 migrate.init_app(app, db)
 CORS(app)
@@ -32,7 +32,7 @@ jwt = JWTManager(app)
 scheduler = BackgroundScheduler()
 
 # Import models
-from models import User, Planet, Fleet, Alliance, TickLog
+from .models import User, Planet, Fleet, Alliance, TickLog
 
 @app.route('/')
 def hello():
@@ -79,11 +79,11 @@ def manual_tick():
 
 # Register blueprints after all models are defined
 def register_blueprints():
-    from routes.users import users_bp
-    from routes.planets import planets_bp
-    from routes.auth import auth_bp
-    from routes.planet_management import planet_mgmt_bp
-    from routes.fleet_management import fleet_mgmt_bp
+    from .routes.users import users_bp
+    from .routes.planets import planets_bp
+    from .routes.auth import auth_bp
+    from .routes.planet_management import planet_mgmt_bp
+    from .routes.fleet_management import fleet_mgmt_bp
     app.register_blueprint(users_bp)
     app.register_blueprint(planets_bp)
     app.register_blueprint(auth_bp)
@@ -94,7 +94,7 @@ register_blueprints()
 
 def start_scheduler():
     """Start the tick scheduler"""
-    from services.tick import run_tick
+    from .services.tick import run_tick
 
     # Add tick job to run every 5 minutes
     scheduler.add_job(
