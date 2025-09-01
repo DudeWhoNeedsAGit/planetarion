@@ -83,11 +83,13 @@ run_backend_tests() {
             return 1
         fi
     else
-        if $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-backend >/dev/null 2>&1; then
+        # Capture output for error reporting
+        if TEST_OUTPUT=$($DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-backend 2>&1); then
             print_success "Backend tests passed!"
             return 0
         else
             print_error "Backend tests failed!"
+            echo "$TEST_OUTPUT" | grep -E "(FAILED|ERROR|FAILED tests|ERRORS)" || echo "Test output suppressed. Use --verbose for details."
             return 1
         fi
     fi
@@ -122,11 +124,13 @@ run_e2e_tests() {
             return 1
         fi
     else
-        if $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-frontend >/dev/null 2>&1; then
+        # Capture output for error reporting
+        if E2E_OUTPUT=$($DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-frontend 2>&1); then
             print_success "E2E tests passed!"
             return 0
         else
             print_error "E2E tests failed!"
+            echo "$E2E_OUTPUT" | grep -E "(FAILED|ERROR|failed|Error)" || echo "E2E test output suppressed. Use --verbose for details."
             return 1
         fi
     fi
