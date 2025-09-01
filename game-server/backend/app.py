@@ -36,16 +36,53 @@ def hello():
 def health():
     return {'status': 'healthy'}
 
+@app.route('/api/tick', methods=['POST'])
+def manual_tick():
+    """Admin endpoint to manually trigger a tick (for testing/debugging)"""
+    # In production, this should have admin authentication
+    # For now, it's open for development purposes
+
+    # Simple tick logic - increment resources for all planets
+    planets = Planet.query.all()
+    tick_changes = []
+
+    for planet in planets:
+        # Calculate production for this tick (simplified - 1 hour worth)
+        metal_produced = planet.metal_mine * 30
+        crystal_produced = planet.crystal_mine * 20
+        deuterium_produced = planet.deuterium_synthesizer * 10
+
+        # Update planet resources
+        planet.metal += metal_produced
+        planet.crystal += crystal_produced
+        planet.deuterium += deuterium_produced
+
+        tick_changes.append({
+            'planet_id': planet.id,
+            'metal_change': metal_produced,
+            'crystal_change': crystal_produced,
+            'deuterium_change': deuterium_produced
+        })
+
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Manual tick executed successfully',
+        'changes': tick_changes
+    })
+
 # Register blueprints after all models are defined
 def register_blueprints():
     from routes.users import users_bp
     from routes.planets import planets_bp
     from routes.auth import auth_bp
     from routes.planet_management import planet_mgmt_bp
+    from routes.fleet_management import fleet_mgmt_bp
     app.register_blueprint(users_bp)
     app.register_blueprint(planets_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(planet_mgmt_bp)
+    app.register_blueprint(fleet_mgmt_bp)
 
 register_blueprints()
 
