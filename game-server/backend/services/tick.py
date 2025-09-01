@@ -1,6 +1,6 @@
 from datetime import datetime
-from database import db
-from models import Planet, Fleet, TickLog
+from ..database import db
+from ..models import Planet, Fleet, TickLog
 from flask import current_app
 import math
 
