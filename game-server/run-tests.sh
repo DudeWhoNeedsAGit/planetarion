@@ -55,44 +55,80 @@ print_status "Using Docker Compose: $DOCKER_COMPOSE"
 
 # Function to run backend tests
 run_backend_tests() {
-    print_status "Running Backend Tests..."
-    print_status "Building and starting test services..."
+    if [ "$VERBOSE" = true ]; then
+        print_status "Running Backend Tests..."
+        print_status "Building and starting test services..."
+    fi
 
     # Start test services
-    $DOCKER_COMPOSE -f docker-compose.test.yml up --build -d test-db
+    if [ "$VERBOSE" = true ]; then
+        $DOCKER_COMPOSE -f docker-compose.test.yml up --build -d test-db
+    else
+        $DOCKER_COMPOSE -f docker-compose.test.yml up --build -d test-db >/dev/null 2>&1
+    fi
 
     # Wait for database to be ready
-    print_status "Waiting for test database to be ready..."
+    if [ "$VERBOSE" = true ]; then
+        print_status "Waiting for test database to be ready..."
+    fi
     sleep 10
 
     # Run backend tests
-    if $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-backend; then
-        print_success "Backend tests passed!"
-        return 0
+    if [ "$VERBOSE" = true ]; then
+        if $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-backend; then
+            print_success "Backend tests passed!"
+            return 0
+        else
+            print_error "Backend tests failed!"
+            return 1
+        fi
     else
-        print_error "Backend tests failed!"
-        return 1
+        if $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-backend >/dev/null 2>&1; then
+            print_success "Backend tests passed!"
+            return 0
+        else
+            print_error "Backend tests failed!"
+            return 1
+        fi
     fi
 }
 
 # Function to run E2E tests
 run_e2e_tests() {
-    print_status "Running End-to-End Tests..."
+    if [ "$VERBOSE" = true ]; then
+        print_status "Running End-to-End Tests..."
+    fi
 
     # Start all test services
-    $DOCKER_COMPOSE -f docker-compose.test.yml up --build -d
+    if [ "$VERBOSE" = true ]; then
+        $DOCKER_COMPOSE -f docker-compose.test.yml up --build -d
+    else
+        $DOCKER_COMPOSE -f docker-compose.test.yml up --build -d >/dev/null 2>&1
+    fi
 
     # Wait for services to be ready
-    print_status "Waiting for services to be ready..."
+    if [ "$VERBOSE" = true ]; then
+        print_status "Waiting for services to be ready..."
+    fi
     sleep 15
 
     # Run E2E tests
-    if $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-frontend; then
-        print_success "E2E tests passed!"
-        return 0
+    if [ "$VERBOSE" = true ]; then
+        if $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-frontend; then
+            print_success "E2E tests passed!"
+            return 0
+        else
+            print_error "E2E tests failed!"
+            return 1
+        fi
     else
-        print_error "E2E tests failed!"
-        return 1
+        if $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-frontend >/dev/null 2>&1; then
+            print_success "E2E tests passed!"
+            return 0
+        else
+            print_error "E2E tests failed!"
+            return 1
+        fi
     fi
 }
 
@@ -148,19 +184,23 @@ run_all_tests() {
 show_usage() {
     echo "Planetarion Test Runner"
     echo ""
-    echo "Usage: $0 [COMMAND]"
+    echo "Usage: $0 [OPTIONS] [COMMAND]"
+    echo ""
+    echo "Options:"
+    echo "  -v, --verbose   Show detailed output (default: quiet mode)"
     echo ""
     echo "Commands:"
-    echo "  backend    Run only backend tests"
-    echo "  e2e        Run only E2E tests"
-    echo "  all        Run all tests (default)"
-    echo "  clean      Clean up test containers and volumes"
-    echo "  help       Show this help message"
+    echo "  backend         Run only backend tests"
+    echo "  e2e             Run only E2E tests"
+    echo "  all             Run all tests (default)"
+    echo "  clean           Clean up test containers and volumes"
+    echo "  help            Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0 all          # Run complete test suite"
-    echo "  $0 backend      # Run only backend tests"
-    echo "  $0 e2e          # Run only E2E tests"
+    echo "  $0 all                 # Run complete test suite (quiet)"
+    echo "  $0 --verbose all       # Run complete test suite (verbose)"
+    echo "  $0 -v backend          # Run backend tests (verbose)"
+    echo "  $0 e2e                 # Run E2E tests (quiet)"
 }
 
 # Function to clean up
@@ -170,8 +210,31 @@ cleanup() {
     print_success "Cleanup completed!"
 }
 
+# Parse arguments
+VERBOSE=false
+COMMAND="all"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        backend|e2e|all|clean|help|-h|--help)
+            COMMAND=$1
+            shift
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            echo ""
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
 # Main script logic
-case "${1:-all}" in
+case "$COMMAND" in
     "backend")
         if run_backend_tests; then
             print_success "Backend tests completed successfully!"
@@ -208,7 +271,7 @@ case "${1:-all}" in
         show_usage
         ;;
     *)
-        print_error "Unknown command: $1"
+        print_error "Unknown command: $COMMAND"
         echo ""
         show_usage
         exit 1
