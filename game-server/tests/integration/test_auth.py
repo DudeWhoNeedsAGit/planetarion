@@ -231,7 +231,7 @@ class TestAuthIntegration:
 
     def test_login_updates_last_login(self, client, db_session):
         """Test that login updates user's last_login timestamp"""
-        from models import User
+        from backend.models import User
         from datetime import datetime
 
         # Register user

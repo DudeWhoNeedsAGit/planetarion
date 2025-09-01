@@ -34,7 +34,7 @@ def register():
     db.session.commit()
 
     # Create access token
-    access_token = create_access_token(identity=user.id)
+    access_token = create_access_token(identity=user.username)
 
     return jsonify({
         'message': 'User registered successfully',
@@ -60,7 +60,7 @@ def login():
         return jsonify({'error': 'Invalid username or password'}), 401
 
     # Create access token
-    access_token = create_access_token(identity=user.id)
+    access_token = create_access_token(identity=user.username)
 
     return jsonify({
         'message': 'Login successful',

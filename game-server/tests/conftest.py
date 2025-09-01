@@ -6,6 +6,7 @@ from flask import Flask
 
 from backend.database import db
 from backend.models import User, Planet, Fleet, Alliance, TickLog
+from flask_jwt_extended import JWTManager
 
 @pytest.fixture
 def app():
@@ -14,8 +15,24 @@ def app():
     app.config['TESTING'] = True
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['JWT_SECRET_KEY'] = 'test-jwt-secret-key'
 
     db.init_app(app)
+
+    # Initialize JWT
+    jwt = JWTManager(app)
+
+    # Register blueprints
+    from backend.routes.users import users_bp
+    from backend.routes.planets import planets_bp
+    from backend.routes.auth import auth_bp
+    from backend.routes.planet_management import planet_mgmt_bp
+    from backend.routes.fleet_management import fleet_mgmt_bp
+    app.register_blueprint(users_bp)
+    app.register_blueprint(planets_bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(planet_mgmt_bp)
+    app.register_blueprint(fleet_mgmt_bp)
 
     with app.app_context():
         db.create_all()
