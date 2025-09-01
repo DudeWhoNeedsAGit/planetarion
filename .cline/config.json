@@ -1,0 +1,22 @@
+{
+    "model": "cline:x-ai/grok-code-fast-1",
+    "style": "structured",
+    "objectives": [
+      "Build a multiplayer tick-based strategy web game inspired by Planetarion",
+      "Backend: Flask + SQLAlchemy + REST",
+      "Frontend: React + Tailwind",
+      "Database: Postgres with migrations",
+      "Scheduler: APScheduler running every 5 minutes",
+      "Deployment: docker-compose with backend, frontend, and db",
+      "Keep combat logic stubbed for now; focus on scaffolding and API contracts"
+    ],
+    "rules": [
+      "Use clean, modular code with folders for backend, frontend, and database",
+      "Write SQLAlchemy models for User, Planet, Fleet, Alliance, TickLog",
+      "Expose REST endpoints with Flask blueprints",
+      "Frontend must fetch data from backend APIs",
+      "Use Postgres for persistence",
+      "Tick engine must run automatically and be testable via endpoint"
+    ]
+  }
+  
