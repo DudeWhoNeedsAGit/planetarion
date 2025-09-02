@@ -22,7 +22,7 @@ app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-jwt-secret-key-
 app.config['JWT_ACCESS_TOKEN_EXPIRE_MINUTES'] = 60  # 1 hour
 
 # Initialize extensions
-from database import db, migrate
+from .database import db, migrate
 db.init_app(app)
 migrate.init_app(app, db)
 CORS(app)
@@ -32,7 +32,7 @@ jwt = JWTManager(app)
 scheduler = BackgroundScheduler()
 
 # Import models
-from models import User, Planet, Fleet, Alliance, TickLog
+from .models import User, Planet, Fleet, Alliance, TickLog
 
 # HTML template for the login page
 LOGIN_PAGE_HTML = """
@@ -401,11 +401,11 @@ def manual_tick():
     tick_changes = []
 
     for planet in planets:
-        # Calculate production for this tick (5 seconds = 1/7200 hour)
+        # Calculate production for this tick (5 seconds = 1/72 hour for fast testing)
         # Use max(1, ...) to ensure at least 1 resource per tick for active mines
-        metal_produced = max(1, int(planet.metal_mine * 30 * (1.1 ** planet.metal_mine) / 7200)) if planet.metal_mine > 0 else 0
-        crystal_produced = max(1, int(planet.crystal_mine * 20 * (1.1 ** planet.crystal_mine) / 7200)) if planet.crystal_mine > 0 else 0
-        deuterium_produced = max(1, int(planet.deuterium_synthesizer * 10 * (1.1 ** planet.deuterium_synthesizer) / 7200)) if planet.deuterium_synthesizer > 0 else 0
+        metal_produced = max(1, int(planet.metal_mine * 30 * (1.1 ** planet.metal_mine) / 72)) if planet.metal_mine > 0 else 0
+        crystal_produced = max(1, int(planet.crystal_mine * 20 * (1.1 ** planet.crystal_mine) / 72)) if planet.crystal_mine > 0 else 0
+        deuterium_produced = max(1, int(planet.deuterium_synthesizer * 10 * (1.1 ** planet.deuterium_synthesizer) / 72)) if planet.deuterium_synthesizer > 0 else 0
 
         # Update planet resources
         planet.metal += metal_produced
@@ -430,10 +430,10 @@ def manual_tick():
 
 # Register blueprints after all models are defined
 def register_blueprints():
-    from routes.auth import auth_bp
-    from routes.planet_user import planet_mgmt_bp
-    from routes.fleet import fleet_mgmt_bp
-    from routes.shipyard import shipyard_bp
+    from .routes.auth import auth_bp
+    from .routes.planet_user import planet_mgmt_bp
+    from .routes.fleet import fleet_mgmt_bp
+    from .routes.shipyard import shipyard_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(planet_mgmt_bp)
     app.register_blueprint(fleet_mgmt_bp)
@@ -443,7 +443,7 @@ register_blueprints()
 
 def start_scheduler():
     """Start the tick scheduler"""
-    from services.tick import run_tick
+    from .services.tick import run_tick
 
     # Wrapper function to provide application context
     def run_tick_with_context():

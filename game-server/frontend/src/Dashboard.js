@@ -12,11 +12,36 @@ function Dashboard({ user, onLogout }) {
   const [selectedPlanet, setSelectedPlanet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
+  const [pollingInterval, setPollingInterval] = useState(null);
   const { showSuccess, showError } = useToast();
 
   useEffect(() => {
-    fetchPlanets();
+    fetchPlanets(); // Initial fetch
+
+    // Start polling every 10 seconds for real-time updates
+    const interval = setInterval(fetchPlanets, 10000);
+    setPollingInterval(interval);
+
+    // Cleanup interval on unmount
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
   }, []);
+
+  // Update selected planet when planets data changes
+  useEffect(() => {
+    if (planets.length > 0 && !selectedPlanet) {
+      setSelectedPlanet(planets[0]);
+    } else if (selectedPlanet) {
+      // Update selected planet with latest data
+      const updatedPlanet = planets.find(p => p.id === selectedPlanet.id);
+      if (updatedPlanet) {
+        setSelectedPlanet(updatedPlanet);
+      }
+    }
+  }, [planets, selectedPlanet]);
 
   const fetchPlanets = async () => {
     try {
@@ -99,6 +124,72 @@ function Dashboard({ user, onLogout }) {
       default:
         return { metal: 0, crystal: 0, deuterium: 0 };
     }
+  };
+
+  const calculateProductionRate = (buildingType, level) => {
+    // Calculate production per tick (5 seconds) using divisor 72
+    const baseRate = buildingType === 'metal_mine' ? 30 :
+                     buildingType === 'crystal_mine' ? 20 :
+                     buildingType === 'deuterium_synthesizer' ? 10 : 0;
+
+    const hourlyRate = level * baseRate * Math.pow(1.1, level);
+    const perTickRate = Math.max(1, Math.floor(hourlyRate / 72));
+
+    return {
+      perTick: perTickRate,
+      perHour: Math.floor(hourlyRate)
+    };
+  };
+
+  const getProductionIncrease = (buildingType, currentLevel) => {
+    const current = calculateProductionRate(buildingType, currentLevel);
+    const next = calculateProductionRate(buildingType, currentLevel + 1);
+
+    return {
+      current: current.perTick,
+      next: next.perTick,
+      increase: next.perTick - current.perTick,
+      currentHourly: current.perHour,
+      nextHourly: next.perHour,
+      increaseHourly: next.perHour - current.perHour
+    };
+  };
+
+  const getAllProductionChanges = (buildingType, currentLevel) => {
+    const changes = {
+      metal: { current: 0, next: 0, increase: 0 },
+      crystal: { current: 0, next: 0, increase: 0 },
+      deuterium: { current: 0, next: 0, increase: 0 }
+    };
+
+    // Calculate production for each resource type
+    const resourceTypes = ['metal_mine', 'crystal_mine', 'deuterium_synthesizer'];
+
+    resourceTypes.forEach(resourceType => {
+      const production = getProductionIncrease(resourceType, currentLevel);
+
+      if (resourceType === 'metal_mine') {
+        changes.metal = {
+          current: production.currentHourly,
+          next: production.nextHourly,
+          increase: production.increaseHourly
+        };
+      } else if (resourceType === 'crystal_mine') {
+        changes.crystal = {
+          current: production.currentHourly,
+          next: production.nextHourly,
+          increase: production.increaseHourly
+        };
+      } else if (resourceType === 'deuterium_synthesizer') {
+        changes.deuterium = {
+          current: production.currentHourly,
+          next: production.nextHourly,
+          increase: production.increaseHourly
+        };
+      }
+    });
+
+    return changes;
   };
 
   const canAffordUpgrade = (buildingType, currentLevel) => {
@@ -246,34 +337,57 @@ function Dashboard({ user, onLogout }) {
                       { key: 'deuterium_synthesizer', name: 'Deuterium Synthesizer', icon: '⚡' },
                       { key: 'solar_plant', name: 'Solar Plant', icon: '☀️' },
                       { key: 'fusion_reactor', name: 'Fusion Reactor', icon: '🔥' }
-                    ].map(building => (
-                      <div key={building.key} className="bg-gray-700 p-3 rounded">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-white font-medium">
-                            {building.icon} {building.name}
-                          </span>
-                          <span className="text-gray-300">
-                            Level {selectedPlanet.structures[building.key]}
-                          </span>
-                        </div>
+                    ].map(building => {
+                      const currentLevel = selectedPlanet.structures[building.key];
+                      const productionChanges = ['metal_mine', 'crystal_mine', 'deuterium_synthesizer'].includes(building.key)
+                        ? getAllProductionChanges(building.key, currentLevel)
+                        : null;
 
-                        <div className="flex justify-between items-center">
-                          <div className="text-xs text-gray-400">
-                            Cost: {Object.entries(calculateUpgradeCost(building.key, selectedPlanet.structures[building.key]))
-                              .filter(([_, cost]) => cost > 0)
-                              .map(([resource, cost]) => `${resource}: ${cost.toLocaleString()}`)
-                              .join(', ')}
+                      return (
+                        <div key={building.key} className="bg-gray-700 p-3 rounded">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-white font-medium">
+                              {building.icon} {building.name}
+                            </span>
+                            <span className="text-gray-300">
+                              Level {currentLevel}
+                            </span>
                           </div>
-                          <button
-                            onClick={() => handleBuildingUpgrade(building.key, selectedPlanet.structures[building.key] + 1)}
-                            disabled={upgrading || !canAffordUpgrade(building.key, selectedPlanet.structures[building.key])}
-                            className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-sm rounded"
-                          >
-                            {upgrading ? 'Upgrading...' : 'Upgrade'}
-                          </button>
+
+                          {/* Production Changes for All Resources */}
+                          {productionChanges && (
+                            <div className="mb-2 text-xs space-y-1">
+                              {Object.entries(productionChanges).map(([resource, change]) => (
+                                <div key={resource} className="text-gray-400">
+                                  <span className="capitalize">{resource}:</span>
+                                  <span className="ml-1">+{change.current}/hour → </span>
+                                  <span className="text-green-400 font-medium">+{change.next}/hour</span>
+                                  {change.increase > 0 && (
+                                    <span className="text-green-400 ml-1">(+{change.increase})</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex justify-between items-center">
+                            <div className="text-xs text-gray-400">
+                              Cost: {Object.entries(calculateUpgradeCost(building.key, currentLevel))
+                                .filter(([_, cost]) => cost > 0)
+                                .map(([resource, cost]) => `${resource}: ${cost.toLocaleString()}`)
+                                .join(', ')}
+                            </div>
+                            <button
+                              onClick={() => handleBuildingUpgrade(building.key, currentLevel + 1)}
+                              disabled={upgrading || !canAffordUpgrade(building.key, currentLevel)}
+                              className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-sm rounded hover:scale-105 transition-transform"
+                            >
+                              {upgrading ? 'Upgrading...' : 'Upgrade'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>

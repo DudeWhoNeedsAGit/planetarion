@@ -11,12 +11,13 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Create non-root user first
+RUN useradd --create-home --shell /bin/bash app
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
+# Copy application code and set ownership in one step
+COPY --chown=app:app . .
+
+# Switch to non-root user
 USER app
 
 EXPOSE 5000

@@ -6,8 +6,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'backend'))
 
 from flask import Flask
-from database import db
-from models import User, Planet, Fleet, Alliance, TickLog
+from backend.database import db
+from backend.models import User, Planet, Fleet, Alliance, TickLog
 from flask_jwt_extended import JWTManager
 
 class TestStaticFileServing:
@@ -26,10 +26,10 @@ class TestStaticFileServing:
         jwt = JWTManager(cls.app)
 
         # Import and register routes
-        from routes.auth import auth_bp
-        from routes.planet_user import planet_mgmt_bp
-        from routes.fleet import fleet_mgmt_bp
-        from routes.shipyard import shipyard_bp
+        from backend.routes.auth import auth_bp
+        from backend.routes.planet_user import planet_mgmt_bp
+        from backend.routes.fleet import fleet_mgmt_bp
+        from backend.routes.shipyard import shipyard_bp
         cls.app.register_blueprint(auth_bp)
         cls.app.register_blueprint(planet_mgmt_bp)
         cls.app.register_blueprint(fleet_mgmt_bp)

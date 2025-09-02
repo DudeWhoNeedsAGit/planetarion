@@ -1,6 +1,6 @@
 from datetime import datetime
-from database import db
-from models import Planet, Fleet, TickLog
+from ..database import db
+from ..models import Planet, Fleet, TickLog
 from flask import current_app
 import math
 
@@ -44,11 +44,11 @@ def process_resource_generation():
         # Apply energy efficiency
         energy_ratio = min(1.0, energy_production / energy_consumption) if energy_consumption > 0 else 1.0
 
-        # Calculate actual production for this tick (5 seconds = 1/7200 hour)
+        # Calculate actual production for this tick (5 seconds = 1/72 hour for fast testing)
         # Use max(1, ...) to ensure at least 1 resource per tick for active mines
-        tick_metal = max(1, int(metal_rate * energy_ratio / 7200)) if planet.metal_mine > 0 else 0
-        tick_crystal = max(1, int(crystal_rate * energy_ratio / 7200)) if planet.crystal_mine > 0 else 0
-        tick_deuterium = max(1, int(deuterium_rate * energy_ratio / 7200)) if planet.deuterium_synthesizer > 0 else 0
+        tick_metal = max(1, int(metal_rate * energy_ratio / 72)) if planet.metal_mine > 0 else 0
+        tick_crystal = max(1, int(crystal_rate * energy_ratio / 72)) if planet.crystal_mine > 0 else 0
+        tick_deuterium = max(1, int(deuterium_rate * energy_ratio / 72)) if planet.deuterium_synthesizer > 0 else 0
 
         # Update planet resources
         planet.metal += tick_metal

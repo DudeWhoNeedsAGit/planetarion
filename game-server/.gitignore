@@ -40,6 +40,8 @@ build/
 
 # Playwright
 playwright-report/data/
+*.webm
+test-results/**/*.webm
 
 
 

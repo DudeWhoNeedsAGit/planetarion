@@ -19,13 +19,14 @@ RUN pip install --no-cache-dir \
     Faker==19.3.1 \
     pytest-cov
 
-# Copy application code (will be mounted as volume)
-COPY . .
+# Create non-root user first
+RUN useradd --create-home --shell /bin/bash app
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
+# Copy files and set ownership in one step
+COPY --chown=app:app . .
+
 USER app
+
 
 # Set PYTHONPATH to include both app and backend directories
 ENV PYTHONPATH=/app:/app/backend:$PYTHONPATH

@@ -1,9 +1,8 @@
 from datetime import datetime
-from database import db
+from .database import db
 
 class User(db.Model):
     __tablename__ = 'users'
-    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -23,7 +22,6 @@ class User(db.Model):
 
 class Planet(db.Model):
     __tablename__ = 'planets'
-    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -52,7 +50,6 @@ class Planet(db.Model):
 
 class Fleet(db.Model):
     __tablename__ = 'fleets'
-    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
@@ -81,7 +78,6 @@ class Fleet(db.Model):
 
 class Alliance(db.Model):
     __tablename__ = 'alliances'
-    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
@@ -113,7 +109,6 @@ class Alliance(db.Model):
 
 class TickLog(db.Model):
     __tablename__ = 'tick_logs'
-    __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
     tick_number = db.Column(db.Integer, nullable=False)

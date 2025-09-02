@@ -17,7 +17,7 @@ class TestTickEndpoints:
         sample_planet.crystal = 5000
         sample_planet.deuterium = 2000
 
-        from database import db
+        from backend.database import db
         db.session.commit()
 
         # Record initial resources
@@ -46,8 +46,8 @@ class TestTickEndpoints:
     def test_manual_tick_no_planets(self, client):
         """Test manual tick when no planets exist"""
         # Delete all planets first
-        from models import Planet
-        from database import db
+        from backend.models import Planet
+        from backend.database import db
 
         Planet.query.delete()
         db.session.commit()
@@ -67,7 +67,7 @@ class TestTickEndpoints:
         sample_planet.solar_plant = 1  # Very low energy
         sample_planet.fusion_reactor = 0
 
-        from database import db
+        from backend.database import db
         db.session.commit()
 
         initial_metal = sample_planet.metal
@@ -85,8 +85,8 @@ class TestTickEndpoints:
 
     def test_manual_tick_multiple_planets(self, client, sample_user):
         """Test manual tick with multiple planets"""
-        from models import Planet
-        from database import db
+        from backend.models import Planet
+        from backend.database import db
 
         # Create additional planets
         planets_data = [
@@ -110,8 +110,8 @@ class TestTickEndpoints:
 
     def test_manual_tick_creates_tick_log(self, client, sample_planet):
         """Test that manual tick creates tick log entries"""
-        from models import TickLog
-        from database import db
+        from backend.models import TickLog
+        from backend.database import db
 
         # Set up planet
         sample_planet.metal_mine = 5
@@ -133,8 +133,8 @@ class TestTickEndpoints:
 
     def test_manual_tick_updates_tick_number(self, client, sample_planet):
         """Test that tick numbers increment properly"""
-        from models import TickLog
-        from database import db
+        from backend.models import TickLog
+        from backend.database import db
 
         # Create initial tick log
         initial_tick = TickLog(
@@ -165,7 +165,7 @@ class TestTickIntegration:
         assert response.status_code == 200
 
         # Verify data integrity
-        from database import db
+        from backend.database import db
         db.session.refresh(sample_planet)
         db.session.refresh(sample_fleet)
 
@@ -181,7 +181,7 @@ class TestTickIntegration:
         sample_planet.solar_plant = 0
         sample_planet.fusion_reactor = 0
 
-        from database import db
+        from backend.database import db
         db.session.commit()
 
         initial_resources = {
@@ -207,7 +207,7 @@ class TestTickIntegration:
         sample_planet.deuterium = 999999999999
         sample_planet.metal_mine = 10
 
-        from database import db
+        from backend.database import db
         db.session.commit()
 
         response = client.post('/api/tick')
@@ -227,7 +227,7 @@ class TestTickEdgeCases:
         sample_fleet.status = 'traveling'
         sample_fleet.arrival_time = datetime.utcnow() + timedelta(hours=1)
 
-        from database import db
+        from backend.database import db
         db.session.commit()
 
         response = client.post('/api/tick')
@@ -263,7 +263,7 @@ class TestAutomaticTickSystem:
     def test_automatic_tick_resource_generation(self, client, sample_planet):
         """Test that automatic ticks increase resources over 15 seconds (3 ticks)"""
         import time
-        from database import db
+        from backend.database import db
 
         # Set up planet with mines for predictable production
         sample_planet.metal_mine = 5
@@ -324,8 +324,8 @@ class TestAutomaticTickSystem:
     def test_automatic_tick_timing_accuracy(self, client, sample_planet):
         """Test that ticks occur at approximately 5-second intervals"""
         import time
-        from models import TickLog
-        from database import db
+        from backend.models import TickLog
+        from backend.database import db
 
         # Clear existing tick logs
         TickLog.query.delete()

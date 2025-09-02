@@ -12,8 +12,8 @@ All construction endpoints require JWT authentication and operate on user's plan
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from database import db
-from models import User, Planet, Fleet
+from ..database import db
+from ..models import User, Planet, Fleet
 
 shipyard_bp = Blueprint('shipyard', __name__, url_prefix='/api/shipyard')
 
