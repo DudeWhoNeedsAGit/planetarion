@@ -7,10 +7,10 @@
   - generic [ref=e7]:
     - generic [ref=e8]:
       - generic [ref=e9]: Username
-      - textbox [ref=e10]: e2etestuser
+      - textbox [ref=e10]: testuser
     - generic [ref=e11]:
       - generic [ref=e12]: Password
-      - textbox [ref=e13]: testpassword123
+      - textbox [ref=e13]: testpassword
     - button "Login" [ref=e14] [cursor=pointer]
   - paragraph [ref=e16]:
     - text: Don't have an account?

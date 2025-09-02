@@ -1,10 +1,14 @@
 # Workflow Rules
 
+## Memory Bank Updates Before Commit
+- **Value:** `true`
+- **Instruction:** Always keep `activeContext.md` and `progress.md` up to date before committing code.
+
 ## Run Tests Before Commit
 - **Value:** `true`
 
 ## Test Command
-- **Value:** `pytest gameserver/tests/unit tests/integration && npx playwright test gameserver/tests/e2e`
+- **Value:** `./run-tests.sh all`
 
 ## Commit Only on Success
 - **Value:** `true`
@@ -40,7 +44,7 @@
 - **Value:** `planetarion`
 
 ### Tasks Folder
-- **Value:** `.cline/tasks`
+- **Value:** `.clinerules/tasks`
 
 ### Project Folder
-- **Value:** `gameserver`
+- **Value:** `game-server`

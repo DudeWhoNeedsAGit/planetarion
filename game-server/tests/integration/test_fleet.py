@@ -16,7 +16,7 @@ class TestFleetEndpoints:
         with client.application.app_context():
             with patch('flask_jwt_extended.view_decorators.jwt_required') as mock_jwt:
                 mock_jwt.return_value = lambda f: f
-                with patch('backend.routes.fleet_management.get_jwt_identity', return_value=1):
+                with patch('backend.routes.fleet.get_jwt_identity', return_value=1):
                     response = client.get('/api/fleet')
                     assert response.status_code == 200
                     data = json.loads(response.data)

@@ -120,10 +120,11 @@ class TestAuthEndpoints:
         assert 'user' in data
         assert data['user']['username'] == 'loginuser'
 
-        # Verify token is valid
+        # Verify token is valid and contains user ID
         token = data['access_token']
         decoded = decode_token(token)
-        assert decoded['sub'] == 'loginuser'
+        # JWT token contains user ID (not username) for security
+        assert decoded['sub'] == str(data['user']['id'])
 
     def test_login_wrong_password(self, client, db_session):
         """Test login with wrong password"""

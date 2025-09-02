@@ -42,6 +42,8 @@ build/
 playwright-report/data/
 *.webm
 test-results/**/*.webm
+test-results/
+playwright-report/
 
 
 

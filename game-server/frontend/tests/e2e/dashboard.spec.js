@@ -2,10 +2,10 @@ const { test, expect } = require('@playwright/test');
 
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {
-    // Login first
+    // Login first - use credentials that match the test data
     await page.goto('/');
-    await page.fill('input[name="username"]', 'e2etestuser');
-    await page.fill('input[name="password"]', 'testpassword123');
+    await page.fill('input[name="username"]', 'testuser');
+    await page.fill('input[name="password"]', 'testpassword');
     await page.click('button[type="submit"]');
 
     // Wait for dashboard to load
@@ -15,7 +15,7 @@ test.describe('Dashboard', () => {
   test('should display dashboard with user info', async ({ page }) => {
     // Check header
     await expect(page.locator('h1')).toContainText('Planetarion');
-    await expect(page.locator('text=Welcome, e2etestuser!')).toBeVisible();
+    await expect(page.locator('text=Welcome, testuser!')).toBeVisible();
     await expect(page.locator('text=Logout')).toBeVisible();
   });
 
