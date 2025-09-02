@@ -27,6 +27,8 @@
 - ✅ **Authentication Working**: Login test passes - backend auth is functional
 - 🚨 **Navigation Issues**: 27/27 E2E tests failing at dashboard navigation (not auth)
 - 🚨 **UI Interaction Problems**: Cannot click navigation elements after login
+- 🚨 **Test Credential Mismatches**: conftest.py creates 'testuser' but auth.spec.js uses 'e2etestuser'
+- 🚨 **API Connectivity**: Backend not available during Playwright tests
 - 🚨 **Orphan Containers**: Docker containers from old test executions
 - 🚨 **Password Security**: Plain text storage, bcrypt implementation pending
 - 🚨 **Rate Limiting**: No API abuse prevention implemented
