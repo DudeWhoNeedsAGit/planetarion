@@ -254,6 +254,89 @@ function Dashboard({ user, onLogout }) {
     );
   };
 
+  // Energy calculation functions
+  const calculateEnergyStats = (planet) => {
+    if (!planet) return null;
+
+    const energyProduction = planet.structures.solar_plant * 20 + planet.structures.fusion_reactor * 50;
+    const energyConsumption = (
+      planet.structures.metal_mine * 10 +
+      planet.structures.crystal_mine * 10 +
+      planet.structures.deuterium_synthesizer * 20
+    );
+
+    const energyRatio = energyConsumption > 0 ? energyProduction / energyConsumption : 1;
+    const status = energyRatio >= 1.2 ? 'surplus' :
+                   energyRatio >= 1.0 ? 'balanced' : 'deficit';
+
+    return {
+      production: energyProduction,
+      consumption: energyConsumption,
+      ratio: energyRatio,
+      status: status,
+      efficiency: Math.min(1.0, energyRatio)
+    };
+  };
+
+  const calculateUpgradeEnergyImpact = (buildingType, currentLevel, planet) => {
+    if (!planet) return null;
+
+    const newLevel = currentLevel + 1;
+    const currentConsumption = (
+      planet.structures.metal_mine * 10 +
+      planet.structures.crystal_mine * 10 +
+      planet.structures.deuterium_synthesizer * 20
+    );
+
+    let additionalConsumption = 0;
+    if (buildingType === 'metal_mine' || buildingType === 'crystal_mine') {
+      additionalConsumption = 10;
+    } else if (buildingType === 'deuterium_synthesizer') {
+      additionalConsumption = 20;
+    }
+
+    const newConsumption = currentConsumption + additionalConsumption;
+    const energyProduction = planet.structures.solar_plant * 20 + planet.structures.fusion_reactor * 50;
+    const newRatio = newConsumption > 0 ? energyProduction / newConsumption : 1;
+
+    return {
+      additionalConsumption: additionalConsumption,
+      newConsumption: newConsumption,
+      newRatio: newRatio,
+      status: newRatio >= 1.2 ? 'surplus' :
+              newRatio >= 1.0 ? 'balanced' : 'deficit'
+    };
+  };
+
+  const getEnergyStatusIcon = (status) => {
+    switch (status) {
+      case 'surplus': return '🟢';
+      case 'balanced': return '🟡';
+      case 'deficit': return '🔴';
+      default: return '⚪';
+    }
+  };
+
+  const getEnergyStatusColor = (status) => {
+    switch (status) {
+      case 'surplus': return 'text-green-400';
+      case 'balanced': return 'text-yellow-400';
+      case 'deficit': return 'text-red-400';
+      default: return 'text-gray-400';
+    }
+  };
+
+  const calculateTheoreticalProduction = (buildingType, level) => {
+    const baseRate = buildingType === 'metal_mine' ? 30 :
+                     buildingType === 'crystal_mine' ? 20 :
+                     buildingType === 'deuterium_synthesizer' ? 10 : 0;
+    return level * baseRate * Math.pow(1.1, level);
+  };
+
+  const calculateActualProduction = (theoreticalRate, energyEfficiency) => {
+    return theoreticalRate * energyEfficiency;
+  };
+
   const renderSection = () => {
     switch (activeSection) {
       case 'overview':
@@ -330,6 +413,50 @@ function Dashboard({ user, onLogout }) {
                 {/* Buildings */}
                 <div className="bg-gray-800 rounded-lg p-6">
                   <h3 className="text-xl font-bold mb-4 text-white">Buildings</h3>
+
+                  {/* Current Energy Status Overview */}
+                  {(() => {
+                    const energyStats = calculateEnergyStats(selectedPlanet);
+                    return energyStats ? (
+                      <div className="mb-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-white font-medium flex items-center">
+                            <span className="mr-2">⚡</span>
+                            Energy Status
+                          </h4>
+                          <span className={`text-sm font-bold px-2 py-1 rounded ${getEnergyStatusColor(energyStats.status)} bg-opacity-20`}>
+                            {getEnergyStatusIcon(energyStats.status)} {energyStats.status.toUpperCase()}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <div className="text-gray-400">Production</div>
+                            <div className="text-green-400 font-medium">{energyStats.production}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-400">Consumption</div>
+                            <div className="text-red-400 font-medium">{energyStats.consumption}</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 pt-3 border-t border-gray-600">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-400">Efficiency Ratio</span>
+                            <span className={`${getEnergyStatusColor(energyStats.status)} font-medium`}>
+                              {(energyStats.ratio * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                          {energyStats.status === 'deficit' && (
+                            <div className="mt-2 text-orange-400 text-xs">
+                              ⚠️ Your mines are operating at reduced efficiency due to insufficient energy
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+
                   <div className="space-y-4">
                     {[
                       { key: 'metal_mine', name: 'Metal Mine', icon: '⛏️' },
@@ -339,51 +466,157 @@ function Dashboard({ user, onLogout }) {
                       { key: 'fusion_reactor', name: 'Fusion Reactor', icon: '🔥' }
                     ].map(building => {
                       const currentLevel = selectedPlanet.structures[building.key];
-                      const productionChanges = ['metal_mine', 'crystal_mine', 'deuterium_synthesizer'].includes(building.key)
-                        ? getAllProductionChanges(building.key, currentLevel)
-                        : null;
+                      const energyStats = calculateEnergyStats(selectedPlanet);
+                      const energyImpact = calculateUpgradeEnergyImpact(building.key, currentLevel, selectedPlanet);
+
+                      // Enhanced production calculations with energy awareness
+                      const isProductionBuilding = ['metal_mine', 'crystal_mine', 'deuterium_synthesizer'].includes(building.key);
+                      let productionInfo = null;
+
+                      if (isProductionBuilding) {
+                        const currentTheoretical = calculateTheoreticalProduction(building.key, currentLevel);
+                        const nextTheoretical = calculateTheoreticalProduction(building.key, currentLevel + 1);
+                        const currentActual = calculateActualProduction(currentTheoretical, energyStats?.efficiency || 1);
+                        const nextActual = calculateActualProduction(nextTheoretical, energyImpact?.newRatio || 1);
+
+                        productionInfo = {
+                          current: {
+                            theoretical: Math.floor(currentTheoretical),
+                            actual: Math.floor(currentActual)
+                          },
+                          next: {
+                            theoretical: Math.floor(nextTheoretical),
+                            actual: Math.floor(nextActual)
+                          },
+                          increase: {
+                            theoretical: Math.floor(nextTheoretical - currentTheoretical),
+                            actual: Math.floor(nextActual - currentActual)
+                          }
+                        };
+                      }
 
                       return (
-                        <div key={building.key} className="bg-gray-700 p-3 rounded">
-                          <div className="flex justify-between items-center mb-2">
+                        <div key={building.key} className="bg-gray-700 p-4 rounded group relative">
+                          {/* Building Header */}
+                          <div className="flex justify-between items-center mb-3">
                             <span className="text-white font-medium">
                               {building.icon} {building.name}
                             </span>
                             <span className="text-gray-300">
-                              Level {currentLevel}
+                              Level {currentLevel} → {currentLevel + 1}
                             </span>
                           </div>
 
-                          {/* Production Changes for All Resources */}
-                          {productionChanges && (
-                            <div className="mb-2 text-xs space-y-1">
-                              {Object.entries(productionChanges).map(([resource, change]) => (
-                                <div key={resource} className="text-gray-400">
-                                  <span className="capitalize">{resource}:</span>
-                                  <span className="ml-1">+{change.current}/hour → </span>
-                                  <span className="text-green-400 font-medium">+{change.next}/hour</span>
-                                  {change.increase > 0 && (
-                                    <span className="text-green-400 ml-1">(+{change.increase})</span>
-                                  )}
-                                </div>
-                              ))}
+                          {/* Energy Impact Warning */}
+                          {energyImpact && energyImpact.additionalConsumption > 0 && (
+                            <div className="mb-3 p-2 bg-yellow-900/30 border border-yellow-600/30 rounded">
+                              <div className="flex items-center text-yellow-400 text-xs mb-1">
+                                ⚠️ Energy Impact
+                              </div>
+                              <div className="text-xs text-gray-300">
+                                +{energyImpact.additionalConsumption} energy consumption
+                                <span className={`ml-2 ${getEnergyStatusColor(energyImpact.status)}`}>
+                                  → {getEnergyStatusIcon(energyImpact.status)} {energyImpact.status.toUpperCase()}
+                                </span>
+                              </div>
                             </div>
                           )}
 
-                          <div className="flex justify-between items-center">
-                            <div className="text-xs text-gray-400">
-                              Cost: {Object.entries(calculateUpgradeCost(building.key, currentLevel))
+                          {/* Production Information */}
+                          {productionInfo && (
+                            <div className="mb-3 p-2 bg-blue-900/20 border border-blue-600/30 rounded">
+                              <div className="text-xs text-blue-400 mb-1">📊 Production Rates</div>
+                              <div className="text-xs text-gray-300 space-y-1">
+                                <div>
+                                  Current: {productionInfo.current.actual}/hour
+                                  <span className="text-gray-500"> ({productionInfo.current.theoretical} theoretical)</span>
+                                </div>
+                                <div>
+                                  After Upgrade: {productionInfo.next.actual}/hour
+                                  <span className="text-gray-500"> ({productionInfo.next.theoretical} theoretical)</span>
+                                  <span className="text-green-400 ml-1">+{productionInfo.increase.actual}</span>
+                                </div>
+                                {energyImpact && energyImpact.newRatio < 1 && (
+                                  <div className="text-orange-400">
+                                    ⚠️ Reduced by {(100 - energyImpact.newRatio * 100).toFixed(1)}% due to energy shortage
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Upgrade Cost */}
+                          <div className="mb-3">
+                            <div className="text-xs text-gray-400 mb-1">💰 Upgrade Cost</div>
+                            <div className="text-xs text-yellow-400">
+                              {Object.entries(calculateUpgradeCost(building.key, currentLevel))
                                 .filter(([_, cost]) => cost > 0)
                                 .map(([resource, cost]) => `${resource}: ${cost.toLocaleString()}`)
-                                .join(', ')}
+                                .join(' | ')}
                             </div>
+                          </div>
+
+                          {/* Upgrade Button */}
+                          <div className="flex justify-end">
                             <button
                               onClick={() => handleBuildingUpgrade(building.key, currentLevel + 1)}
                               disabled={upgrading || !canAffordUpgrade(building.key, currentLevel)}
-                              className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-sm rounded hover:scale-105 transition-transform"
+                              className={`px-4 py-2 text-white text-sm rounded hover:scale-105 transition-transform ${
+                                energyImpact?.status === 'deficit'
+                                  ? 'bg-orange-600 hover:bg-orange-700'
+                                  : 'bg-green-600 hover:bg-green-700'
+                              } disabled:bg-gray-600`}
+                              title={
+                                energyImpact?.status === 'deficit'
+                                  ? 'Warning: This upgrade will cause energy deficit!'
+                                  : 'Upgrade building'
+                              }
                             >
                               {upgrading ? 'Upgrading...' : 'Upgrade'}
                             </button>
+                          </div>
+
+                          {/* Enhanced Tooltip on Hover */}
+                          <div className="absolute left-full ml-2 top-0 w-80 bg-gray-900 border border-gray-600 rounded-lg p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 shadow-lg">
+                            <div className="text-white font-medium mb-2">{building.icon} {building.name} Upgrade</div>
+
+                            {/* Detailed Energy Analysis */}
+                            {energyImpact && (
+                              <div className="mb-3">
+                                <div className="text-blue-400 text-sm font-medium mb-1">⚡ Energy Analysis</div>
+                                <div className="text-xs text-gray-300 space-y-1">
+                                  <div>Current: {energyStats?.production || 0} produced, {energyStats?.consumption || 0} consumed</div>
+                                  <div>After Upgrade: {energyStats?.production || 0} produced, {energyImpact.newConsumption} consumed</div>
+                                  <div className={getEnergyStatusColor(energyImpact.status)}>
+                                    Status: {energyImpact.status.toUpperCase()} ({(energyImpact.newRatio * 100).toFixed(1)}% efficiency)
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Production Breakdown */}
+                            {productionInfo && (
+                              <div className="mb-3">
+                                <div className="text-green-400 text-sm font-medium mb-1">📈 Production Impact</div>
+                                <div className="text-xs text-gray-300 space-y-1">
+                                  <div>Theoretical: +{productionInfo.increase.theoretical}/hour</div>
+                                  <div>Actual: +{productionInfo.increase.actual}/hour</div>
+                                  {energyImpact && energyImpact.newRatio < 1 && (
+                                    <div className="text-orange-400">
+                                      ⚠️ Production will be reduced by {(100 - energyImpact.newRatio * 100).toFixed(1)}% due to insufficient energy
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Strategic Advice */}
+                            <div className="text-purple-400 text-sm font-medium mb-1">💡 Strategic Advice</div>
+                            <div className="text-xs text-gray-300">
+                              {energyImpact?.status === 'deficit'
+                                ? 'Consider upgrading solar plants or fusion reactors first to avoid production penalties.'
+                                : 'This upgrade looks good! Your energy production can handle it.'}
+                            </div>
                           </div>
                         </div>
                       );
