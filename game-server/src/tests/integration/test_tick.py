@@ -83,10 +83,14 @@ class TestTickEndpoints:
         full_production = 20 * 30 / 12  # 20 mines * 30 base * 1/12 for 5 min tick
         assert metal_increase < full_production
 
-    def test_manual_tick_multiple_planets(self, client, sample_user):
+    def test_manual_tick_multiple_planets(self, client, sample_user, sample_planet):
         """Test manual tick with multiple planets"""
         from backend.models import Planet
         from backend.database import db
+
+        # Set up mines on the original sample planet
+        sample_planet.metal_mine = 5
+        sample_planet.crystal_mine = 3
 
         # Create additional planets
         planets_data = [
@@ -105,8 +109,8 @@ class TestTickEndpoints:
         assert response.status_code == 200
         data = json.loads(response.data)
 
-        # Should have changes for all planets
-        assert len(data['changes']) >= 3  # At least the original + 2 new
+        # Should have changes for all planets (original + 2 new)
+        assert len(data['changes']) == 3
 
     def test_manual_tick_creates_tick_log(self, client, sample_planet):
         """Test that manual tick creates tick log entries"""

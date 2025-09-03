@@ -2,7 +2,7 @@ import pytest
 import os
 import sys
 from datetime import datetime, timedelta
-from flask import Flask
+from flask import Flask, jsonify
 
 from backend.database import db
 from backend.models import User, Planet, Fleet, Alliance, TickLog
@@ -33,6 +33,44 @@ def app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(planet_mgmt_bp)
     app.register_blueprint(fleet_mgmt_bp)
+
+    # Add manual tick route for testing using the full production tick system
+    @app.route('/api/tick', methods=['POST'])
+    def manual_tick():
+        """Admin endpoint to manually trigger a tick (for testing/debugging)"""
+        from backend.services.tick import run_tick
+
+        # Use the full production tick system (includes logging and tick numbering)
+        run_tick()
+
+        # Get the changes from the most recent tick logs
+        from backend.models import TickLog
+        from backend.database import db
+
+        # Get the latest tick number
+        latest_tick = TickLog.query.order_by(TickLog.tick_number.desc()).first()
+        if latest_tick:
+            # Get all changes for this tick
+            changes = TickLog.query.filter_by(tick_number=latest_tick.tick_number).all()
+            changes_data = []
+            for change in changes:
+                if change.planet_id:  # Resource change
+                    changes_data.append({
+                        'planet_id': change.planet_id,
+                        'metal_change': change.metal_change or 0,
+                        'crystal_change': change.crystal_change or 0,
+                        'deuterium_change': change.deuterium_change or 0
+                    })
+
+            return jsonify({
+                'message': 'Manual tick executed successfully',
+                'changes': changes_data
+            })
+
+        return jsonify({
+            'message': 'Manual tick executed successfully',
+            'changes': []
+        })
 
     with app.app_context():
         db.create_all()
