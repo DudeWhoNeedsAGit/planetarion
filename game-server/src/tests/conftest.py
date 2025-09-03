@@ -115,3 +115,9 @@ def sample_alliance(db_session, sample_user):
     db_session.add(alliance)
     db_session.commit()
     return alliance
+
+def make_auth_headers(user_id):
+    """Helper function to create JWT auth headers for tests."""
+    from flask_jwt_extended import create_access_token
+    token = create_access_token(identity=str(user_id))  # Convert to string
+    return {"Authorization": f"Bearer {token}"}
