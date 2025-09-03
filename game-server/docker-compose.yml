@@ -18,21 +18,22 @@ services:
       retries: 5
 
   backend:
-    build: ./backend
+    build: ./src/backend
     environment:
       DATABASE_URL: postgresql://planetarion_user:planetarion_password@db:5432/planetarion
       FLASK_ENV: development
+      PYTHONPATH: /app
     ports:
       - "5000:5000"
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - ./backend:/app
+      - ./src/backend:/app
     command: python app.py
 
   frontend:
-    build: ./frontend
+    build: ./src/frontend
     ports:
       - "3000:3000"
     depends_on:
