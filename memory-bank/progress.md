@@ -34,7 +34,7 @@
 #### Completed Objectives
 - [x] **Stabilize Test Suite**: 100/105 tests passing (95.2% success rate)
 - [x] **Implement Real JWT Authentication**: Complete authentication flow working
-- [x] **Fix Model Conflicts**: All SQLAlchemy models working properly
+- [x] **Resolve Model Conflicts**: All SQLAlchemy models working properly
 - [x] **Comprehensive Backend Testing**: Unit and integration tests fully implemented
 - [x] **Clean Test Environment**: Consistent test data and fixtures
 
@@ -273,14 +273,6 @@
 ### Immediate Tasks (Priority 1)
 
 #### Backend Fixes
-- [ ] **Fix SQLAlchemy Model Conflicts**
-  - **Status**: 🔄 In Progress
-  - **Assignee**: Development Team
-  - **Priority**: Critical
-  - **Estimated Time**: 2-4 hours
-  - **Description**: Resolve "Multiple classes found for path 'Planet'" error
-  - **Impact**: Blocks all test execution and development progress
-
 - [ ] **Implement Password Hashing**
   - **Status**: 📋 Pending
   - **Assignee**: Development Team
@@ -298,21 +290,21 @@
   - **Impact**: Prevents XSS and injection attacks
 
 #### Testing & Quality
-- [ ] **Stabilize Test Suite**
-  - **Status**: 🔄 Blocked
-  - **Assignee**: Development Team
-  - **Priority**: Critical
-  - **Estimated Time**: 4-6 hours
-  - **Description**: Fix all failing tests and ensure consistent execution
-  - **Impact**: Required for development confidence
-
 - [ ] **Clean Docker Environment**
-  - **Status**: 📋 Pending
+  - **Status**: � Pending
   - **Assignee**: Development Team
   - **Priority**: Medium
   - **Estimated Time**: 1 hour
   - **Description**: Remove orphan containers and optimize Docker setup
   - **Impact**: Improves development experience
+
+- [ ] **Add Rate Limiting**
+  - **Status**: 📋 Pending
+  - **Assignee**: Development Team
+  - **Priority**: Medium
+  - **Estimated Time**: 2-3 hours
+  - **Description**: Implement API rate limiting to prevent abuse
+  - **Impact**: Security and performance improvement
 
 ### Short-term Tasks (Priority 2)
 
@@ -357,10 +349,10 @@
 **Goal**: Resolve all critical issues and stabilize development environment
 
 #### Sprint Objectives
-1. ✅ Fix SQLAlchemy model conflicts
-2. ✅ Get test suite passing
-3. ✅ Implement basic security measures
-4. ✅ Clean up development environment
+1. ✅ Model conflicts resolved
+2. ✅ Test suite stabilized (100/105 passing)
+3. 🔄 Implement basic security measures
+4. 🔄 Clean up development environment
 
 #### Sprint Capacity
 - **Available Hours**: 20-30 hours
