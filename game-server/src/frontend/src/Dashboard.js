@@ -3,6 +3,7 @@ import axios from 'axios';
 import Navigation from './Navigation';
 import Overview from './Overview';
 import FleetManagement from './FleetManagement';
+import LuckyWheel from './LuckyWheel';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
 
@@ -629,6 +630,20 @@ function Dashboard({ user, onLogout }) {
         );
       case 'fleets':
         return <FleetManagement user={user} planets={planets} />;
+      case 'wheel':
+        return (
+          <div className="max-w-md mx-auto">
+            <LuckyWheel
+              planets={planets}
+              selectedPlanet={selectedPlanet}
+              onBuffApplied={(multiplier, duration) => {
+                // For now, just show a success message
+                // In the future, this could apply actual buffs to production
+                showSuccess(`🎉 Production boosted by ${multiplier}x for ${Math.floor(duration / 60000)} minutes!`);
+              }}
+            />
+          </div>
+        );
       case 'research':
         return (
           <div className="bg-gray-800 rounded-lg p-6">

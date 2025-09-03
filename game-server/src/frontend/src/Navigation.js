@@ -5,6 +5,7 @@ function Navigation({ activeSection, onSectionChange }) {
     { id: 'overview', label: 'Overview', icon: '🏠' },
     { id: 'planets', label: 'Planets', icon: '🪐' },
     { id: 'fleets', label: 'Fleets', icon: '🚀' },
+    { id: 'wheel', label: 'Lucky Wheel', icon: '🎰' },
     { id: 'shipyard', label: 'Shipyard', icon: '⚙️' },
     { id: 'research', label: 'Research', icon: '🔬' },
     { id: 'alliance', label: 'Alliance', icon: '🤝' },
