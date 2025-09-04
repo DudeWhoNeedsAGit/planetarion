@@ -6,8 +6,9 @@ import Dashboard from './Dashboard';
 import { ToastProvider, useToast } from './ToastContext';
 import { ToastContainer } from './Toast';
 
-// Set up axios defaults
-axios.defaults.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+// Set up axios defaults with external IP for production
+// This ensures the browser can always connect to the backend
+axios.defaults.baseURL = 'http://192.168.0.133:5000';
 
 // Add token to requests if available
 const token = localStorage.getItem('token');

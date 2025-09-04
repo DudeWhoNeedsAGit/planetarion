@@ -54,6 +54,11 @@ playwright-report/
 .env.test.local
 .env.production.local
 
+# QNAP Deployment Configuration (contains sensitive network info)
+.qnap-deploy.env
+qnap-deploy.env
+deploy.env
+
 # IDE
 .vscode/
 .idea/
