@@ -9,13 +9,14 @@ import sys
 import random
 from datetime import datetime, timedelta
 from faker import Faker
+from pathlib import Path
 
-# Add backend directory to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+# Import from centralized config using relative imports (now inside src/)
+from ..config import PATHS
 
 from flask import Flask
-from database import db
-from models import User, Planet, Fleet, Alliance, TickLog
+from ..backend.database import db
+from ..backend.models import User, Planet, Fleet, Alliance, TickLog
 
 # Initialize Faker
 fake = Faker()

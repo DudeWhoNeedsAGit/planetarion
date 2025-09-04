@@ -4,7 +4,7 @@ import os
 import sys
 from datetime import datetime, timedelta
 from unittest.mock import patch
-
+from src.tests.conftest import make_auth_headers
 
 
 class TestFleetEndpoints:
@@ -12,7 +12,6 @@ class TestFleetEndpoints:
 
     def test_get_user_fleets_empty(self, client, sample_user):
         """Test getting fleets when user has none"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_user.id)
 
         response = client.get('/api/fleet', headers=headers)
@@ -23,7 +22,6 @@ class TestFleetEndpoints:
 
     def test_get_user_fleets_with_data(self, client, sample_fleet):
         """Test getting fleets when user has fleets"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_fleet.user_id)
 
         response = client.get('/api/fleet', headers=headers)
@@ -40,7 +38,6 @@ class TestFleetEndpoints:
 
     def test_create_fleet_success(self, client, sample_user, sample_planet):
         """Test creating a new fleet successfully"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_user.id)
 
         fleet_data = {
@@ -65,7 +62,6 @@ class TestFleetEndpoints:
 
     def test_create_fleet_missing_fields(self, client, sample_user):
         """Test creating a fleet with missing required fields"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_user.id)
 
         incomplete_data = {
@@ -83,7 +79,6 @@ class TestFleetEndpoints:
 
     def test_create_fleet_invalid_planet(self, client, sample_user):
         """Test creating a fleet on a planet not owned by user"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_user.id)
 
         fleet_data = {
@@ -101,7 +96,6 @@ class TestFleetEndpoints:
 
     def test_create_fleet_empty_ships(self, client, sample_user, sample_planet):
         """Test creating a fleet with no ships"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_user.id)
 
         fleet_data = {
@@ -119,12 +113,11 @@ class TestFleetEndpoints:
 
     def test_send_fleet_success(self, client, sample_fleet):
         """Test sending a fleet successfully"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_fleet.user_id)
 
         # Create another planet as target
-        from backend.models import Planet
-        from backend.database import db
+        from src.backend.models import Planet
+        from src.backend.database import db
 
         target_planet = Planet(
             name='Target Planet',
@@ -153,7 +146,6 @@ class TestFleetEndpoints:
 
     def test_send_fleet_invalid_fleet(self, client, sample_user):
         """Test sending a non-existent fleet"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_user.id)
 
         send_data = {
@@ -172,12 +164,11 @@ class TestFleetEndpoints:
 
     def test_send_fleet_already_moving(self, client, sample_fleet):
         """Test sending a fleet that's already moving"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_fleet.user_id)
 
         # Set fleet to traveling
         sample_fleet.status = 'traveling'
-        from backend.database import db
+        from src.backend.database import db
         db.session.commit()
 
         send_data = {
@@ -196,13 +187,12 @@ class TestFleetEndpoints:
 
     def test_recall_fleet_success(self, client, sample_fleet):
         """Test recalling a fleet successfully"""
-        from conftest import make_auth_headers
         headers = make_auth_headers(sample_fleet.user_id)
 
         # Set fleet to traveling
         sample_fleet.status = 'traveling'
         sample_fleet.arrival_time = datetime.utcnow() + timedelta(hours=2)
-        from backend.database import db
+        from src.backend.database import db
         db.session.commit()
 
         response = client.post(f'/api/fleet/recall/{sample_fleet.id}', headers=headers)
@@ -217,7 +207,6 @@ class TestFleetEndpoints:
         """Test recalling a non-existent fleet"""
         from conftest import make_auth_headers
         headers = make_auth_headers(sample_user.id)
-
         response = client.post('/api/fleet/recall/99999', headers=headers)
 
         assert response.status_code == 404
@@ -228,7 +217,6 @@ class TestFleetEndpoints:
         """Test recalling a stationed fleet (should fail)"""
         from conftest import make_auth_headers
         headers = make_auth_headers(sample_fleet.user_id)
-
         # Fleet is already stationed by default
         response = client.post(f'/api/fleet/recall/{sample_fleet.id}', headers=headers)
 
@@ -261,8 +249,8 @@ class TestFleetIntegration:
         fleet_id = response.get_json()['fleet']['id']
 
         # Create target planet
-        from backend.models import Planet
-        from backend.database import db
+        from src.backend.models import Planet
+        from src.backend.database import db
         target_planet = Planet(
             name='Target', x=100, y=100, z=100,
             user_id=sample_user.id

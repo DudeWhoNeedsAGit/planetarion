@@ -2,6 +2,7 @@ import pytest
 import json
 import os
 import sys
+from src.backend.database import db
 
 class TestPlanetEndpoints:
     """Test planet API endpoints"""
@@ -167,7 +168,6 @@ class TestPlanetIntegration:
         sample_planet.crystal_mine = 6
         sample_planet.solar_plant = 12
 
-        from backend.database import db
         db.session.commit()
 
         # Get planet data

@@ -29,6 +29,13 @@
 - **black**: Code formatting
 - **flake8**: Linting and style checking
 
+### Package Structure & Import Management
+- **Clean Package Architecture**: `src/` as Python project root with proper `__init__.py` files
+- **Absolute Imports**: Consistent `src.backend.*` import patterns across all modules
+- **pytest Configuration**: `pythonpath = src` in `pytest.ini` for proper test execution
+- **Import Resolution**: Eliminated all `sys.path.insert()` calls and `PYTHONPATH` environment variables
+- **Module Execution**: `python -m backend.app` for proper relative import handling
+
 ## Frontend Technology Stack
 
 ### Core Framework

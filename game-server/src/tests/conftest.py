@@ -1,11 +1,6 @@
 import pytest
 import os
-import sys
 from datetime import datetime, timedelta
-from pathlib import Path
-
-# Add the src directory to Python path for our new structure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.backend.app import create_app
 from src.backend.database import db

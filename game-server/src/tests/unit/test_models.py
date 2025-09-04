@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta
 
-from backend.models import User, Planet, Fleet, Alliance, TickLog
+from src.backend.models import User, Planet, Fleet, Alliance, TickLog
 
 class TestUserModel:
     """Test User model CRUD operations and relationships"""

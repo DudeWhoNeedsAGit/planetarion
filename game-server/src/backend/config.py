@@ -72,13 +72,17 @@ class ProductionConfig(Config):
 
     # Production JWT secret (required)
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-change-in-production')
-    if JWT_SECRET_KEY == 'jwt-secret-key-change-in-production':
-        raise ValueError("JWT_SECRET_KEY must be set in production")
 
     # Production Flask secret (required)
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-    if SECRET_KEY == 'dev-secret-key-change-in-production':
-        raise ValueError("SECRET_KEY must be set in production")
+
+    def __init__(self):
+        super().__init__()
+        # Validate required production settings
+        if self.JWT_SECRET_KEY == 'jwt-secret-key-change-in-production':
+            raise ValueError("JWT_SECRET_KEY must be set in production")
+        if self.SECRET_KEY == 'dev-secret-key-change-in-production':
+            raise ValueError("SECRET_KEY must be set in production")
 
 
 # Configuration mapping

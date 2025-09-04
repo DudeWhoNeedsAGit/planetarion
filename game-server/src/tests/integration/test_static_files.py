@@ -1,11 +1,9 @@
 import os
-import sys
+import pytest
 from pathlib import Path
 
-# Add the src directory to Python path for our new structure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from src.backend.app import create_app
+from src.config import PATHS, ensure_path_exists
 
 class TestStaticFileServing:
     """Test cases for static file serving functionality"""
@@ -15,15 +13,15 @@ class TestStaticFileServing:
         """Set up test Flask app using our new app factory"""
         cls.app = create_app('testing')
 
-        # Ensure static files exist for testing
-        static_dir = Path(__file__).parent.parent.parent / 'frontend' / 'build' / 'static'
+        # Ensure static files exist for testing - use centralized config
+        static_dir = PATHS['frontend_static']
         if not static_dir.exists():
             # Create mock static files for testing
-            static_dir.mkdir(parents=True, exist_ok=True)
-            css_dir = static_dir / 'css'
-            js_dir = static_dir / 'js'
-            css_dir.mkdir(exist_ok=True)
-            js_dir.mkdir(exist_ok=True)
+            ensure_path_exists(static_dir)
+            css_dir = PATHS['frontend_css']
+            js_dir = PATHS['frontend_js']
+            ensure_path_exists(css_dir)
+            ensure_path_exists(js_dir)
 
             # Create mock files
             (css_dir / 'main.1c4a9c11.css').write_text('/* Mock CSS */')
@@ -74,10 +72,10 @@ class TestStaticFileServing:
 
     def test_static_files_exist(self):
         """Test that static files actually exist on disk"""
-        static_dir = Path(__file__).parent.parent.parent / 'frontend' / 'build' / 'static'
+        static_dir = PATHS['frontend_static']
 
-        css_file = static_dir / 'css' / 'main.1c4a9c11.css'
-        js_file = static_dir / 'js' / 'main.84284f6f.js'
+        css_file = PATHS['frontend_css'] / 'main.1c4a9c11.css'
+        js_file = PATHS['frontend_js'] / 'main.84284f6f.js'
 
         assert css_file.exists(), f"CSS file does not exist: {css_file}"
         assert css_file.stat().st_size > 0, f"CSS file is empty: {css_file}"
@@ -87,15 +85,15 @@ class TestStaticFileServing:
 
     def test_static_directory_structure(self):
         """Test that the static directory structure is correct"""
-        static_dir = Path(__file__).parent.parent.parent / 'frontend' / 'build' / 'static'
+        static_dir = PATHS['frontend_static']
 
         assert static_dir.exists(), "Static directory does not exist"
-        assert (static_dir / 'css').exists(), "CSS directory does not exist"
-        assert (static_dir / 'js').exists(), "JS directory does not exist"
+        assert PATHS['frontend_css'].exists(), "CSS directory does not exist"
+        assert PATHS['frontend_js'].exists(), "JS directory does not exist"
 
         # Check that we have the expected files
-        css_files = list((static_dir / 'css').glob('*.css'))
-        js_files = list((static_dir / 'js').glob('*.js'))
+        css_files = list(PATHS['frontend_css'].glob('*.css'))
+        js_files = list(PATHS['frontend_js'].glob('*.js'))
 
         assert len(css_files) > 0, "No CSS files found"
         assert len(js_files) > 0, "No JS files found"

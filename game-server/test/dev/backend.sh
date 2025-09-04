@@ -14,7 +14,6 @@ TEST_DIR="$PROJECT_ROOT/game-server/tests"
 echo "🐍 Initializing Python virtual environment..."
 cd "$BACKEND_DIR"
 source venv/bin/activate
-export PYTHONPATH="$BACKEND_DIR"
 cd "$SCRIPT_DIR"
 
 echo "🔐 Authentication APIs..."
