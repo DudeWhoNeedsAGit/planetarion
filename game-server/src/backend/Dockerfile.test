@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY backend/requirements.txt backend/
-RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Install testing dependencies
 RUN pip install --no-cache-dir \
@@ -22,22 +22,15 @@ RUN pip install --no-cache-dir \
 # Create non-root user first
 RUN useradd --create-home --shell /bin/bash app
 
-# Copy files and set ownership in one step
+# Copy source files and set ownership
 COPY --chown=app:app . .
 
 USER app
 
-
-# Set PYTHONPATH to include both app and backend directories
-ENV PYTHONPATH=/app:/app/backend:$PYTHONPATH
-
-# Debug: Show current directory and PYTHONPATH
-RUN echo "Current directory: $(pwd)" && \
-    echo "PYTHONPATH: $PYTHONPATH" && \
-    ls -la /app && \
-    ls -la /app/backend
+# Set PYTHONPATH to include the src directory
+ENV PYTHONPATH=/app:$PYTHONPATH
 
 EXPOSE 5000
 
-# Default command for testing (run from backend directory)
-CMD ["sh", "-c", "echo '=== DEBUG INFO ===' && pwd && echo 'PYTHONPATH:' $PYTHONPATH && ls -la /app && ls -la /app/backend && echo '=== RUNNING TESTS ===' && python -c 'import sys; print(\"Python path:\", sys.path)' && python -m pytest ../tests -v --tb=short"]
+# Default command for testing
+CMD ["python", "-m", "pytest", "tests", "-v", "--tb=short"]

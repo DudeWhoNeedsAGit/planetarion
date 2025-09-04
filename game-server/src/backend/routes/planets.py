@@ -11,8 +11,8 @@ This module is primarily for administrative or public planet data access.
 """
 
 from flask import Blueprint, request, jsonify
-from backend.database import db
-from backend.models import Planet, User
+from ..database import db
+from ..models import Planet, User
 
 planets_bp = Blueprint('planets', __name__, url_prefix='/api')
 

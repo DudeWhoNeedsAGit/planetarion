@@ -2,65 +2,32 @@ import os
 import sys
 from pathlib import Path
 
-# Add the backend directory to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'backend'))
+# Add the src directory to Python path for our new structure
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from flask import Flask
-from backend.database import db
-from backend.models import User, Planet, Fleet, Alliance, TickLog
-from flask_jwt_extended import JWTManager
+from src.backend.app import create_app
 
 class TestStaticFileServing:
     """Test cases for static file serving functionality"""
 
     @classmethod
     def setup_class(cls):
-        """Set up test Flask app"""
-        cls.app = Flask(__name__)
-        cls.app.config['TESTING'] = True
-        cls.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-        cls.app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        cls.app.config['JWT_SECRET_KEY'] = 'test-jwt-secret-key'
+        """Set up test Flask app using our new app factory"""
+        cls.app = create_app('testing')
 
-        db.init_app(cls.app)
-        jwt = JWTManager(cls.app)
+        # Ensure static files exist for testing
+        static_dir = Path(__file__).parent.parent.parent / 'frontend' / 'build' / 'static'
+        if not static_dir.exists():
+            # Create mock static files for testing
+            static_dir.mkdir(parents=True, exist_ok=True)
+            css_dir = static_dir / 'css'
+            js_dir = static_dir / 'js'
+            css_dir.mkdir(exist_ok=True)
+            js_dir.mkdir(exist_ok=True)
 
-        # Import and register routes
-        from backend.routes.auth import auth_bp
-        from backend.routes.planet_user import planet_mgmt_bp
-        from backend.routes.fleet import fleet_mgmt_bp
-        from backend.routes.shipyard import shipyard_bp
-        cls.app.register_blueprint(auth_bp)
-        cls.app.register_blueprint(planet_mgmt_bp)
-        cls.app.register_blueprint(fleet_mgmt_bp)
-        cls.app.register_blueprint(shipyard_bp)
-
-        # Add static file routes
-        @cls.app.route('/static/<path:path>')
-        def serve_static(path):
-            """Serve React static files"""
-            import os
-            # Use absolute path to avoid relative path issues
-            static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../frontend/build/static'))
-            try:
-                from flask import send_from_directory
-                return send_from_directory(static_dir, path)
-            except FileNotFoundError:
-                from flask import jsonify
-                return jsonify({'error': 'Static file not found'}), 404
-
-        @cls.app.route('/dashboard')
-        def serve_dashboard():
-            """Serve the React dashboard"""
-            from flask import send_from_directory
-            return send_from_directory('../../frontend/build', 'index.html')
-
-        @cls.app.route('/health')
-        def health():
-            return {'status': 'healthy'}
-
-        with cls.app.app_context():
-            db.create_all()
+            # Create mock files
+            (css_dir / 'main.1c4a9c11.css').write_text('/* Mock CSS */')
+            (js_dir / 'main.84284f6f.js').write_text('// Mock JS')
 
     def test_css_file_served(self):
         """Test that CSS files are served correctly"""

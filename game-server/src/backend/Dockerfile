@@ -47,4 +47,4 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:5000/api/planet')" || exit 1
 
-CMD ["python", "-m", "backend.app"]
+CMD ["python", "-m", "backend"]

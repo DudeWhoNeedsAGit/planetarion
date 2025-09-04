@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from backend.database import db
-from backend.models import User, Planet
+from ..database import db
+from ..models import User, Planet
 import bcrypt
 import re
 import random

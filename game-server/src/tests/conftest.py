@@ -2,75 +2,19 @@ import pytest
 import os
 import sys
 from datetime import datetime, timedelta
-from flask import Flask, jsonify
+from pathlib import Path
 
-from backend.database import db
-from backend.models import User, Planet, Fleet, Alliance, TickLog
-from flask_jwt_extended import JWTManager
+# Add the src directory to Python path for our new structure
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from src.backend.app import create_app
+from src.backend.database import db
+from src.backend.models import User, Planet, Fleet, Alliance, TickLog
 
 @pytest.fixture
 def app():
-    """Create and configure a test app instance."""
-    app = Flask(__name__)
-    app.config['TESTING'] = True
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['JWT_SECRET_KEY'] = 'test-jwt-secret-key'
-
-    db.init_app(app)
-
-    # Initialize JWT
-    jwt = JWTManager(app)
-
-    # Register blueprints
-    from backend.routes.users import users_bp
-    from backend.routes.planets import planets_bp
-    from backend.routes.auth import auth_bp
-    from backend.routes.planet_user import planet_mgmt_bp
-    from backend.routes.fleet import fleet_mgmt_bp
-    app.register_blueprint(users_bp)
-    app.register_blueprint(planets_bp)
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(planet_mgmt_bp)
-    app.register_blueprint(fleet_mgmt_bp)
-
-    # Add manual tick route for testing using the full production tick system
-    @app.route('/api/tick', methods=['POST'])
-    def manual_tick():
-        """Admin endpoint to manually trigger a tick (for testing/debugging)"""
-        from backend.services.tick import run_tick
-
-        # Use the full production tick system (includes logging and tick numbering)
-        run_tick()
-
-        # Get the changes from the most recent tick logs
-        from backend.models import TickLog
-        from backend.database import db
-
-        # Get the latest tick number
-        latest_tick = TickLog.query.order_by(TickLog.tick_number.desc()).first()
-        if latest_tick:
-            # Get all changes for this tick
-            changes = TickLog.query.filter_by(tick_number=latest_tick.tick_number).all()
-            changes_data = []
-            for change in changes:
-                if change.planet_id:  # Resource change
-                    changes_data.append({
-                        'planet_id': change.planet_id,
-                        'metal_change': change.metal_change or 0,
-                        'crystal_change': change.crystal_change or 0,
-                        'deuterium_change': change.deuterium_change or 0
-                    })
-
-            return jsonify({
-                'message': 'Manual tick executed successfully',
-                'changes': changes_data
-            })
-
-        return jsonify({
-            'message': 'Manual tick executed successfully',
-            'changes': []
-        })
+    """Create and configure a test app instance using our new app factory."""
+    app = create_app('testing')
 
     with app.app_context():
         db.create_all()
