@@ -25,13 +25,13 @@ def create_app(config_name=None):
 
     # Register blueprints
     from .routes.auth import auth_bp
-    from .routes.planet_user import planet_mgmt_bp
+    from .routes.planets import planets_bp
     from .routes.fleet import fleet_mgmt_bp
     from .routes.shipyard import shipyard_bp
     from .routes.static import static_bp
 
     app.register_blueprint(auth_bp)
-    app.register_blueprint(planet_mgmt_bp)
+    app.register_blueprint(planets_bp)
     app.register_blueprint(fleet_mgmt_bp)
     app.register_blueprint(shipyard_bp)
     app.register_blueprint(static_bp)
