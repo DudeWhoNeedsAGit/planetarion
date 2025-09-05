@@ -55,6 +55,12 @@ That's it! The game will automatically set up the database and start all service
 - ✅ **Real-time Economy**: Resources generate automatically over time
 - ✅ **Strategic Combat**: Fleet vs fleet battles (coming soon)
 
+### Data Protection & Deployment
+- ✅ **Automated Backups**: Enterprise-grade PostgreSQL database protection
+- ✅ **A-B Deployments**: Zero-downtime deployment with automatic restore
+- ✅ **Data Integrity**: Hash-validated backup restoration with JSON diagnostics
+- ✅ **Production Ready**: Full deployment automation with QNAP NAS support
+
 ### User Experience
 - ✅ **Modern Web Interface**: Clean, responsive design that works on any device
 - ✅ **Real-time Updates**: Live resource counters and fleet movements
@@ -67,11 +73,28 @@ That's it! The game will automatically set up the database and start all service
 
 For detailed information about the game, development, and technical implementation:
 
-- **[📚 Complete Documentation](./game-server/README.md)** - Everything you need to know
+### 📚 **Core Documentation**
+- **[📖 Game Server README](./game-server/README.md)** - Complete game documentation
+- **[🗂️ Project Objectives](./.clinerules/project_objectives.md)** - Development goals and roadmap
+- **[🎨 Coding Style](./.clinerules/coding_style.md)** - Code standards and conventions
+
+### 🛠️ **Development & Testing**
 - **[🧪 Testing Guide](./game-server/README.md#testing)** - How to test the game
 - **[💻 Development](./game-server/README.md#development)** - Contributing to the project
-- **[🚀 Deployment](./game-server/README.md#deployment)** - Production setup
-- **[⚙️ Automated Testing](./.clinerules)** - CI/CD configuration and automated testing rules
+- **[⚙️ Automated Testing](./.clinerules)** - CI/CD configuration and testing rules
+- **[🐳 Docker Commands](./.clinerules/docker-commands.md)** - Container management guide
+
+### 🚀 **Deployment & Infrastructure**
+- **[🚀 Deployment Guide](./game-server/README.md#deployment)** - Production setup
+- **[💾 Database Backup System](./game-server/docs/DATABASE_BACKUP_README.md)** - Automated backup documentation
+- **[🖥️ QNAP Deployment](./game-server/docs/QNAP_DEPLOYMENT_README.md)** - NAS deployment guide
+- **[📋 Deployment Testing](./game-server/docs/DEPLOYMENT_TESTING_GUIDE.md)** - Deployment validation
+- **[🏗️ Architecture Guide](./game-server/docs/ARCHITECTURE_IMPROVEMENT_GUIDE.md)** - System architecture
+
+### 📊 **Project Management**
+- **[🔄 Workflow Rules](./.clinerules/workflow.md)** - Development workflow and processes
+- **[🧠 Memory Bank](./memory-bank/)** - Project context and knowledge base
+- **[📝 Task Management](./.clinerules/tasks/)** - Development task tracking
 
 ## 🎮 How to Play
 
@@ -98,7 +121,10 @@ Planetarion is built with modern web technologies:
 - **Backend**: Flask API with JWT authentication and real-time processing
 - **Database**: PostgreSQL for reliable data storage and complex queries
 - **Infrastructure**: Docker containers for easy deployment and scaling
+- **Data Protection**: Automated PostgreSQL backups with hash validation
+- **Deployment**: A-B deployment automation with QNAP NAS support
 - **Real-time**: Automatic resource generation and fleet movement calculations
+- **Monitoring**: Comprehensive logging and error handling systems
 
 ## 🌟 Why Planetarion?
 
