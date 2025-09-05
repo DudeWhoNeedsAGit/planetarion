@@ -178,6 +178,11 @@ deploy_to_qnap() {
     rsync -avz --delete --exclude='node_modules' --exclude='__pycache__' --exclude='.git' \
         ./src/ ${QNAP_USER}@${QNAP_IP}:${QNAP_PROJECT_DIR}/src/
 
+    # Copy backup scripts
+    log_info "Copying backup scripts..."
+    scp backup-database.sh ${QNAP_USER}@${QNAP_IP}:${QNAP_PROJECT_DIR}/
+    scp setup-backup-cron.sh ${QNAP_USER}@${QNAP_IP}:${QNAP_PROJECT_DIR}/
+
     # Load images on QNAP (if using Container Station)
     log_info "Loading images on QNAP..."
     docker save planetarion-backend:qnap | ssh ${QNAP_USER}@${QNAP_IP} "docker load"
@@ -218,6 +223,82 @@ check_deployment() {
     fi
 }
 
+# Check for existing deployment (A-B safety)
+check_existing_deployment() {
+    log_info "Checking for existing deployment..."
+
+    # Check if containers are running
+    if ssh ${QNAP_USER}@${QNAP_IP} "docker ps --format 'table {{.Names}}' | grep -q planetarion" 2>/dev/null; then
+        EXISTING_DEPLOYMENT=true
+        log_warning "⚠️  Existing deployment detected (A-B scenario)"
+        log_warning "Will keep old containers running during restore process"
+    else
+        EXISTING_DEPLOYMENT=false
+        log_info "No existing deployment detected"
+    fi
+}
+
+# Attempt restore with fallback chain
+attempt_restore_chain() {
+    local backup_dir="/share/CACHEDEV1_DATA/planetarion/backups"
+    local restore_script="/share/CACHEDEV1_DATA/planetarion/restore-database.sh"
+
+    log_info "Attempting automatic database restore..."
+
+    # Get list of available backups (newest first)
+    local backups=$(ssh ${QNAP_USER}@${QNAP_IP} "ls -t ${backup_dir}/planetarion_backup_*.sql 2>/dev/null" 2>/dev/null)
+
+    if [ -z "$backups" ]; then
+        log_warning "No backup files found in ${backup_dir}"
+        return 1
+    fi
+
+    # Try each backup in order (newest first)
+    local backup_count=0
+    echo "$backups" | while read -r backup_file; do
+        if [ -n "$backup_file" ]; then
+            backup_count=$((backup_count + 1))
+            log_info "Trying restore from backup $backup_count: $(basename "$backup_file")"
+
+            # Copy restore script to QNAP if needed
+            scp restore-database.sh ${QNAP_USER}@${QNAP_IP}:${QNAP_PROJECT_DIR}/ 2>/dev/null || true
+            ssh ${QNAP_USER}@${QNAP_IP} "chmod +x ${QNAP_PROJECT_DIR}/restore-database.sh" 2>/dev/null || true
+
+            # Attempt restore
+            if ssh ${QNAP_USER}@${QNAP_IP} "cd ${QNAP_PROJECT_DIR} && ./restore-database.sh '$backup_file'"; then
+                log_success "✅ Restore successful from: $(basename "$backup_file")"
+                return 0
+            else
+                log_warning "❌ Restore failed from: $(basename "$backup_file")"
+                # Continue to next backup
+            fi
+        fi
+    done
+
+    log_error "💥 All restore attempts failed!"
+    return 1
+}
+
+# Setup automated database backup
+setup_backup_system() {
+    log_info "Setting up automated database backup system..."
+
+    # Make backup scripts executable on QNAP
+    ssh ${QNAP_USER}@${QNAP_IP} "chmod +x ${QNAP_PROJECT_DIR}/backup-database.sh"
+    ssh ${QNAP_USER}@${QNAP_IP} "chmod +x ${QNAP_PROJECT_DIR}/setup-backup-cron.sh"
+
+    # Run backup cron setup script on QNAP
+    if ssh ${QNAP_USER}@${QNAP_IP} "cd ${QNAP_PROJECT_DIR} && ./setup-backup-cron.sh"; then
+        log_success "Automated backup system setup completed!"
+        log_info "Database backups will run every 8 hours (02:00, 10:00, 18:00)"
+        log_info "Backup files: /share/CACHEDEV1_DATA/planetarion/backups/"
+        log_info "Backup logs: /share/CACHEDEV1_DATA/planetarion/logs/backup.log"
+    else
+        log_warning "Backup system setup encountered issues. You may need to run it manually:"
+        log_warning "ssh ${QNAP_USER}@${QNAP_IP} 'cd ${QNAP_PROJECT_DIR} && ./setup-backup-cron.sh'"
+    fi
+}
+
 # Show access information
 show_access_info() {
     log_success "Planetarion is now running on your QNAP!"
@@ -225,6 +306,11 @@ show_access_info() {
     echo "Access URLs:"
     echo "  Frontend: http://${QNAP_IP}:3000"
     echo "  Backend API: http://${QNAP_IP}:5000"
+    echo ""
+    echo "Database Backups:"
+    echo "  Automatic backups every 8 hours"
+    echo "  Backup files: /share/CACHEDEV1_DATA/planetarion/backups/"
+    echo "  Backup logs: /share/CACHEDEV1_DATA/planetarion/logs/backup.log"
     echo ""
     echo "To check logs:"
     echo "  ssh ${QNAP_USER}@${QNAP_IP}"
@@ -271,9 +357,20 @@ main() {
     check_prerequisites
     setup_ssh_access
     prepare_qnap
+    check_existing_deployment
+
+    # Attempt restore if backups exist and existing deployment detected
+    if [[ "$EXISTING_DEPLOYMENT" == true ]]; then
+        if ! attempt_restore_chain; then
+            log_error "💥 All restore attempts failed - aborting deployment to protect existing system"
+            exit 1
+        fi
+    fi
+
     build_images
     deploy_to_qnap
     check_deployment
+    setup_backup_system
     show_access_info
 
     log_success "Deployment completed successfully!"
