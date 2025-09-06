@@ -40,15 +40,15 @@ help: # Show all available commands
 # Local development tests (SQLite, no Docker)
 unit: # Run unit tests (fast, no Docker)
 	@echo "🧪 Running Unit Tests (SQLite)..."
-	. venv/bin/activate && python -m pytest tests/unit -v --tb=short
+	. venv/bin/activate && python -m pytest tests/unit -v --tb=short --disable-warnings
 
 integration: # Run integration tests (fast, no Docker)
 	@echo "🔗 Running Integration Tests (SQLite)..."
-	. venv/bin/activate && python -m pytest tests/integration $(if $(FAILED),--lf,) -v --tb=short
+	. venv/bin/activate && python -m pytest tests/integration $(if $(FAILED),--lf,) -v --tb=short --disable-warnings
 
 integration-failed: # Run only previously failed integration tests
 	@echo "🔄 Running Only Previously Failed Integration Tests..."
-	. venv/bin/activate && python -m pytest tests/integration --lf -v --tb=short
+	. venv/bin/activate && python -m pytest tests/integration --lf -v --tb=short --disable-warnings
 
 # Docker-based tests (PostgreSQL)
 e2e: # Run end-to-end tests (Docker + PostgreSQL)
