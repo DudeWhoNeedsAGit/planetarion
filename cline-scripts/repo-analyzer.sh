@@ -293,33 +293,7 @@ analyze_python_config() {
         echo "   • ℹ️  Consider using setup.cfg for additional configuration"
     fi
 
-    # Check for tox.ini
-    if [ -f "tox.ini" ]; then
-        print_success "tox.ini found"
-    else
-        echo "   • ℹ️  Consider adding tox.ini for multi-environment testing"
-    fi
 
-    # Check for mypy.ini or .mypy.ini
-    if [ -f "mypy.ini" ] || [ -f ".mypy.ini" ]; then
-        print_success "MyPy configuration found"
-    else
-        echo "   • ℹ️  Consider adding MyPy for static type checking"
-    fi
-
-    # Check for .flake8
-    if [ -f ".flake8" ]; then
-        print_success ".flake8 configuration found"
-    else
-        echo "   • ℹ️  Consider adding .flake8 for linting configuration"
-    fi
-
-    # Check for .coveragerc
-    if [ -f ".coveragerc" ]; then
-        print_success "Coverage configuration found"
-    else
-        echo "   • ℹ️  Consider adding .coveragerc for test coverage configuration"
-    fi
 }
 
 # Function to analyze environment configuration
