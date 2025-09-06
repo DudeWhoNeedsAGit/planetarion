@@ -106,7 +106,7 @@ all: # Run all tests (unit + integration + e2e)
 	@echo "🧪 Running All Tests (Unit + Integration + E2E)..."
 	$(MAKE) unit
 	$(MAKE) integration
-	$(MAKE) e2e
+	$(MAKE) e2e-ui
 
 # Environment management
 dev-up: # Start development containers

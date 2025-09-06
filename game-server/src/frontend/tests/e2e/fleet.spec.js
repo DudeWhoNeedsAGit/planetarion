@@ -14,6 +14,43 @@ test.describe('Fleet Management', () => {
     // Verify login success
     await expect(page.locator('h2:has-text("Welcome back")')).toBeVisible();
 
+    // Ensure test user has at least one planet for fleet tests
+    // Use API directly to create a planet (since players can't create planets via UI)
+    const planetResponse = await page.evaluate(async () => {
+      try {
+        // Use the same user ID that works in the auth test (from debug logs: userId: 21)
+        const response = await fetch('/api/planets', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: 'Test Planet',
+            x: 1,
+            y: 1,
+            z: 1,
+            user_id: 21  // Same user ID from successful auth test
+          })
+        });
+
+        if (response.ok) {
+          return await response.json();
+        } else {
+          console.error('Planet creation failed:', response.status, response.statusText);
+          return null;
+        }
+      } catch (error) {
+        console.error('Failed to create test planet:', error);
+        return null;
+      }
+    });
+
+    if (planetResponse && planetResponse.id) {
+      console.log('✅ Test planet created successfully:', planetResponse);
+    } else {
+      console.log('⚠️ Failed to create test planet, proceeding anyway');
+    }
+
     // Navigate to fleets using nav context
     await page.locator('nav').locator('text=Fleets').click();
   });

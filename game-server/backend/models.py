@@ -31,7 +31,7 @@ class Planet(db.Model):
     x = db.Column(db.Integer, nullable=False)
     y = db.Column(db.Integer, nullable=False)
     z = db.Column(db.Integer, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
     # Resources
     metal = db.Column(db.BigInteger, default=1000)
