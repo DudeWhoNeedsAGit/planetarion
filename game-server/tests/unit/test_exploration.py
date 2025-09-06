@@ -3,9 +3,9 @@ Unit tests for exploration functionality
 """
 import pytest
 from datetime import datetime, timedelta
-from src.backend.database import db
-from src.backend.models import User, Planet, Fleet
-from src.backend.services.tick import generate_exploration_planets
+from backend.database import db
+from backend.models import User, Planet, Fleet
+from backend.services.tick import generate_exploration_planets
 
 
 def test_generate_exploration_planets_new_system(app):

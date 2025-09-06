@@ -2,9 +2,9 @@ import pytest
 import os
 from datetime import datetime, timedelta
 
-from src.backend.app import create_app
-from src.backend.database import db
-from src.backend.models import User, Planet, Fleet, Alliance, TickLog
+from backend.app import create_app
+from backend.database import db
+from backend.models import User, Planet, Fleet, Alliance, TickLog
 
 @pytest.fixture
 def app():
