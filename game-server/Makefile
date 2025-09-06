@@ -103,7 +103,10 @@ frontend: # Run frontend tests (Docker)
 
 # Combined testing
 all: # Run all tests (unit + integration + e2e)
-	unit integration e2e
+	@echo "🧪 Running All Tests (Unit + Integration + E2E)..."
+	$(MAKE) unit
+	$(MAKE) integration
+	$(MAKE) e2e
 
 # Environment management
 dev-up: # Start development containers

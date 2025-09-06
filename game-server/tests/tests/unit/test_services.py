@@ -4,19 +4,19 @@ import sys
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
-from src.backend.services.tick import (
+from backend.services.tick import (
     run_tick, get_next_tick_number, process_resource_generation,
     calculate_production_rate, process_fleet_movements, log_tick,
     get_tick_statistics
 )
-from src.backend.models import TickLog
+from backend.models import TickLog
 
 class TestTickService:
     """Test tick service functions"""
 
     def test_get_next_tick_number_no_previous(self, db_session):
         """Test getting next tick number when no previous ticks exist"""
-        with patch('src.backend.services.tick.TickLog') as mock_ticklog:
+        with patch('backend.services.tick.TickLog') as mock_ticklog:
             mock_ticklog.query.order_by.return_value.first.return_value = None
             result = get_next_tick_number()
             assert result == 1
@@ -26,7 +26,7 @@ class TestTickService:
         mock_last_tick = MagicMock()
         mock_last_tick.tick_number = 42
 
-        with patch('src.backend.services.tick.TickLog') as mock_ticklog:
+        with patch('backend.services.tick.TickLog') as mock_ticklog:
             mock_ticklog.query.order_by.return_value.first.return_value = mock_last_tick
             result = get_next_tick_number()
             assert result == 43
@@ -202,17 +202,17 @@ class TestTickService:
         assert stats['last_tick'] is not None
         assert len(stats['recent_activity']) == 5
 
-    @patch('src.backend.services.tick.current_app')
+    @patch('backend.services.tick.current_app')
     def test_run_tick(self, mock_app, db_session, sample_planet):
         """Test full tick execution"""
         mock_app.app_context.return_value.__enter__ = MagicMock()
         mock_app.app_context.return_value.__exit__ = MagicMock()
         mock_app.logger = MagicMock()
 
-        with patch('src.backend.services.tick.get_next_tick_number', return_value=1), \
-             patch('src.backend.services.tick.process_resource_generation', return_value=[]), \
-             patch('src.backend.services.tick.process_fleet_movements', return_value=[]), \
-             patch('src.backend.services.tick.log_tick'):
+        with patch('backend.services.tick.get_next_tick_number', return_value=1), \
+             patch('backend.services.tick.process_resource_generation', return_value=[]), \
+             patch('backend.services.tick.process_fleet_movements', return_value=[]), \
+             patch('backend.services.tick.log_tick'):
 
             run_tick()
 
