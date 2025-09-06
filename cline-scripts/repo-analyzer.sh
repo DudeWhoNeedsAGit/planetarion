@@ -267,6 +267,59 @@ analyze_python_config() {
     else
         echo "   • ℹ️  Consider adding optional dependencies (dev, test, etc.)"
     fi
+
+    # Check for additional Python best practice files
+    echo ""
+    echo "Python Best Practices Files:"
+
+    # Check for MANIFEST.in
+    if [ -f "MANIFEST.in" ]; then
+        print_success "MANIFEST.in found"
+    else
+        echo "   • ℹ️  Consider adding MANIFEST.in for package data inclusion"
+    fi
+
+    # Check for LICENSE
+    if [ -f "LICENSE" ] || [ -f "LICENSE.md" ] || [ -f "LICENSE.txt" ]; then
+        print_success "LICENSE file found"
+    else
+        print_warning "No LICENSE file found"
+    fi
+
+    # Check for setup.cfg
+    if [ -f "setup.cfg" ]; then
+        print_success "setup.cfg found"
+    else
+        echo "   • ℹ️  Consider using setup.cfg for additional configuration"
+    fi
+
+    # Check for tox.ini
+    if [ -f "tox.ini" ]; then
+        print_success "tox.ini found"
+    else
+        echo "   • ℹ️  Consider adding tox.ini for multi-environment testing"
+    fi
+
+    # Check for mypy.ini or .mypy.ini
+    if [ -f "mypy.ini" ] || [ -f ".mypy.ini" ]; then
+        print_success "MyPy configuration found"
+    else
+        echo "   • ℹ️  Consider adding MyPy for static type checking"
+    fi
+
+    # Check for .flake8
+    if [ -f ".flake8" ]; then
+        print_success ".flake8 configuration found"
+    else
+        echo "   • ℹ️  Consider adding .flake8 for linting configuration"
+    fi
+
+    # Check for .coveragerc
+    if [ -f ".coveragerc" ]; then
+        print_success "Coverage configuration found"
+    else
+        echo "   • ℹ️  Consider adding .coveragerc for test coverage configuration"
+    fi
 }
 
 # Function to analyze environment configuration
