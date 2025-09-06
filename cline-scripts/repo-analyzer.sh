@@ -296,6 +296,62 @@ analyze_python_config() {
 
 }
 
+# Function to analyze pytest.ini configuration paths
+analyze_pytest_paths() {
+    print_header "Pytest Configuration Paths"
+
+    if [ ! -f "pytest.ini" ]; then
+        print_warning "No pytest.ini found"
+        return
+    fi
+
+    print_success "pytest.ini found"
+
+    # Extract important path configurations
+    local pythonpath=""
+    local testpaths=""
+
+    # Read pythonpath
+    pythonpath=$(grep "^pythonpath" pytest.ini 2>/dev/null | sed 's/pythonpath[[:space:]]*=[[:space:]]*//' | tr -d '\r')
+    if [ -n "$pythonpath" ]; then
+        echo "   • 📁 Python path: $pythonpath"
+        # Check if the path exists
+        if [ -d "$pythonpath" ]; then
+            print_success "   Python path directory exists"
+        else
+            print_error "   Python path directory does not exist: $pythonpath"
+        fi
+    else
+        echo "   • ⚠️  No pythonpath configured"
+    fi
+
+    # Read testpaths
+    testpaths=$(grep "^testpaths" pytest.ini 2>/dev/null | sed 's/testpaths[[:space:]]*=[[:space:]]*//' | tr -d '\r')
+    if [ -n "$testpaths" ]; then
+        echo "   • 🧪 Test paths: $testpaths"
+        # Check if the path exists
+        if [ -d "$testpaths" ]; then
+            print_success "   Test paths directory exists"
+        else
+            print_error "   Test paths directory does not exist: $testpaths"
+        fi
+    else
+        echo "   • ⚠️  No testpaths configured"
+    fi
+
+    # Check for additional pytest configuration
+    local addopts=""
+    addopts=$(grep "^addopts" pytest.ini 2>/dev/null | sed 's/addopts[[:space:]]*=[[:space:]]*//' | tr -d '\r')
+    if [ -n "$addopts" ]; then
+        echo "   • ⚙️  Additional options: $addopts"
+    fi
+
+    # Check for markers
+    if grep -q "^markers" pytest.ini 2>/dev/null; then
+        echo "   • 🏷️  Custom markers configured"
+    fi
+}
+
 # Function to analyze environment configuration
 analyze_environment_config() {
     print_header "Environment Configuration"
@@ -500,6 +556,142 @@ analyze_env_security() {
     if [ $security_issues -eq 0 ]; then
         print_success "No security issues detected in environment configuration"
     fi
+}
+
+# Function to analyze databases in the project
+analyze_databases() {
+    print_header "Database Analysis"
+
+    local db_files_found=0
+    local docker_db_services=0
+    local config_files_found=0
+    local in_memory_usage=0
+    local file_based_usage=0
+
+    # Step 1: Find file-based databases
+    echo "📁 File-based databases found:"
+    while IFS= read -r -d '' file; do
+        if [ -n "$file" ]; then
+            local size=$(stat -c%s "$file" 2>/dev/null || echo "unknown")
+            local mtime=$(stat -c%y "$file" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+            echo "   📄 $file (${size} bytes, modified: $mtime)"
+            ((db_files_found++))
+        fi
+    done < <(find . -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" -type f \
+        -not -path "*/node_modules/*" \
+        -not -path "*/.git/*" \
+        -not -path "*/__pycache__/*" \
+        -not -path "*/venv/*" \
+        -not -path "*/.venv/*" \
+        -print0 2>/dev/null)
+
+    if [ $db_files_found -eq 0 ]; then
+        echo "   ℹ️  No file-based databases found"
+    fi
+
+    # Step 2: Analyze Docker database services
+    echo ""
+    echo "🐳 Docker database services:"
+    local docker_files=$(find . -name "docker-compose*.yml" -o -name "docker-compose*.yaml" -type f 2>/dev/null)
+    for docker_file in $docker_files; do
+        if grep -q "postgres\|mysql\|mariadb\|mongodb\|redis" "$docker_file" 2>/dev/null; then
+            echo "   📋 $docker_file contains database services:"
+            grep -A 5 -B 2 "postgres\|mysql\|mariadb\|mongodb\|redis" "$docker_file" 2>/dev/null | sed 's/^/      /'
+            ((docker_db_services++))
+        fi
+    done
+
+    if [ $docker_db_services -eq 0 ]; then
+        echo "   ℹ️  No database services found in Docker configuration"
+    fi
+
+    # Step 3: Find database configuration files
+    echo ""
+    echo "⚙️  Database configuration files:"
+    local config_patterns="DATABASE_URL|SQLALCHEMY_DATABASE_URI|DB_|database|sqlite|postgres"
+    while IFS= read -r -d '' file; do
+        if [ -n "$file" ] && grep -q "$config_patterns" "$file" 2>/dev/null; then
+            echo "   📄 $file:"
+            echo "      📋 Complete content with secrets:"
+            cat "$file" | sed 's/^/         /'
+            echo ""
+            ((config_files_found++))
+        fi
+    done < <(find . -name "*.env*" -o -name "*.py" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.config" -type f \
+        -not -path "*/node_modules/*" \
+        -not -path "*/.git/*" \
+        -not -path "*/__pycache__/*" \
+        -not -path "*/venv/*" \
+        -not -path "*/.venv/*" \
+        -print0 2>/dev/null)
+
+    if [ $config_files_found -eq 0 ]; then
+        echo "   ℹ️  No database configuration files found"
+    fi
+
+    # Step 4: Check for in-memory database usage
+    echo ""
+    echo "🧠 In-memory database usage:"
+    local in_memory_found=$(grep -r ":memory:" --include="*.py" --include="*.js" --include="*.ts" --include="*.java" . 2>/dev/null | wc -l)
+    if [ $in_memory_found -gt 0 ]; then
+        echo "   ⚠️  $in_memory_found references to in-memory databases found:"
+        grep -r ":memory:" --include="*.py" --include="*.js" --include="*.ts" --include="*.java" . 2>/dev/null | head -5 | sed 's/^/      /'
+        ((in_memory_usage++))
+    else
+        echo "   ✅ No in-memory database usage detected"
+    fi
+
+    # Step 5: Check for file-based database usage patterns
+    echo ""
+    echo "📁 File-based database usage patterns:"
+    local file_db_patterns="sqlite:///|\\.db|\\.sqlite"
+    local file_db_found=$(grep -r "$file_db_patterns" --include="*.py" --include="*.js" --include="*.ts" --include="*.java" . 2>/dev/null | wc -l)
+    if [ $file_db_found -gt 0 ]; then
+        echo "   📊 $file_db_found file-based database references found:"
+        grep -r "$file_db_patterns" --include="*.py" --include="*.js" --include="*.ts" --include="*.java" . 2>/dev/null | head -5 | sed 's/^/      /'
+        ((file_based_usage++))
+    else
+        echo "   ℹ️  No file-based database usage patterns detected"
+    fi
+
+    # Step 6: Check for database ORM/library usage
+    echo ""
+    echo "🔧 Database libraries and ORMs detected:"
+    local libraries_found=0
+
+    if grep -r "SQLAlchemy\|sqlalchemy" --include="*.py" --include="*.txt" --include="*.toml" . 2>/dev/null | grep -q .; then
+        echo "   📚 SQLAlchemy ORM detected"
+        ((libraries_found++))
+    fi
+
+    if grep -r "Django" --include="*.py" --include="*.txt" --include="*.toml" . 2>/dev/null | grep -q .; then
+        echo "   📚 Django ORM detected"
+        ((libraries_found++))
+    fi
+
+    if grep -r "sqlite3" --include="*.py" . 2>/dev/null | grep -q .; then
+        echo "   📚 SQLite3 library detected"
+        ((libraries_found++))
+    fi
+
+    if grep -r "psycopg\|postgresql" --include="*.py" --include="*.txt" --include="*.toml" . 2>/dev/null | grep -q .; then
+        echo "   📚 PostgreSQL driver detected"
+        ((libraries_found++))
+    fi
+
+    if [ $libraries_found -eq 0 ]; then
+        echo "   ℹ️  No common database libraries detected"
+    fi
+
+    # Summary
+    echo ""
+    echo "📊 Database Analysis Summary:"
+    echo "   • File-based databases: $db_files_found"
+    echo "   • Docker DB services: $docker_db_services"
+    echo "   • Config files: $config_files_found"
+    echo "   • In-memory usage: $in_memory_usage"
+    echo "   • File-based usage: $file_based_usage"
+    echo "   • Libraries detected: $libraries_found"
 }
 
 # Function to analyze .env file content safely
@@ -842,7 +1034,9 @@ analyze_structure
 identify_issues
 detect_technologies
 analyze_python_config
+analyze_pytest_paths
 analyze_environment_config
+analyze_databases
 analyze_makefile
 analyze_documentation
 analyze_memory_bank
