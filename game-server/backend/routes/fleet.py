@@ -12,8 +12,8 @@ All endpoints require JWT authentication and operate on the user's own fleets.
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from ..database import db
-from ..models import User, Planet, Fleet
+from backend.database import db
+from backend.models import User, Planet, Fleet
 from datetime import datetime, timedelta
 import math
 

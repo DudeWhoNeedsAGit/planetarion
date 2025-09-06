@@ -12,8 +12,8 @@ Building upgrades include resource cost calculations and production rate updates
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from ..database import db
-from ..models import User, Planet
+from backend.database import db
+from backend.models import User, Planet
 
 planet_mgmt_bp = Blueprint('planet_mgmt', __name__, url_prefix='/api/planet')
 

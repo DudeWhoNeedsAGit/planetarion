@@ -11,8 +11,8 @@ This module is primarily for administrative or public planet data access.
 """
 
 from flask import Blueprint, request, jsonify
-from ..database import db
-from ..models import Planet, User
+from backend.database import db
+from backend.models import Planet, User
 
 planets_bp = Blueprint('planets', __name__, url_prefix='/api')
 
@@ -77,7 +77,7 @@ def get_nearby_systems(center_x, center_y, center_z):
     """Get nearby systems that can be explored"""
     # For now, return systems without auth for testing
     # TODO: Add JWT auth back when frontend is ready
-    from ..models import User
+    from backend.models import User
     import json
 
     # For testing, use a dummy user or skip user-specific logic

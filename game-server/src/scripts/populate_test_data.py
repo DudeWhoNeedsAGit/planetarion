@@ -11,12 +11,12 @@ from datetime import datetime, timedelta
 from faker import Faker
 from pathlib import Path
 
-# Import from centralized config using relative imports (now inside src/)
-from ..config import PATHS
+# Import from centralized config using backend import (removing src. dependency)
+from backend.config import PATHS
 
 from flask import Flask
-from ..backend.database import db
-from ..backend.models import User, Planet, Fleet, Alliance, TickLog
+from backend.database import db
+from backend.models import User, Planet, Fleet, Alliance, TickLog
 
 # Initialize Faker
 fake = Faker()

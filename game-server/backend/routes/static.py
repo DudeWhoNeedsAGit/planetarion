@@ -1,6 +1,6 @@
 from flask import Blueprint, send_from_directory, render_template_string
 import os
-from config import PATHS
+from backend.config import PATHS
 
 static_bp = Blueprint('static', __name__)
 

@@ -1,6 +1,6 @@
 from datetime import datetime
-from ..database import db
-from ..models import Planet, Fleet, TickLog
+from backend.database import db
+from backend.models import Planet, Fleet, TickLog
 from flask import current_app
 import math
 
@@ -156,7 +156,7 @@ def process_fleet_movements(current_time):
             discovered_planets = generate_exploration_planets(x, y, z, fleet.user_id)
 
             # Update user's explored systems
-            from ..models import User
+            from backend.models import User
             user = User.query.get(fleet.user_id)
             if user:
                 import json
