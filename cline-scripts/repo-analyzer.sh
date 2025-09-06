@@ -240,6 +240,7 @@ analyze_python_config() {
     else
         echo "   • ⚠️  No setuptools configuration (optional)"
     fi
+    ((total_sections++))
 
     # Check [tool.pytest]
     if grep -q "\[tool.pytest" pyproject.toml 2>/dev/null; then
@@ -248,6 +249,7 @@ analyze_python_config() {
     else
         echo "   • ⚠️  No pytest configuration in pyproject.toml"
     fi
+    ((total_sections++))
 
     # Check [tool.black] or [tool.isort]
     if grep -q "\[tool.black\]" pyproject.toml 2>/dev/null || grep -q "\[tool.isort\]" pyproject.toml 2>/dev/null; then
