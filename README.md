@@ -83,6 +83,7 @@ For detailed information about the game, development, and technical implementati
 - **[💻 Development](./game-server/README.md#development)** - Contributing to the project
 - **[⚙️ Automated Testing](./.clinerules)** - CI/CD configuration and testing rules
 - **[🐳 Docker Commands](./.clinerules/docker-commands.md)** - Container management guide
+- **[🔍 Repository Analyzer](./cline-scripts/repo-analyzer.sh)** - Project structure analysis tool
 
 ### 🚀 **Deployment & Infrastructure**
 - **[🚀 Deployment Guide](./game-server/README.md#deployment)** - Production setup
@@ -126,7 +127,63 @@ Planetarion is built with modern web technologies:
 - **Real-time**: Automatic resource generation and fleet movement calculations
 - **Monitoring**: Comprehensive logging and error handling systems
 
-## 🌟 Why Planetarion?
+## 🔍 Repository Analysis Tool
+
+Planetarion includes a powerful repository analysis tool to help maintain code quality and project structure:
+
+### Features
+- **📁 Structure Analysis**: Comprehensive directory and file organization review
+- **🔧 Technology Detection**: Automatic identification of frameworks, languages, and tools
+- **⚙️ Configuration Review**: Python packaging, environment variables, and build configurations
+- **📊 Health Metrics**: Repository statistics and quality indicators
+- **🔒 Security Checks**: Environment file analysis and sensitive data detection
+- **📋 Best Practices**: Recommendations for code organization and development workflow
+
+### Usage
+
+**Via Makefile** (recommended):
+```bash
+cd game-server
+make analyze
+```
+
+**Direct execution**:
+```bash
+./cline-scripts/repo-analyzer.sh
+```
+
+### What It Analyzes
+- ✅ **Environment Files**: Detects `.env` files, analyzes content, checks for sensitive data
+- ✅ **Project Structure**: Reviews directory organization and file placement
+- ✅ **Python Configuration**: Validates `pyproject.toml`, requirements, and packaging
+- ✅ **Testing Setup**: Checks for test directories and testing frameworks
+- ✅ **Documentation**: Reviews README files and documentation structure
+- ✅ **Build Tools**: Analyzes Makefiles, Docker configurations, and CI/CD setup
+- ✅ **Security**: Ensures sensitive data is properly protected
+
+### Sample Output
+```
+🔍 Repository Structure Analysis
+
+Repository: planetarion
+Analysis Date: Fri Sep 6 13:37:54 CEST 2025
+
+=== Environment Configuration ===
+✅ 3 .env file(s) found:
+   📄 .env (245 bytes, modified: 2025-09-06)
+   📄 .test.env (156 bytes, modified: 2025-09-05)
+   📄 .env.example (89 bytes, modified: 2025-09-01)
+
+   • � Analyzing .env content:
+     - 12 environment variables found
+     - 2 sensitive variables detected (passwords/keys/tokens)
+     - 0 variables with empty values
+     - 5 common environment variables configured
+```
+
+This tool helps maintain high code quality and ensures the project follows best practices for modern development workflows.
+
+## � Why Planetarion?
 
 ### For Players
 - **Free to Play**: No subscriptions or microtransactions
@@ -149,7 +206,7 @@ Planetarion is built with modern web technologies:
 - **Contributing**: See our [development guide](./game-server/README.md#contributing)
 - **Discussions**: Join the conversation on GitHub
 
-## 🗺️ Roadmap
+## �️ Roadmap
 
 ### Currently Available
 - ✅ User registration and authentication
@@ -161,7 +218,7 @@ Planetarion is built with modern web technologies:
 
 ### Coming Soon
 - 🔄 **Combat System**: Fleet vs fleet battles
-- 🔄 **Research Tree**: Technology advancement
+- � **Research Tree**: Technology advancement
 - 🔄 **Alliance System**: Player diplomacy
 - 🔄 **Messaging**: Private and alliance communication
 - 🔄 **Galaxy Map**: Interactive universe visualization

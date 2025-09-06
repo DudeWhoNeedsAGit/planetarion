@@ -4,6 +4,7 @@ import Navigation from './Navigation';
 import Overview from './Overview';
 import FleetManagement from './FleetManagement';
 import LuckyWheel from './LuckyWheel';
+import GalaxyMap from './GalaxyMap';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
 
@@ -342,6 +343,8 @@ function Dashboard({ user, onLogout }) {
     switch (activeSection) {
       case 'overview':
         return <Overview user={user} planets={planets} />;
+      case 'galaxy':
+        return <GalaxyMap user={user} planets={planets} onClose={() => setActiveSection('overview')} />;
       case 'planets':
         return (
           <div className="space-y-6">

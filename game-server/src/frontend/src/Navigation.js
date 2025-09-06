@@ -4,6 +4,7 @@ function Navigation({ activeSection, onSectionChange }) {
   const navItems = [
     { id: 'overview', label: 'Overview', icon: '🏠' },
     { id: 'planets', label: 'Planets', icon: '🪐' },
+    { id: 'galaxy', label: 'Galaxy Map', icon: '🌌' },
     { id: 'fleets', label: 'Fleets', icon: '🚀' },
     { id: 'wheel', label: 'Lucky Wheel', icon: '🎰' },
     { id: 'shipyard', label: 'Shipyard', icon: '⚙️' },

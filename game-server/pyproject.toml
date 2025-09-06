@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "planetarion-backend"
+version = "0.1.0"
+description = "Backend API for Planetarion space strategy game"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "Flask==2.3.3",
+    "Flask-SQLAlchemy==3.0.5",
+    "Flask-Migrate==4.0.5",
+    "Flask-CORS==4.0.0",
+    "Flask-JWT-Extended==4.5.3",
+    "APScheduler==3.10.4",
+    "python-dotenv==1.0.0",
+    "Werkzeug==2.3.7",
+    "bcrypt==4.0.1",
+    "psycopg2-binary==2.9.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==7.4.0",
+    "pytest-flask==1.2.0",
+    "Faker==19.3.1",
+    "playwright==1.40.0",
+    "black",
+    "isort",
+    "flake8",
+]
+test = [
+    "pytest==7.4.0",
+    "pytest-flask==1.2.0",
+    "Faker==19.3.1",
+    "playwright==1.40.0",
+]
+
+[project.scripts]
+planetarion = "backend.app:create_app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
+
+[tool.setuptools.package-data]
+backend = ["templates/*", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+    "--strict-markers",
+    "--disable-warnings",
+    "--tb=short",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "e2e: End-to-end tests",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["backend"]

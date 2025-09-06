@@ -2,10 +2,10 @@ const { test, expect } = require('@playwright/test');
 
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {
-    // Login first - use credentials that match the test data
+    // Login first - use credentials that match the working auth test
     await page.goto('/');
-    await page.fill('input[name="username"]', 'testuser');
-    await page.fill('input[name="password"]', 'testpassword');
+    await page.fill('input[name="username"]', 'e2etestuser');
+    await page.fill('input[name="password"]', 'testpassword123');
     await page.click('button[type="submit"]');
 
     // Wait for dashboard to load
@@ -15,37 +15,40 @@ test.describe('Dashboard', () => {
   test('should display dashboard with user info', async ({ page }) => {
     // Check header
     await expect(page.locator('h1')).toContainText('Planetarion');
-    await expect(page.locator('text=Welcome, testuser!')).toBeVisible();
+    await expect(page.locator('text=Welcome, e2etestuser!')).toBeVisible();
     await expect(page.locator('text=Logout')).toBeVisible();
   });
 
   test('should navigate between sections', async ({ page }) => {
-    // Check navigation tabs
+    // Add debugging screenshot
+    await page.screenshot({ path: 'debug-navigation-start.png' });
+
+    // Check navigation tabs - use nav context to avoid ambiguity
     const navTabs = ['Overview', 'Planets', 'Fleets', 'Research', 'Alliance', 'Messages'];
     for (const tab of navTabs) {
-      await expect(page.locator(`text=${tab}`)).toBeVisible();
+      await expect(page.locator('nav').locator(`text=${tab}`)).toBeVisible();
     }
 
-    // Click on Planets section
-    await page.click('text=Planets');
+    // Click on Planets section - use nav context
+    await page.locator('nav').locator('text=Planets').click();
     await expect(page.locator('text=Your Planets')).toBeVisible();
 
-    // Click on Fleets section
-    await page.click('text=Fleets');
-    await expect(page.locator('text=Your Fleets')).toBeVisible();
+    // Click on Fleets section - use nav context
+    await page.locator('nav').locator('text=Fleets').click();
+    await expect(page.locator('text=🚀 Fleet Management')).toBeVisible();
 
-    // Click on Research section
-    await page.click('text=Research');
+    // Click on Research section - use nav context
+    await page.locator('nav').locator('text=Research').click();
     await expect(page.locator('text=Research Lab')).toBeVisible();
 
-    // Click back to Overview
-    await page.click('text=Overview');
-    await expect(page.locator('text=Empire Overview')).toBeVisible();
+    // Click back to Overview - use nav context
+    await page.locator('nav').locator('text=Overview').click();
+    await expect(page.locator('text=Welcome back, e2etestuser!')).toBeVisible();
   });
 
   test('should display planet information', async ({ page }) => {
-    // Navigate to Planets section
-    await page.click('text=Planets');
+    // Navigate to Planets section - use nav context
+    await page.locator('nav').locator('text=Planets').click();
 
     // Should show planets (may be empty or have test data)
     const planetSection = page.locator('text=Your Planets');
@@ -64,8 +67,8 @@ test.describe('Dashboard', () => {
   });
 
   test('should display buildings section', async ({ page }) => {
-    // Navigate to Planets section
-    await page.click('text=Planets');
+    // Navigate to Planets section - use nav context
+    await page.locator('nav').locator('text=Planets').click();
 
     // Check for buildings section
     const buildingsSection = page.locator('text=Buildings').first();
@@ -84,8 +87,8 @@ test.describe('Dashboard', () => {
   });
 
   test('should handle building upgrades', async ({ page }) => {
-    // Navigate to Planets section
-    await page.click('text=Planets');
+    // Navigate to Planets section - use nav context
+    await page.locator('nav').locator('text=Planets').click();
 
     // Look for upgrade buttons
     const upgradeButtons = page.locator('text=Upgrade');
@@ -105,24 +108,20 @@ test.describe('Dashboard', () => {
   });
 
   test('should display fleet information', async ({ page }) => {
-    // Navigate to Fleets section
-    await page.click('text=Fleets');
+    // Navigate to Fleets section - use nav context
+    await page.locator('nav').locator('text=Fleets').click();
 
-    // Check for fleet-related elements
-    const fleetSection = page.locator('text=Your Fleets');
+    // Check for fleet-related elements - use actual UI text
+    const fleetSection = page.locator('text=🚀 Fleet Management');
     await expect(fleetSection).toBeVisible();
 
-    // May show "No fleets" or fleet list
-    const noFleets = page.locator('text=No fleets found');
-    const fleetList = page.locator('text=Create Fleet');
-
-    // One of these should be visible
-    await expect(noFleets.or(fleetList)).toBeVisible();
+    // Check for fleet creation button (always present)
+    await expect(page.locator('text=Create Fleet')).toBeVisible();
   });
 
   test('should display research placeholder', async ({ page }) => {
-    // Navigate to Research section
-    await page.click('text=Research');
+    // Navigate to Research section - use nav context
+    await page.locator('nav').locator('text=Research').click();
 
     // Check for research placeholder content
     await expect(page.locator('text=Research Lab')).toBeVisible();
@@ -136,8 +135,8 @@ test.describe('Dashboard', () => {
   });
 
   test('should display alliance placeholder', async ({ page }) => {
-    // Navigate to Alliance section
-    await page.click('text=Alliance');
+    // Navigate to Alliance section - use nav context
+    await page.locator('nav').locator('text=Alliance').click();
 
     // Check for alliance placeholder content
     await expect(page.locator('text=Alliance Center')).toBeVisible();
@@ -151,11 +150,11 @@ test.describe('Dashboard', () => {
   });
 
   test('should display messages placeholder', async ({ page }) => {
-    // Navigate to Messages section
-    await page.click('text=Messages');
+    // Navigate to Messages section - use nav context
+    await page.locator('nav').locator('text=Messages').click();
 
-    // Check for messages placeholder content
-    await expect(page.locator('text=Messages')).toBeVisible();
+    // Check for messages placeholder content - use specific heading
+    await expect(page.locator('h3').filter({ hasText: '💬 Messages' })).toBeVisible();
     await expect(page.locator('text=Messaging system coming soon')).toBeVisible();
 
     // Check for message types
@@ -175,8 +174,8 @@ test.describe('Dashboard', () => {
   });
 
   test('should update resources after tick', async ({ page }) => {
-    // Navigate to Planets section
-    await page.click('text=Planets');
+    // Navigate to Planets section - use nav context
+    await page.locator('nav').locator('text=Planets').click();
 
     // Record initial resource values if visible
     const metalValue = page.locator('text=Metal:').locator('xpath=following-sibling::*').first();

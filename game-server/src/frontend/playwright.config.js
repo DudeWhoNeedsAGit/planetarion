@@ -8,14 +8,15 @@ module.exports = {
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  workers: process.env.CI ? 4 : 6,
+  reporter: [['html', { open: 'never' }]],
   use: {
     actionTimeout: 0,
     baseURL: 'http://localhost:3000', // Frontend dev server
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    headless: true, // Run tests in headless mode to avoid popping up browser windows
   },
   projects: [
     {

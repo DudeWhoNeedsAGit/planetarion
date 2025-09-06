@@ -23,9 +23,8 @@ test.describe('Authentication', () => {
     // Should redirect to dashboard
     await page.waitForTimeout(2000);
 
-    // Check if we're logged in
-    const dashboardElement = page.locator('text=Dashboard').or(page.locator('text=Welcome'));
-    await expect(dashboardElement).toBeVisible();
+    // Check if we're logged in - look for the main welcome heading
+    await expect(page.locator('h2:has-text("Welcome back")')).toBeVisible();
   });
 
   test('should show error for invalid login credentials', async ({ page }) => {
