@@ -570,20 +570,19 @@ analyze_databases() {
 
     # Step 1: Find file-based databases
     echo "📁 File-based databases found:"
-    while IFS= read -r -d '' file; do
+    find . -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" -type f \
+        -not -path "*/node_modules/*" \
+        -not -path "*/.git/*" \
+        -not -path "*/__pycache__/*" \
+        -not -path "*/venv/*" \
+        -not -path "*/.venv/*" 2>/dev/null | while read -r file; do
         if [ -n "$file" ]; then
             local size=$(stat -c%s "$file" 2>/dev/null || echo "unknown")
             local mtime=$(stat -c%y "$file" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
             echo "   📄 $file (${size} bytes, modified: $mtime)"
             ((db_files_found++))
         fi
-    done < <(find . -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" -type f \
-        -not -path "*/node_modules/*" \
-        -not -path "*/.git/*" \
-        -not -path "*/__pycache__/*" \
-        -not -path "*/venv/*" \
-        -not -path "*/.venv/*" \
-        -print0 2>/dev/null)
+    done
 
     if [ $db_files_found -eq 0 ]; then
         echo "   ℹ️  No file-based databases found"
@@ -683,6 +682,21 @@ analyze_databases() {
         echo "   ℹ️  No common database libraries detected"
     fi
 
+    # Step 7: Comprehensive DATABASE_URL and DATABASE_URI search
+    echo ""
+    echo "🔍 DATABASE_URL and DATABASE_URI occurrences:"
+    local db_url_count=$(grep -r "DATABASE_URL\|DATABASE_URI" --include="*.py" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.txt" --include="*.env*" --include="*.sh" --include="*.js" --include="*.ts" --include="*.json" . 2>/dev/null | wc -l)
+    if [ $db_url_count -gt 0 ]; then
+        echo "   📊 $db_url_count total occurrences found:"
+        echo ""
+        grep -r "DATABASE_URL\|DATABASE_URI" --include="*.py" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.txt" --include="*.env*" --include="*.sh" --include="*.js" --include="*.ts" --include="*.json" . 2>/dev/null | head -20 | sed 's/^/      /'
+        if [ $db_url_count -gt 20 ]; then
+            echo "      ... and $(($db_url_count - 20)) more occurrences"
+        fi
+    else
+        echo "   ℹ️  No DATABASE_URL or DATABASE_URI occurrences found"
+    fi
+
     # Summary
     echo ""
     echo "📊 Database Analysis Summary:"
@@ -692,6 +706,7 @@ analyze_databases() {
     echo "   • In-memory usage: $in_memory_usage"
     echo "   • File-based usage: $file_based_usage"
     echo "   • Libraries detected: $libraries_found"
+    echo "   • DATABASE_URL occurrences: $db_url_count"
 }
 
 # Function to analyze .env file content safely
