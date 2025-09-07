@@ -6,15 +6,35 @@ import Dashboard from './Dashboard';
 import { ToastProvider, useToast } from './ToastContext';
 import { ToastContainer } from './Toast';
 
-// Set up axios defaults with external IP for production
-// This ensures the browser can always connect to the backend
-axios.defaults.baseURL = 'http://192.168.0.133:5000';
+// Set up axios defaults - use localhost for development and testing
+// Use external IP only for production
+const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+axios.defaults.baseURL = backendUrl;
 
-// Add token to requests if available
-const token = localStorage.getItem('token');
-if (token) {
-  axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-}
+// Axios request interceptor - automatically add JWT token to all requests
+axios.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Axios response interceptor - handle token expiration
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid - redirect to login
+      localStorage.removeItem('token');
+      window.location.hash = '#login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 function AppContent() {
   const [user, setUser] = useState(null);
@@ -38,13 +58,11 @@ function AppContent() {
     const token = localStorage.getItem('token');
     if (token) {
       try {
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         const response = await axios.get('/api/auth/me');
         setUser(response.data);
         setCurrentView('dashboard');
       } catch (error) {
         localStorage.removeItem('token');
-        delete axios.defaults.headers.common['Authorization'];
         setCurrentView('login');
       }
     } else {

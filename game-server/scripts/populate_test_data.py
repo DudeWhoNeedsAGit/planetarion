@@ -1,223 +1,180 @@
 #!/usr/bin/env python3
 """
 Script to populate the database with realistic test data for Planetarion game server.
-Generates users, planets, fleets, alliances, and tick logs using Faker library.
+Can work with either HTTP API or direct database population for testing.
 """
 
-import os
+import requests
 import sys
-import random
-from datetime import datetime, timedelta
-from faker import Faker
-from pathlib import Path
+import os
+import time
 
-# Import from centralized config using backend import (removing src. dependency)
-from backend.config import PATHS
+def populate_via_api():
+    """Populate database via HTTP API call to running backend"""
 
-from flask import Flask
-from backend.database import db
-from backend.models import User, Planet, Fleet, Alliance, TickLog
+    # Backend URL - adjust if needed
+    backend_url = os.getenv('BACKEND_URL', 'http://localhost:5000')
+    database_url = os.getenv('DATABASE_URL', 'sqlite:///:memory:')
 
-# Initialize Faker
-fake = Faker()
+    print("🌐 Connecting to running backend...")
+    print(f"📍 Backend URL: {backend_url}")
+    print(f"🗄️  Database URL: {database_url}")
+    print(f"🔧 Environment DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT SET')}")
 
-def create_app():
-    """Create Flask app with test database configuration"""
-    app = Flask(__name__)
+    # Check if e2etestuser exists before population
+    print("\n🔍 Checking existing users before population...")
+    try:
+        response = requests.get(f"{backend_url}/users", timeout=5)
+        if response.status_code == 200:
+            users = response.json()
+            print(f"   👥 Existing users: {len(users)}")
+            for user in users:
+                print(f"      - {user.get('username', 'N/A')} (ID: {user.get('id', 'N/A')})")
+                if user.get('username') == 'e2etestuser':
+                    print("   ⚠️  e2etestuser already exists!")
+                    break
+            else:
+                print("   ✅ e2etestuser does not exist (good for population)")
+        else:
+            print(f"   ❌ Could not check users: {response.status_code}")
+    except Exception as e:
+        print(f"   ❌ Error checking users: {e}")
 
-    # Use SQLite for testing to avoid PostgreSQL dependency
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test_data.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Wait for backend to be ready
+    max_attempts = 30
+    for attempt in range(max_attempts):
+        try:
+            response = requests.get(f"{backend_url}/health", timeout=5)
+            if response.status_code == 200:
+                print("✅ Backend is ready")
+                break
+        except requests.exceptions.RequestException:
+            pass
 
-    db.init_app(app)
-    return app
+        if attempt < max_attempts - 1:
+            print(f"⏳ Waiting for backend... (attempt {attempt + 1}/{max_attempts})")
+            time.sleep(2)
+    else:
+        print("❌ Backend not ready after maximum attempts")
+        sys.exit(1)
 
-def generate_users(num_users=200):
-    """Generate fake users"""
-    users = []
-    for _ in range(num_users):
-        username = fake.user_name()
-        email = fake.email()
-        password_hash = fake.password()  # In real app, this would be hashed
+    # Call populate endpoint
+    print("📊 Calling populate endpoint...")
+    try:
+        response = requests.post(f"{backend_url}/populate", timeout=60)
 
-        user = User(
-            username=username,
-            email=email,
-            password_hash=password_hash,
-            created_at=fake.date_time_this_year(),
-            last_login=fake.date_time_this_month() if random.choice([True, False]) else None
-        )
-        users.append(user)
-    return users
+        if response.status_code == 200:
+            data = response.json()
+            print("✅ Database populated successfully!")
+            print(f"   👥 Users: {data.get('users', 'N/A')}")
+            print(f"   🪐 Planets: {data.get('planets', 'N/A')}")
+            print(f"   🚀 Fleets: {data.get('fleets', 'N/A')}")
+            print(f"   🤝 Alliances: {data.get('alliances', 'N/A')}")
+            print(f"   📈 Tick Logs: {data.get('tick_logs', 'N/A')}")
 
-def generate_planets(users, min_per_user=1, max_per_user=5):
-    """Generate planets for users"""
-    planets = []
-    planet_names = [
-        "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
-        "Iota", "Kappa", "Lambda", "Mu", "Nu", "Xi", "Omicron", "Pi", "Rho",
-        "Sigma", "Tau", "Upsilon", "Phi", "Chi", "Psi", "Omega"
-    ]
+            # Verify e2etestuser was created with correct credentials
+            print("\n🔍 Verifying e2etestuser creation...")
+            try:
+                users_response = requests.get(f"{backend_url}/users", timeout=5)
+                if users_response.status_code == 200:
+                    users = users_response.json()
+                    for user in users:
+                        if user.get('username') == 'e2etestuser':
+                            print("   ✅ e2etestuser found!")
+                            print(f"      ID: {user.get('id')}")
+                            print(f"      Email: {user.get('email')}")
+                            print("   🔑 Test credentials: e2etestuser / testpassword123")
+                            break
+                    else:
+                        print("   ❌ e2etestuser not found after population!")
+                else:
+                    print(f"   ❌ Could not verify users: {users_response.status_code}")
+            except Exception as e:
+                print(f"   ❌ Error verifying user: {e}")
 
-    for user in users:
-        num_planets = random.randint(min_per_user, max_per_user)
-        for i in range(num_planets):
-            x = random.randint(1, 1000)
-            y = random.randint(1, 1000)
-            z = random.randint(1, 1000)
+            return True
+        else:
+            print(f"❌ Populate request failed: {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
 
-            name = f"{planet_names[i % len(planet_names)]} {user.username}"
+    except requests.exceptions.RequestException as e:
+        print(f"❌ HTTP request failed: {e}")
+        return False
 
-            planet = Planet(
-                name=name,
-                x=x,
-                y=y,
-                z=z,
-                user_id=user.id,
-                metal=random.randint(1000, 1000000),
-                crystal=random.randint(500, 500000),
-                deuterium=random.randint(0, 200000),
-                metal_mine=random.randint(1, 20),
-                crystal_mine=random.randint(1, 15),
-                deuterium_synthesizer=random.randint(0, 10),
-                solar_plant=random.randint(1, 25),
-                fusion_reactor=random.randint(0, 5),
-                created_at=fake.date_time_this_year()
-            )
-            planets.append(planet)
-    return planets
+def populate_direct():
+    """Populate database directly using Flask app with testing configuration"""
+    print("🧪 Using direct database population for testing...")
 
-def generate_fleets(users, planets, num_fleets=500):
-    """Generate fleets"""
-    fleets = []
-    missions = ['attack', 'transport', 'deploy', 'espionage', 'recycle']
-    ship_types = ['small_cargo', 'large_cargo', 'light_fighter', 'heavy_fighter',
-                  'cruiser', 'battleship']
+    # Add the src directory to Python path for imports
+    import sys
+    from pathlib import Path
+    project_root = Path(__file__).parent.parent
+    src_path = project_root / 'src'
+    sys.path.insert(0, str(src_path))
 
-    for _ in range(num_fleets):
-        user = random.choice(users)
-        user_planets = [p for p in planets if p.user_id == user.id]
-        if not user_planets:
-            continue
+    try:
+        # Import Flask app and configuration
+        from backend.app import create_app
+        from backend.config import TestingConfig
 
-        start_planet = random.choice(user_planets)
-        target_planet = random.choice(planets)
+        print("🏗️ Creating Flask app with testing configuration...")
+        app = create_app(TestingConfig)
 
-        mission = random.choice(missions)
-        status = random.choice(['stationed', 'traveling', 'returning'])
+        with app.app_context():
+            print("📊 Populating database directly...")
 
-        departure_time = fake.date_time_this_month()
-        eta = random.randint(60, 3600)  # 1 min to 1 hour
-        arrival_time = departure_time + timedelta(seconds=eta)
+            # Import populate function
+            from backend.routes.populate import populate_database
 
-        fleet = Fleet(
-            user_id=user.id,
-            mission=mission,
-            start_planet_id=start_planet.id,
-            target_planet_id=target_planet.id,
-            status=status,
-            departure_time=departure_time,
-            arrival_time=arrival_time,
-            eta=eta
-        )
+            # Create a mock request object for deterministic mode
+            from unittest.mock import Mock
+            mock_request = Mock()
+            mock_request.args = {'deterministic': 'true'}
 
-        # Add random ships
-        for ship_type in ship_types:
-            setattr(fleet, ship_type, random.randint(0, 1000))
+            # Monkey patch the request object
+            import backend.routes.populate
+            original_request = getattr(backend.routes.populate, 'request', None)
+            backend.routes.populate.request = mock_request
 
-        fleets.append(fleet)
-    return fleets
+            try:
+                # Call the populate function directly
+                result = populate_database()
+                if result[1] == 200:
+                    data = result[0].get_json()
+                    print("✅ Database populated successfully!")
+                    print(f"   👥 Users: {data.get('users', 'N/A')}")
+                    print(f"   🪐 Planets: {data.get('planets', 'N/A')}")
+                    print(f"   🚀 Fleets: {data.get('fleets', 'N/A')}")
+                    print(f"   🤝 Alliances: {data.get('alliances', 'N/A')}")
+                    print(f"   📈 Tick Logs: {data.get('tick_logs', 'N/A')}")
+                    return True
+                else:
+                    print(f"❌ Populate failed: {result[0].get_json()}")
+                    return False
+            finally:
+                # Restore original request object
+                if original_request is not None:
+                    backend.routes.populate.request = original_request
 
-def generate_alliances(users, num_alliances=20):
-    """Generate alliances"""
-    alliances = []
-    alliance_names = [fake.company() for _ in range(num_alliances)]
-
-    for name in alliance_names:
-        leader = random.choice(users)
-        alliance = Alliance(
-            name=name,
-            description=fake.text(max_nb_chars=200),
-            leader_id=leader.id,
-            created_at=fake.date_time_this_year()
-        )
-        alliances.append(alliance)
-
-        # Assign members to alliance
-        num_members = random.randint(2, 10)
-        potential_members = [u for u in users if u.id != leader.id]
-        members = random.sample(potential_members, min(num_members, len(potential_members)))
-        for member in members:
-            member.alliance_id = alliance.id
-
-    return alliances
-
-def generate_tick_logs(planets, num_logs=1000):
-    """Generate tick logs"""
-    tick_logs = []
-    for _ in range(num_logs):
-        planet = random.choice(planets)
-        tick_number = random.randint(1, 10000)
-        timestamp = fake.date_time_this_year()
-
-        # Random resource changes
-        metal_change = random.randint(-1000, 5000)
-        crystal_change = random.randint(-500, 2500)
-        deuterium_change = random.randint(-200, 1000)
-
-        tick_log = TickLog(
-            tick_number=tick_number,
-            timestamp=timestamp,
-            planet_id=planet.id,
-            metal_change=metal_change,
-            crystal_change=crystal_change,
-            deuterium_change=deuterium_change
-        )
-        tick_logs.append(tick_log)
-    return tick_logs
-
-def populate_database():
-    """Main function to populate the database"""
-    app = create_app()
-
-    with app.app_context():
-        # Create all tables
-        db.create_all()
-
-        print("Generating test data...")
-
-        # Generate users
-        users = generate_users(200)
-        db.session.add_all(users)
-        db.session.commit()
-        print(f"Created {len(users)} users")
-
-        # Generate planets
-        planets = generate_planets(users)
-        db.session.add_all(planets)
-        db.session.commit()
-        print(f"Created {len(planets)} planets")
-
-        # Generate alliances
-        alliances = generate_alliances(users)
-        db.session.add_all(alliances)
-        db.session.commit()
-        print(f"Created {len(alliances)} alliances")
-
-        # Generate fleets
-        fleets = generate_fleets(users, planets)
-        db.session.add_all(fleets)
-        db.session.commit()
-        print(f"Created {len(fleets)} fleets")
-
-        # Generate tick logs
-        tick_logs = generate_tick_logs(planets)
-        db.session.add_all(tick_logs)
-        db.session.commit()
-        print(f"Created {len(tick_logs)} tick logs")
-
-        print("Test data population completed successfully!")
-        print(f"Database file: {app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')}")
+    except Exception as e:
+        print(f"❌ Direct population failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 if __name__ == '__main__':
-    populate_database()
+    # Check if we should use direct population (for testing)
+    use_direct = os.getenv('POPULATE_DIRECT', 'false').lower() == 'true'
+
+    if use_direct:
+        success = populate_direct()
+    else:
+        success = populate_via_api()
+
+    if success:
+        print("🎉 Test data population completed successfully!")
+        sys.exit(0)
+    else:
+        print("❌ Test data population failed!")
+        sys.exit(1)

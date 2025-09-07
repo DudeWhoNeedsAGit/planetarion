@@ -2,7 +2,45 @@ const { test, expect } = require('@playwright/test');
 
 test.describe('Fleet Management', () => {
   test.beforeEach(async ({ page }) => {
+    // 🔍 DEBUG: Check if e2etestuser exists before attempting login
+    console.log('\n🔍 E2E TEST DEBUG: Checking user existence...');
+    const userCheck = await page.evaluate(async () => {
+      try {
+        const response = await fetch('/users', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include'
+        });
+
+        if (response.ok) {
+          const users = await response.json();
+          console.log('👥 Found users:', users.length);
+          const testUser = users.find(u => u.username === 'e2etestuser');
+          if (testUser) {
+            console.log('✅ e2etestuser found:', testUser.id, testUser.email);
+            return true;
+          } else {
+            console.log('❌ e2etestuser NOT found in database!');
+            return false;
+          }
+        } else {
+          console.log('❌ Could not fetch users:', response.status);
+          return false;
+        }
+      } catch (error) {
+        console.log('❌ Error checking users:', error);
+        return false;
+      }
+    });
+
+    if (!userCheck) {
+      throw new Error('❌ E2E TEST SETUP FAILED: Test user "e2etestuser" does not exist. Run populate script first.');
+    }
+
     // Login first - use credentials that match the working auth test
+    console.log('🔐 Attempting login with e2etestuser / testpassword123...');
     await page.goto('/');
     await page.fill('input[name="username"]', 'e2etestuser');
     await page.fill('input[name="password"]', 'testpassword123');
@@ -13,42 +51,61 @@ test.describe('Fleet Management', () => {
 
     // Verify login success
     await expect(page.locator('h2:has-text("Welcome back")')).toBeVisible();
+    console.log('✅ Login successful');
 
-    // Ensure test user has at least one planet for fleet tests
-    // Use API directly to create a planet (since players can't create planets via UI)
-    const planetResponse = await page.evaluate(async () => {
+    // Test user should already have planets and ships from the populate script
+    // First, log which database the backend is using
+    const dbInfo = await page.evaluate(async () => {
       try {
-        // Use the same user ID that works in the auth test (from debug logs: userId: 21)
-        const response = await fetch('/api/planets', {
-          method: 'POST',
+        const response = await fetch('/api/debug/db', {
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'Test Planet',
-            x: 1,
-            y: 1,
-            z: 1,
-            user_id: 21  // Same user ID from successful auth test
-          })
+          credentials: 'include'
         });
 
         if (response.ok) {
           return await response.json();
         } else {
-          console.error('Planet creation failed:', response.status, response.statusText);
-          return null;
+          console.log('⚠️ Debug endpoint not available, continuing...');
+          return { database_uri: 'unknown' };
         }
       } catch (error) {
-        console.error('Failed to create test planet:', error);
-        return null;
+        console.log('⚠️ Debug endpoint failed, continuing...');
+        return { database_uri: 'unknown' };
       }
     });
 
-    if (planetResponse && planetResponse.id) {
-      console.log('✅ Test planet created successfully:', planetResponse);
-    } else {
-      console.log('⚠️ Failed to create test planet, proceeding anyway');
+    console.log('🗄️ E2E Test Database:', dbInfo.database_uri);
+
+    // Verify the user has planets available
+    const planetsCheck = await page.evaluate(async () => {
+      try {
+        const response = await fetch('/api/planet', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include'
+        });
+
+        if (response.ok) {
+          const planets = await response.json();
+          console.log('✅ User has planets:', planets.length);
+          return planets.length > 0;
+        } else {
+          console.error('Failed to get planets:', response.status, response.statusText);
+          return false;
+        }
+      } catch (error) {
+        console.error('Failed to check planets:', error);
+        return false;
+      }
+    });
+
+    if (!planetsCheck) {
+      throw new Error('❌ E2E TEST SETUP FAILED: Test user "e2etestuser" has no planets. Run populate script first.');
     }
 
     // Navigate to fleets using nav context

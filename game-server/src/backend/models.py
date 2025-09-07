@@ -45,6 +45,15 @@ class Planet(db.Model):
     solar_plant = db.Column(db.Integer, default=1)
     fusion_reactor = db.Column(db.Integer, default=0)
 
+    # Ships (for testing - in real game, ships would be tracked separately)
+    small_cargo = db.Column(db.Integer, default=0)
+    large_cargo = db.Column(db.Integer, default=0)
+    light_fighter = db.Column(db.Integer, default=0)
+    heavy_fighter = db.Column(db.Integer, default=0)
+    cruiser = db.Column(db.Integer, default=0)
+    battleship = db.Column(db.Integer, default=0)
+    colony_ship = db.Column(db.Integer, default=0)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):

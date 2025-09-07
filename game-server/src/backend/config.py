@@ -45,8 +45,8 @@ class TestingConfig(Config):
     TESTING = True
     DEBUG = True
 
-    # Use in-memory database for tests
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    # Use environment variable for database (allows central control)
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db')
 
     # Test JWT secret
     JWT_SECRET_KEY = 'test-jwt-secret-key'
@@ -66,10 +66,8 @@ class ProductionConfig(Config):
     # Production CORS origins
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'https://yourdomain.com').split(',')
 
-    # Production database (required)
+    # Production database (required) - moved to __init__ to avoid import-time validation
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL')
-    if not SQLALCHEMY_DATABASE_URI:
-        raise ValueError("DATABASE_URL environment variable is required in production")
 
     # Production JWT secret (required)
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-change-in-production')
@@ -80,6 +78,8 @@ class ProductionConfig(Config):
     def __init__(self):
         super().__init__()
         # Validate required production settings
+        if not self.SQLALCHEMY_DATABASE_URI:
+            raise ValueError("DATABASE_URL environment variable is required in production")
         if self.JWT_SECRET_KEY == 'jwt-secret-key-change-in-production':
             raise ValueError("JWT_SECRET_KEY must be set in production")
         if self.SECRET_KEY == 'dev-secret-key-change-in-production':

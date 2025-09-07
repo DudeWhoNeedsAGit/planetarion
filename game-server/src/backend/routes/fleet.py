@@ -59,12 +59,21 @@ def create_fleet():
     if not start_planet:
         return jsonify({'error': 'Planet not found or not owned by user'}), 404
 
-    # Check if ships are available on the planet (simplified - in real game would track ship counts)
+    # Check if ships are available on the planet
     ships = data.get('ships', {})
     total_ships = sum(ships.values())
 
     if total_ships == 0:
         return jsonify({'error': 'Fleet must contain at least one ship'}), 400
+
+    # Validate ship availability on the planet
+    for ship_type, count in ships.items():
+        if count > 0:
+            available_ships = getattr(start_planet, ship_type, 0)
+            if available_ships < count:
+                return jsonify({
+                    'error': f'Not enough {ship_type} ships available. Requested: {count}, Available: {available_ships}'
+                }), 400
 
     # Create fleet
     fleet = Fleet(

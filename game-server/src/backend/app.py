@@ -55,6 +55,7 @@ def create_app(config_name=None):
         from .routes.planet_user import planet_mgmt_bp
         from .routes.users import users_bp
         from .routes.static import static_bp
+        from .routes.populate import populate_bp
 
         app.register_blueprint(auth_bp)
         print("✅ Auth blueprint registered")
@@ -76,6 +77,9 @@ def create_app(config_name=None):
 
         app.register_blueprint(static_bp)
         print("✅ Static blueprint registered")
+
+        app.register_blueprint(populate_bp)
+        print("✅ Populate blueprint registered")
 
         # Health check endpoint
         @app.route('/health')
@@ -100,6 +104,15 @@ def create_app(config_name=None):
             for rule in app.url_map.iter_rules():
                 routes.append(str(rule))
             return jsonify({'routes': routes})
+
+        # Debug route to check database connection
+        @app.route('/api/debug/db')
+        def debug_database():
+            from backend.database import db
+            return jsonify({
+                'database_uri': str(db.engine.url),
+                'database_type': str(db.engine.url).split(':')[0] if ':' in str(db.engine.url) else 'unknown'
+            })
 
         # Catch-all debug route
         @app.before_request

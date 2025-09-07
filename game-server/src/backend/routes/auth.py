@@ -34,25 +34,35 @@ def generate_starting_planet_coordinates():
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
+    print("DEBUG: Register endpoint called")
     data = request.get_json()
+    print(f"DEBUG: Registration data received: {data}")
 
     if not data or not all(k in data for k in ('username', 'email', 'password')):
+        print("DEBUG: Missing required fields")
         return jsonify({'error': 'Missing required fields'}), 400
 
     # Validate email format
     if not validate_email(data['email']):
+        print("DEBUG: Invalid email format")
         return jsonify({'error': 'Invalid email format'}), 400
 
     # Check if user already exists
-    if User.query.filter_by(username=data['username']).first():
+    existing_user = User.query.filter_by(username=data['username']).first()
+    if existing_user:
+        print(f"DEBUG: Username already exists: {data['username']}")
         return jsonify({'error': 'Username already exists'}), 409
 
-    if User.query.filter_by(email=data['email']).first():
+    existing_email = User.query.filter_by(email=data['email']).first()
+    if existing_email:
+        print(f"DEBUG: Email already exists: {data['email']}")
         return jsonify({'error': 'Email already exists'}), 409
 
+    print("DEBUG: Hashing password")
     # Hash password
     password_hash = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+    print("DEBUG: Creating new user")
     # Create new user
     user = User(
         username=data['username'],
@@ -62,9 +72,11 @@ def register():
 
     db.session.add(user)
     db.session.commit()
+    print(f"DEBUG: User created with ID: {user.id}")
 
     # Create starting planet for new user
     x, y, z = generate_starting_planet_coordinates()
+    print(f"DEBUG: Creating starting planet at coordinates: {x}, {y}, {z}")
     starting_planet = Planet(
         name=f"{user.username}'s Homeworld",
         x=x,
@@ -83,10 +95,13 @@ def register():
 
     db.session.add(starting_planet)
     db.session.commit()
+    print(f"DEBUG: Starting planet created with ID: {starting_planet.id}")
 
     # Create access token
     access_token = create_access_token(identity=str(user.id))
+    print("DEBUG: Access token created")
 
+    print("DEBUG: Registration successful")
     return jsonify({
         'message': 'User registered successfully',
         'access_token': access_token,
@@ -99,25 +114,49 @@ def register():
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
+    print("DEBUG: Login endpoint called")
     data = request.get_json()
+    print(f"DEBUG: Login data received: username={data.get('username', 'N/A')}")
 
     if not data or not all(k in data for k in ('username', 'password')):
+        print("DEBUG: Missing username or password")
         return jsonify({'error': 'Missing username or password'}), 400
 
     # Find user by username
+    print(f"DEBUG: Looking up user: {data['username']}")
     user = User.query.filter_by(username=data['username']).first()
 
-    if not user or not bcrypt.checkpw(data['password'].encode('utf-8'), user.password_hash.encode('utf-8')):
+    if not user:
+        print(f"DEBUG: User not found: {data['username']}")
         return jsonify({'error': 'Invalid username or password'}), 401
+
+    print(f"DEBUG: User found with ID: {user.id}")
+    print(f"DEBUG: Checking password for user: {user.username}")
+
+    try:
+        password_valid = bcrypt.checkpw(data['password'].encode('utf-8'), user.password_hash.encode('utf-8'))
+        print(f"DEBUG: Password validation result: {password_valid}")
+    except Exception as e:
+        print(f"DEBUG: Password validation error: {e}")
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+    if not password_valid:
+        print("DEBUG: Password validation failed")
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+    print("DEBUG: Password validation successful")
 
     # Update last login timestamp
     from datetime import datetime
     user.last_login = datetime.utcnow()
     db.session.commit()
+    print("DEBUG: Last login timestamp updated")
 
     # Create access token
     access_token = create_access_token(identity=str(user.id))
+    print("DEBUG: Access token created")
 
+    print("DEBUG: Login successful")
     return jsonify({
         'message': 'Login successful',
         'access_token': access_token,

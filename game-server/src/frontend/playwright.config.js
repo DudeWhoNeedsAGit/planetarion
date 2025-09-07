@@ -26,10 +26,11 @@ module.exports = {
       },
     },
   ],
-  webServer: {
-    command: 'npm start',
-    port: 3000,
-    timeout: 120 * 1000,
-    reuseExistingServer: !process.env.CI,
-  },
+  // Disable webServer since Makefile handles frontend startup
+  // webServer: {
+  //   command: 'REACT_APP_BACKEND_URL=http://localhost:5000 npm start',
+  //   port: 3000,
+  //   timeout: 120 * 1000,
+  //   reuseExistingServer: !process.env.CI,
+  // },
 };

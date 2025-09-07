@@ -67,18 +67,102 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 		echo "🎯 Running all E2E tests"; \
 	fi
 	@echo ""
+	@echo "🧹 Cleaning up any existing processes and test database..."
+	@-pkill -f "FLASK_ENV=testing" || true
+	@-pkill -f "python -m src" || true
+	@-pkill -f "npm start" || true
+	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
+	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+	@-rm -f instance/test_e2e.db
+	@sleep 2
+	@echo "✅ Cleanup complete"
+	@echo ""
+	@echo "🔧 Creating instance directory for database..."
+	@-mkdir -p instance
+	@echo "✅ Instance directory ready"
+	@echo ""
 	@echo "🔧 Starting backend server..."
-	@PYTHONPATH=/home/yves/repos/planetarion/game-server/src python -m src > backend.log 2>&1 &
-	@echo $$! > backend.pid
-	@echo "✅ Backend started (PID: $$(cat backend.pid))"
+	@DATABASE_URL='sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db' . venv/bin/activate && FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
+	@sleep 5  # Give Flask time to start or show errors
+	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY" backend.log; then \
+		echo "✅ Backend started successfully"; \
+	else \
+		echo "❌ BACKEND FAILED TO START!"; \
+		echo "🔍 Backend log:"; \
+		cat backend.log; \
+		echo ""; \
+		echo "🛑 Stopping Makefile execution..."; \
+		exit 1; \
+	fi
+	@echo "🔍 Backend process verification:"
+	@if ! ps -p $$(cat backend.pid) > /dev/null; then \
+		echo "❌ Backend PID $$(cat backend.pid) is not running!"; \
+		ps aux | grep python; \
+		exit 1; \
+	fi
+	@echo "   ✅ Backend PID $$(cat backend.pid) is running"
+	@ps -p $$(cat backend.pid) -o pid,ppid,cmd | head -2
+	@if ! lsof -i :5000 > /dev/null; then \
+		echo "❌ Nothing listening on port 5000"; \
+		lsof -i :5000 || echo "No processes found on port 5000"; \
+		exit 1; \
+	fi
+	@echo "   ✅ Port 5000 is listening"
+	@echo ""
+	@echo "📊 Populating test database..."
+	@echo "   Waiting for backend to initialize..."
+	@sleep 8
+	@echo "   Checking backend health..."
+	@for i in 1 2 3 4 5; do \
+		if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
+			echo "   ✅ Backend is healthy"; \
+			break; \
+		else \
+			echo "   ⏳ Backend not ready yet (attempt $$i/5)..."; \
+			sleep 2; \
+		fi; \
+	done
+	@echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_e2e.db"
+	@export DATABASE_URL='sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py
+	@echo "✅ Test database populated"
 	@echo ""
 	@echo "🎨 Starting frontend server..."
-	@cd src/frontend && npm start > frontend.log 2>&1 &
-	@echo $$! > frontend.pid
-	@echo "✅ Frontend started (PID: $$(cat frontend.pid))"
+	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 &
+	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
+	@sleep 10  # Give React time to start or crash
+	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
+		echo "❌ FRONTEND FAILED TO START!"; \
+		echo "🔍 Frontend log:"; \
+		cat frontend.log; \
+		echo ""; \
+		echo "🛑 Stopping Makefile execution..."; \
+		exit 1; \
+	fi
+	@echo "🔍 Frontend process verification:"
+	@if ! ps -p $$(cat frontend.pid) > /dev/null; then \
+		echo "❌ Frontend PID $$(cat frontend.pid) is not running!"; \
+		ps aux | grep node; \
+		exit 1; \
+	fi
+	@echo "   ✅ Frontend PID $$(cat frontend.pid) is running"
+	@ps -p $$(cat frontend.pid) -o pid,ppid,cmd | head -2
+	@if ! lsof -i :3000 > /dev/null; then \
+		echo "❌ Nothing listening on port 3000"; \
+		lsof -i :3000 || echo "No processes found on port 3000"; \
+		exit 1; \
+	fi
+	@echo "   ✅ Port 3000 is listening"
+	@echo "✅ Frontend started successfully"
 	@echo ""
 	@echo "⏳ Waiting for services to be ready..."
 	@sleep 10
+	@echo "🔍 Final connectivity check:"
+	@echo "   Testing backend connectivity..."
+	@curl -s -o /dev/null -w "   Backend: HTTP %{http_code} - %{time_total}s response time\n" http://localhost:5000/health
+	@echo "   Testing frontend connectivity..."
+	@curl -s -o /dev/null -w "   Frontend: HTTP %{http_code} - %{time_total}s response time\n" http://localhost:3000
+	@echo "   ✅ Services connectivity verified"
 	@echo ""
 	@echo "🧪 Running E2E tests..."
 	@if [ -n "$(TEST_FILE)" ]; then \
@@ -86,12 +170,17 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	else \
 		cd src/frontend && npm run test:e2e; \
 	fi
+	@TEST_EXIT_CODE=$$?
 	@echo ""
-	@echo "🧹 Cleaning up processes..."
+	@echo "🧪 Test completed with exit code: $$TEST_EXIT_CODE"
+	@echo ""
+	@echo "🧹 Cleaning up processes and test database..."
 	@-kill $$(cat backend.pid) 2>/dev/null || true
 	@-kill $$(cat frontend.pid) 2>/dev/null || true
 	@-rm -f backend.pid frontend.pid backend.log frontend.log
+	@-rm -f instance/test_e2e.db
 	@echo "✅ Cleanup complete"
+	@exit $$TEST_EXIT_CODE
 
 
 frontend: # Run frontend tests (Docker)
