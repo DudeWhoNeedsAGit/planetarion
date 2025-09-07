@@ -334,12 +334,14 @@ test.describe('Galaxy Map Navigation', () => {
     // Look for elements with fog hole styling (radial gradient background)
     const fogHoles = page.locator('[style*="radial-gradient"]');
     const holeCount = await fogHoles.count();
-    // Note: This test may need adjustment based on actual fog implementation
     console.log(`Found ${holeCount} fog-styled elements`);
 
-    // At minimum, we should have some fog overlay
-    const fogOverlay = page.locator('.absolute.bg-gray-900.opacity-95');
+    // At minimum, we should have some fog overlay using data-test attribute
+    const fogOverlay = page.locator('[data-test="fog-overlay"]');
     await expect(fogOverlay).toBeVisible();
+
+    // Also verify the fog overlay has the correct styling
+    await expect(fogOverlay).toHaveCSS('pointer-events', 'none');
   });
 
   test('coordinate display is visible and properly styled', async ({ page }) => {
