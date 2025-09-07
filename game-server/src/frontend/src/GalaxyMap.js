@@ -470,7 +470,7 @@ function GalaxyMap({ user, planets, onClose }) {
           </div>
           {/* Grid Background */}
           {showGrid && (
-            <div className="absolute inset-0 opacity-60">
+            <div data-test="grid" className="absolute inset-0 opacity-60">
               <svg width="100%" height="100%" className="text-gray-300">
                 <defs>
                   <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
@@ -483,10 +483,10 @@ function GalaxyMap({ user, planets, onClose }) {
           )}
 
           {/* Coordinate Labels */}
-          <div className="absolute top-2 left-2 text-xs text-white font-mono bg-black bg-opacity-70 px-3 py-2 rounded-lg border border-gray-600 shadow-lg">
+          <div data-test="coords" className="absolute top-2 left-2 text-xs text-white font-mono bg-black bg-opacity-70 px-3 py-2 rounded-lg border border-gray-600 shadow-lg">
             <div className="font-semibold text-blue-300">Coordinates:</div>
-            <div className="text-yellow-300">X: {Math.round(centerX + viewOffset.x/zoom)}</div>
-            <div className="text-green-300">Y: {Math.round(centerY + viewOffset.y/zoom)}</div>
+            <div className="text-yellow-300">X: {Math.round(centerX - viewOffset.x / zoom)}</div>
+            <div className="text-green-300">Y: {Math.round(centerY - viewOffset.y / zoom)}</div>
             <div className="text-purple-300">Z: {centerZ}</div>
           </div>
 
@@ -497,11 +497,12 @@ function GalaxyMap({ user, planets, onClose }) {
               <div
                 ref={(el) => el && EventHandlingSystem.setupFogOverlayEvents(el)}
                 className="fog-overlay absolute"
+                data-test="fog-overlay"
                 style={{
-                  width: '400px',
-                  height: '300px',
-                  left: '50%',
-                  top: '50%',
+                  width: `${400 / zoom}px`,
+                  height: `${300 / zoom}px`,
+                  left: `${200 + viewOffset.x}px`,
+                  top: `${150 + viewOffset.y}px`,
                   transform: 'translate(-50%, -50%)',
                   background: 'rgba(64,64,64,0.95)',
                   pointerEvents: 'none'
@@ -619,12 +620,13 @@ function GalaxyMap({ user, planets, onClose }) {
                 );
               })}
 
-              {/* Center Marker */}
+              {/* Center Marker (Player Location) */}
               <div
+                data-test="player-marker"
                 className="absolute w-4 h-4 bg-yellow-400 rounded-full border-2 border-yellow-200"
                 style={{
-                  left: '200px',
-                  top: '150px',
+                  left: `${200 + viewOffset.x}px`,
+                  top: `${150 + viewOffset.y}px`,
                   transform: 'translate(-50%, -50%)',
                   zIndex: 15
                 }}

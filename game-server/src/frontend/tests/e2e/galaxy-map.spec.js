@@ -317,12 +317,12 @@ test.describe('Galaxy Map Navigation', () => {
   test('fog of war is visible with Warcraft 3 styling', async ({ page }) => {
     await navigateToGalaxyMap(page);
 
-    // Check fog overlay exists with correct Warcraft 3 styling (now inside systems container)
-    const fogOverlay = page.locator('.absolute.inset-0.flex.items-center.justify-center .relative .absolute.bg-gray-900.opacity-95');
+    // Check fog overlay exists with correct Warcraft 3 styling using data-test attribute
+    const fogOverlay = page.locator('[data-test="fog-overlay"]');
     await expect(fogOverlay).toBeVisible();
 
-    // Check atmospheric texture layer exists (more specific selector)
-    const textureLayer = page.locator('.absolute.inset-0.flex.items-center.justify-center .relative .absolute.bg-gray-900.opacity-95 .absolute.inset-0.opacity-30');
+    // Check atmospheric texture layer exists
+    const textureLayer = page.locator('[data-test="fog-overlay"] .absolute.inset-0.opacity-30');
     await expect(textureLayer).toBeVisible();
   });
 
@@ -567,11 +567,11 @@ test.describe('Galaxy Map Navigation', () => {
       clip: { x: 0, y: 0, width: 800, height: 600 }
     });
 
-    // Verify key visual elements are present
-    await expect(page.locator('.absolute.bg-gray-900.opacity-95')).toBeVisible(); // Fog
-    await expect(page.locator('.absolute.top-2.left-2.text-white')).toBeVisible(); // Coordinates
-    await expect(page.locator('.absolute.inset-0.opacity-60')).toBeVisible(); // Grid
-    await expect(page.locator('.absolute.w-16.h-16')).toHaveCount(await page.locator('.absolute.w-16.h-16').count()); // Systems
+    // Verify key visual elements are present using data-test attributes
+    await expect(page.locator('[data-test="fog-overlay"]')).toBeVisible(); // Fog
+    await expect(page.locator('[data-test="coords"]')).toBeVisible(); // Coordinates
+    await expect(page.locator('[data-test="grid"]')).toBeVisible(); // Grid
+    await expect(page.locator('[data-test-marker="system-marker"]').first()).toBeVisible(); // Systems
   });
 
   test('fog of war animation is smooth', async ({ page }) => {
