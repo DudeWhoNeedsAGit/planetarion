@@ -19,6 +19,7 @@ def populate_database():
 
     # Check if deterministic mode is requested
     deterministic = request.args.get('deterministic', 'false').lower() == 'true'
+    minimal = request.args.get('minimal', 'false').lower() == 'true'
 
     try:
         # Clear existing data in reverse dependency order to avoid foreign key issues
@@ -54,32 +55,33 @@ def populate_database():
         db.session.add(test_user)
 
         # Generate remaining fake users
-        usernames = set()
-        emails = set()
-        for _ in range(199):  # Total 200 users
-            username = fake.user_name()
-            while username in usernames:
+        if not minimal:
+            usernames = set()
+            emails = set()
+            for _ in range(199):  # Total 200 users
                 username = fake.user_name()
-            usernames.add(username)
+                while username in usernames:
+                    username = fake.user_name()
+                usernames.add(username)
 
-            email = fake.email()
-            while email in emails:
                 email = fake.email()
-            emails.add(email)
+                while email in emails:
+                    email = fake.email()
+                emails.add(email)
 
-            # Generate a proper bcrypt hash for the fake password
-            fake_password = fake.password()
-            hashed_password = bcrypt.hashpw(fake_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                # Generate a proper bcrypt hash for the fake password
+                fake_password = fake.password()
+                hashed_password = bcrypt.hashpw(fake_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-            user = User(
-                username=username,
-                email=email,
-                password_hash=hashed_password,
-                created_at=fake.date_time_this_year(),
-                last_login=fake.date_time_this_month() if random.choice([True, False]) else None
-            )
-            users.append(user)
-            db.session.add(user)
+                user = User(
+                    username=username,
+                    email=email,
+                    password_hash=hashed_password,
+                    created_at=fake.date_time_this_year(),
+                    last_login=fake.date_time_this_month() if random.choice([True, False]) else None
+                )
+                users.append(user)
+                db.session.add(user)
 
         db.session.commit()
 
@@ -92,7 +94,7 @@ def populate_database():
         ]
 
         for user in users:
-            num_planets = random.randint(1, 5)
+            num_planets = 1 if minimal else random.randint(1, 5)
             for i in range(num_planets):
                 x = random.randint(1, 1000)
                 y = random.randint(1, 1000)
@@ -151,7 +153,8 @@ def populate_database():
         # Generate alliances
         alliances = []
         alliance_names = set()
-        for _ in range(20):
+        num_alliances = 1 if minimal else 20
+        for _ in range(num_alliances):
             name = fake.company()
             while name in alliance_names:
                 name = fake.company()
@@ -181,7 +184,8 @@ def populate_database():
         ship_types = ['small_cargo', 'large_cargo', 'light_fighter', 'heavy_fighter',
                       'cruiser', 'battleship']
 
-        for _ in range(500):
+        num_fleets = 1 if minimal else 500
+        for _ in range(num_fleets):
             user = random.choice(users)
             user_planets = [p for p in planets if p.user_id == user.id]
             if not user_planets:
@@ -217,7 +221,8 @@ def populate_database():
         db.session.commit()
 
         # Generate tick logs
-        for _ in range(1000):
+        num_tick_logs = 1 if minimal else 1000
+        for _ in range(num_tick_logs):
             planet = random.choice(planets)
             tick_number = random.randint(1, 10000)
             timestamp = fake.date_time_this_year()
@@ -238,9 +243,9 @@ def populate_database():
             'message': 'Database populated successfully',
             'users': len(users),
             'planets': len(planets),
-            'fleets': 500,
+            'fleets': num_fleets,
             'alliances': len(alliances),
-            'tick_logs': 1000
+            'tick_logs': num_tick_logs
         }), 200
 
     except Exception as e:

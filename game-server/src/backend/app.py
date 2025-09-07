@@ -28,6 +28,11 @@ def create_app(config_name=None):
         db.init_app(app)
         print("✅ Database initialized")
 
+        # Import models BEFORE creating tables (critical for SQLAlchemy)
+        print("📋 Importing models for table creation...")
+        from .models import User, Planet, Fleet, Alliance, TickLog
+        print("✅ Models imported successfully")
+
         print("🔄 Initializing migrate...")
         migrate.init_app(app, db)
         print("✅ Migrate initialized")

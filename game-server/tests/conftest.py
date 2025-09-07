@@ -55,7 +55,15 @@ def sample_planet(db_session, sample_user):
         user_id=sample_user.id,
         metal=10000,
         crystal=5000,
-        deuterium=2000
+        deuterium=2000,
+        # Add ships for fleet testing - sufficient for all test scenarios including max ships test
+        small_cargo=2000000,  # Enough for test_create_fleet_max_ships (needs 1M) + buffer
+        large_cargo=1000000,  # Enough for test_create_fleet_max_ships (needs 500K) + buffer
+        light_fighter=400000, # Enough for test_create_fleet_max_ships (needs 200K) + buffer
+        heavy_fighter=200000, # Enough for test_create_fleet_max_ships (needs 100K) + buffer
+        cruiser=100000,       # Enough for test_create_fleet_max_ships (needs 50K) + buffer
+        battleship=50000,     # Enough for test_create_fleet_max_ships (needs 10K) + buffer
+        colony_ship=100       # For colonization tests
     )
     db_session.add(planet)
     db_session.commit()
