@@ -143,6 +143,78 @@ Login Form → API Call → JWT Generation → Cookie Storage → Protected Rout
 - **Setup**: Full application stack in containers
 - **Pattern**: Browser automation with assertions
 
+### Repository Testing Pattern
+**Context**: Complete testing workflow for full-stack features with authentication
+
+**Test Hierarchy**:
+```
+├── Unit Tests (pytest)           # Fast, isolated functions
+├── Integration Tests (pytest)   # API + Database interactions
+├── E2E Tests (Playwright)        # Full user workflows
+└── Manual Tests (Browser)       # Exploratory testing
+```
+
+**Execution Commands**:
+```bash
+# Unit tests (fast, no setup)
+make unit
+
+# Integration tests (SQLite, fast)
+make integration
+
+# E2E tests (full stack, local)
+make e2e-ui
+
+# E2E specific feature
+make e2e-ui TEST_FILE=src/frontend/tests/e2e/[feature].spec.js
+
+# All tests combined
+make all
+```
+
+**E2E Flow**:
+1. `make e2e-ui` → Backend (port 5000) + Frontend (port 3000) startup
+2. Database population via `populate_test_data.py`
+3. Playwright discovers all `.spec.js` files in `tests/e2e/`
+4. Tests execute with JWT token management
+5. Automatic cleanup of processes and test database
+
+**Key Implementation Patterns**:
+- **Helper Functions**: `loginAsE2eTestUser()`, `navigateTo[Feature]()`
+- **JWT Handling**: `localStorage.getItem('token')` → Authorization headers
+- **API Testing**: `page.request.get/post()` with full URLs
+- **Selectors**: `page.locator('h2').filter({ hasText: 'Feature' })`
+- **Error Handling**: Try-catch with console logging
+- **Database Management**: Test data population and cleanup
+
+**File Structure**:
+```
+game-server/tests/
+├── unit/              # pytest unit tests
+├── integration/       # pytest integration tests
+├── e2e/              # Legacy E2E tests
+└── galaxy/           # Feature-specific tests
+
+game-server/src/frontend/tests/e2e/
+├── auth.spec.js      # Authentication flows
+├── fleet.spec.js     # Fleet management
+├── galaxy-map.spec.js # Galaxy features
+├── dashboard.spec.js # Dashboard functionality
+└── [feature].spec.js # Future features
+```
+
+**Configuration**:
+- `playwright.config.js`: `testDir: './tests/e2e'`, baseURL, timeouts
+- `package.json`: `"test:e2e": "playwright test"`
+- `Makefile`: Orchestrates full-stack testing environment
+- `pytest.ini`: Python test configuration
+
+**Testing Strategy**:
+- **Unit**: Isolated functions, no external dependencies
+- **Integration**: API endpoints, database interactions
+- **E2E**: Complete user workflows, authentication flows
+- **Manual**: Exploratory testing, edge cases
+
 ## Deployment Patterns
 
 ### Containerization

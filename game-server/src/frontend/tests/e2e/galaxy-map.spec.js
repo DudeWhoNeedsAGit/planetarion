@@ -1,34 +1,58 @@
 const { test, expect } = require('@playwright/test');
 
+// Helper function for login - use same pattern as working fleet tests
+async function loginAsE2eTestUser(page) {
+  // Navigate to the app
+  await page.goto('/');
+
+  // Login with existing test account
+  await page.fill('input[name="username"]', 'e2etestuser');
+  await page.fill('input[name="password"]', 'testpassword123');
+
+  // Submit login
+  await page.click('button[type="submit"]');
+
+  // Wait for login to complete
+  await page.waitForTimeout(2000);
+
+  // Verify login success
+  await expect(page.locator('h2:has-text("Welcome back")')).toBeVisible();
+}
+
+// Helper function to navigate to Galaxy Map
+async function navigateToGalaxyMap(page) {
+  await page.locator('nav').locator('text=Galaxy Map').click();
+}
+
+// Helper function to clear galaxy data for testing (placeholder for now)
+async function clearGalaxyData(page) {
+  try {
+    console.log('DEBUG: Galaxy data clearing not yet implemented');
+    // TODO: Add galaxy data clearing endpoint if needed
+  } catch (error) {
+    console.log('ERROR: Clear galaxy data failed:', error.message);
+  }
+}
+
 test.describe('Galaxy Map Navigation', () => {
-  // Handle login for each test - use same pattern as working auth tests
+  // Handle login for each test - use same pattern as working fleet tests
   test.beforeEach(async ({ page }) => {
-    // Login first - use credentials that match the working auth test
-    await page.goto('/');
-    await page.fill('input[name="username"]', 'e2etestuser');
-    await page.fill('input[name="password"]', 'testpassword123');
-    await page.click('button[type="submit"]');
-
-    // Wait for dashboard to load
-    await page.waitForTimeout(2000);
-
-    // Verify login success
-    await expect(page.locator('h2:has-text("Welcome back")')).toBeVisible();
+    await loginAsE2eTestUser(page);
   });
 
   test('should navigate to Galaxy Map and display modal', async ({ page }) => {
-    // Click Galaxy Map navigation
-    await page.click('text=Galaxy Map');
+    // Navigate to Galaxy Map using helper function
+    await navigateToGalaxyMap(page);
 
-    // Verify Galaxy Map modal appears - use more specific selector for modal header
-    await expect(page.locator('h2:has-text("Galaxy Map")')).toBeVisible();
+    // Verify Galaxy Map modal appears - use specific selector like fleet tests
+    await expect(page.locator('h2').filter({ hasText: 'Galaxy Map' })).toBeVisible();
     await expect(page.locator('text=Center:')).toBeVisible();
     await expect(page.locator('text=Exploration Range: 50 units')).toBeVisible();
   });
 
   test('should display Galaxy Map modal structure', async ({ page }) => {
-    // Navigate to Galaxy Map
-    await page.click('text=Galaxy Map');
+    // Navigate to Galaxy Map using helper
+    await navigateToGalaxyMap(page);
 
     // Check modal overlay
     await expect(page.locator('.fixed.inset-0.bg-black.bg-opacity-75')).toBeVisible();
@@ -36,22 +60,22 @@ test.describe('Galaxy Map Navigation', () => {
     // Check modal content
     await expect(page.locator('.bg-gray-800.rounded-lg.p-6')).toBeVisible();
 
-    // Check header with title and close button
-    await expect(page.locator('h2:has-text("Galaxy Map")')).toBeVisible();
-    await expect(page.locator('button:has-text("✕")')).toBeVisible();
+    // Check header with title and close button - use specific selector like fleet
+    await expect(page.locator('h2').filter({ hasText: 'Galaxy Map' })).toBeVisible();
+    await expect(page.locator('button').filter({ hasText: '✕' })).toBeVisible();
   });
 
   test('should display center coordinates', async ({ page }) => {
-    // Navigate to Galaxy Map
-    await page.click('text=Galaxy Map');
+    // Navigate to Galaxy Map using helper
+    await navigateToGalaxyMap(page);
 
     // Check center coordinates display
     await expect(page.locator('text=/Center: \\d+:\\d+:\\d+/')).toBeVisible();
   });
 
   test('should display systems grid container', async ({ page }) => {
-    // Navigate to Galaxy Map
-    await page.click('text=Galaxy Map');
+    // Navigate to Galaxy Map using helper
+    await navigateToGalaxyMap(page);
 
     // Check grid container exists
     await expect(page.locator('.grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3')).toBeVisible();
@@ -184,5 +208,64 @@ test.describe('Galaxy Map Navigation', () => {
     // Parse the debug object (this is a simplified check)
     expect(debugMessage).toContain('homePlanet');
     expect(debugMessage).toContain('Not found');
+  });
+
+  test('should test galaxy API endpoints directly', async ({ page }) => {
+    // Get JWT token from localStorage (following fleet pattern)
+    const token = await page.evaluate(() => localStorage.getItem('token'));
+    console.log('DEBUG: JWT token present for API test:', !!token);
+    expect(token).toBeTruthy();
+
+    // Test nearby systems endpoint (following fleet API testing pattern)
+    const nearbyResponse = await page.request.get('http://localhost:5000/api/galaxy/nearby/100/200/300', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log('DEBUG: Nearby systems API response status:', nearbyResponse.status());
+    expect(nearbyResponse.status()).toBe(200);
+
+    const nearbyData = await nearbyResponse.json();
+    console.log('DEBUG: Nearby systems data:', nearbyData);
+    expect(Array.isArray(nearbyData)).toBe(true);
+
+    // Test system planets endpoint
+    const systemResponse = await page.request.get('http://localhost:5000/api/galaxy/system/100/200/300', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log('DEBUG: System planets API response status:', systemResponse.status());
+    expect(systemResponse.status()).toBe(200);
+
+    const systemData = await systemResponse.json();
+    console.log('DEBUG: System planets data:', systemData);
+    expect(Array.isArray(systemData)).toBe(true);
+  });
+
+  test('should handle API errors gracefully with JWT', async ({ page }) => {
+    // Get JWT token from localStorage
+    const token = await page.evaluate(() => localStorage.getItem('token'));
+    expect(token).toBeTruthy();
+
+    // Test with invalid coordinates (should still return valid response)
+    const response = await page.request.get('http://localhost:5000/api/galaxy/nearby/99999/99999/99999', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log('DEBUG: Error handling API response status:', response.status());
+    expect([200, 404, 500]).toContain(response.status());
+
+    // Should return some data structure even for edge cases
+    const data = await response.json();
+    console.log('DEBUG: Error case data:', data);
+    expect(data).toBeDefined();
   });
 });

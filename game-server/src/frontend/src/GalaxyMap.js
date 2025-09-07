@@ -33,19 +33,37 @@ function GalaxyMap({ user, planets, onClose }) {
 
   const fetchNearbySystems = async () => {
     try {
-      console.log('🌌 Fetching nearby systems:', `/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`);
-      const response = await axios.get(`/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`);
-      console.log('✅ Systems fetched successfully:', response.data);
-      setSystems(response.data);
+      console.log('🌌 Fetching nearby systems:', `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`);
+
+      // Get JWT token from localStorage (following fleet test pattern)
+      const token = localStorage.getItem('token');
+      console.log('DEBUG: JWT token present for galaxy API:', !!token);
+
+      const response = await fetch(`http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+
+      console.log('DEBUG: Galaxy API response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Systems fetched successfully:', data);
+      setSystems(data);
     } catch (error) {
       console.error('❌ Error fetching systems:', {
         message: error.message,
-        code: error.code,
-        status: error.response?.status,
-        url: `/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`
+        status: error.status,
+        url: `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`
       });
 
-      // Add fallback data for testing
+      // Add fallback data for testing (following fleet pattern)
       console.log('🔧 Using fallback test data');
       setSystems([
         { x: centerX + 10, y: centerY + 20, z: centerZ + 30, explored: false, planets: 0 },
@@ -65,22 +83,49 @@ function GalaxyMap({ user, planets, onClose }) {
     // Send exploration fleet
     setLoading(true);
     try {
+      // Get JWT token from localStorage (following fleet pattern)
+      const token = localStorage.getItem('token');
+      console.log('DEBUG: JWT token present for fleet API:', !!token);
+
       // Find a fleet to send (simplified - use first available)
-      const fleetResponse = await axios.get('/api/fleet');
-      const availableFleet = fleetResponse.data.find(f => f.status === 'stationed');
+      const fleetResponse = await fetch('http://localhost:5000/api/fleet', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+
+      if (!fleetResponse.ok) {
+        throw new Error(`HTTP ${fleetResponse.status}: ${fleetResponse.statusText}`);
+      }
+
+      const fleetData = await fleetResponse.json();
+      const availableFleet = fleetData.find(f => f.status === 'stationed');
 
       if (!availableFleet) {
         alert('No available fleets for exploration!');
         return;
       }
 
-      await axios.post('/api/fleet/send', {
-        fleet_id: availableFleet.id,
-        mission: 'explore',
-        target_x: system.x,
-        target_y: system.y,
-        target_z: system.z
+      const sendResponse = await fetch('http://localhost:5000/api/fleet/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({
+          fleet_id: availableFleet.id,
+          mission: 'explore',
+          target_x: system.x,
+          target_y: system.y,
+          target_z: system.z
+        })
       });
+
+      if (!sendResponse.ok) {
+        throw new Error(`HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
+      }
 
       alert(`Exploration fleet sent to ${system.x}:${system.y}:${system.z}`);
     } catch (error) {
@@ -99,9 +144,25 @@ function GalaxyMap({ user, planets, onClose }) {
 
     setLoading(true);
     try {
+      // Get JWT token from localStorage (following fleet pattern)
+      const token = localStorage.getItem('token');
+      console.log('DEBUG: JWT token present for colonization API:', !!token);
+
       // Find a fleet with colony ship
-      const fleetResponse = await axios.get('/api/fleet');
-      const colonyFleet = fleetResponse.data.find(f =>
+      const fleetResponse = await fetch('http://localhost:5000/api/fleet', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+
+      if (!fleetResponse.ok) {
+        throw new Error(`HTTP ${fleetResponse.status}: ${fleetResponse.statusText}`);
+      }
+
+      const fleetData = await fleetResponse.json();
+      const colonyFleet = fleetData.find(f =>
         f.status === 'stationed' && f.ships.colony_ship > 0
       );
 
@@ -110,13 +171,24 @@ function GalaxyMap({ user, planets, onClose }) {
         return;
       }
 
-      await axios.post('/api/fleet/send', {
-        fleet_id: colonyFleet.id,
-        mission: 'colonize',
-        target_x: planet.x,
-        target_y: planet.y,
-        target_z: planet.z
+      const sendResponse = await fetch('http://localhost:5000/api/fleet/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({
+          fleet_id: colonyFleet.id,
+          mission: 'colonize',
+          target_x: planet.x,
+          target_y: planet.y,
+          target_z: planet.z
+        })
       });
+
+      if (!sendResponse.ok) {
+        throw new Error(`HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
+      }
 
       alert(`Colonization fleet sent to ${planet.name}`);
     } catch (error) {
@@ -203,10 +275,39 @@ function SystemDetails({ system, onClose, onColonize, loading }) {
 
   const fetchSystemPlanets = async () => {
     try {
-      const response = await axios.get(`/api/galaxy/system/${system.x}/${system.y}/${system.z}`);
-      setPlanets(response.data);
+      console.log('🌌 Fetching system planets:', `http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`);
+
+      // Get JWT token from localStorage (following fleet pattern)
+      const token = localStorage.getItem('token');
+      console.log('DEBUG: JWT token present for system planets API:', !!token);
+
+      const response = await fetch(`http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+
+      console.log('DEBUG: System planets API response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ System planets fetched successfully:', data);
+      setPlanets(data);
     } catch (error) {
-      console.error('Error fetching system planets:', error);
+      console.error('❌ Error fetching system planets:', {
+        message: error.message,
+        status: error.status,
+        url: `http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`
+      });
+
+      // Add fallback empty array for testing
+      console.log('🔧 Using fallback empty planets data');
+      setPlanets([]);
     }
   };
 
