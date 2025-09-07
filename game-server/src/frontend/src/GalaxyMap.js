@@ -1,6 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
+// Enhanced Debug Infrastructure for E2E Testing
+const DEBUG_MODE = process.env.NODE_ENV === 'development' || process.env.REACT_APP_DEBUG_MODE === 'true';
+
+const debugLog = (message, data = null) => {
+  if (DEBUG_MODE) {
+    const timestamp = new Date().toISOString();
+    console.log(`[GalaxyMap Debug ${timestamp}] ${message}`, data);
+  }
+};
+
+// Test-specific debug markers for E2E test identification
+const TEST_DEBUG = {
+  consoleMessages: true,
+  systemMarkers: true,
+  fogOverlay: true,
+  apiCalls: true,
+  eventHandling: true
+};
+
+// Event Handling System for proper click management
+const EventHandlingSystem = {
+  setupSystemMarkerEvents: (element) => {
+    if (!element) return;
+
+    element.style.pointerEvents = 'auto';
+    element.style.zIndex = '20';
+    element.setAttribute('data-test-marker', 'system-marker');
+
+    if (TEST_DEBUG.eventHandling) {
+      debugLog('System marker event setup', {
+        pointerEvents: element.style.pointerEvents,
+        zIndex: element.style.zIndex,
+        testMarker: element.getAttribute('data-test-marker')
+      });
+    }
+  },
+
+  setupFogOverlayEvents: (element) => {
+    if (!element) return;
+
+    element.style.pointerEvents = 'none';
+    element.style.zIndex = '5';
+    element.setAttribute('data-test-fog', 'fog-overlay');
+
+    if (TEST_DEBUG.eventHandling) {
+      debugLog('Fog overlay event setup', {
+        pointerEvents: element.style.pointerEvents,
+        zIndex: element.style.zIndex,
+        testFog: element.getAttribute('data-test-fog')
+      });
+    }
+  }
+};
+
 // Coordinate System Utilities
 const CoordinateUtils = {
   // Validate coordinate bounds
@@ -48,6 +102,8 @@ function GalaxyMap({ user, planets, onClose }) {
   const [zoom, setZoom] = useState(1);
   const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
   const [showGrid, setShowGrid] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // Get user's home planet coordinates as center
   const homePlanet = planets.find(p => p.user_id == user.id); // Use loose equality for type safety
@@ -110,11 +166,13 @@ function GalaxyMap({ user, planets, onClose }) {
       });
 
       // Add fallback data for testing (following fleet pattern)
-      console.log('🔧 Using fallback test data');
+      console.log('🔧 Using fallback test data with mix of explored/unexplored systems');
       setSystems([
-        { x: centerX + 10, y: centerY + 20, z: centerZ + 30, explored: false, planets: 0 },
-        { x: centerX - 15, y: centerY - 25, z: centerZ - 35, explored: true, planets: 0 },
-        { x: centerX + 40, y: centerY + 50, z: centerZ + 60, explored: false, planets: 0 }
+        { x: centerX + 10, y: centerY + 20, z: centerZ + 30, explored: false, planets: 0, owner_id: null },
+        { x: centerX - 15, y: centerY - 25, z: centerZ - 35, explored: true, planets: 2, owner_id: user.id },
+        { x: centerX + 40, y: centerY + 50, z: centerZ + 60, explored: false, planets: 0, owner_id: null },
+        { x: centerX - 30, y: centerY + 15, z: centerZ - 20, explored: false, planets: 0, owner_id: null },
+        { x: centerX + 25, y: centerY - 35, z: centerZ + 45, explored: true, planets: 1, owner_id: null }
       ]);
     }
   };
@@ -260,6 +318,48 @@ function GalaxyMap({ user, planets, onClose }) {
     return { x: relativeX, y: relativeY };
   };
 
+  // Mouse drag handlers for panning
+  const handleMouseDown = (e) => {
+    if (e.button === 0) { // Left mouse button only
+      setIsDragging(true);
+      setDragStart({ x: e.clientX, y: e.clientY });
+      e.preventDefault();
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    if (isDragging) {
+      const deltaX = e.clientX - dragStart.x;
+      const deltaY = e.clientY - dragStart.y;
+      setViewOffset(prev => ({
+        x: prev.x + deltaX,
+        y: prev.y + deltaY
+      }));
+      setDragStart({ x: e.clientX, y: e.clientY });
+      e.preventDefault();
+    }
+  };
+
+  const handleMouseUp = (e) => {
+    if (isDragging) {
+      setIsDragging(false);
+      e.preventDefault();
+    }
+  };
+
+  const handleMouseLeave = (e) => {
+    if (isDragging) {
+      setIsDragging(false);
+    }
+  };
+
+  // Mouse wheel zoom handler
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom(prev => Math.max(0.5, Math.min(2, prev + zoomFactor)));
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
       <div className="bg-gray-800 rounded-lg p-6 max-w-6xl w-full h-5/6 flex flex-col">
@@ -312,14 +412,69 @@ function GalaxyMap({ user, planets, onClose }) {
         </div>
 
         {/* Map Container */}
-        <div className="flex-1 bg-gray-900 rounded-lg overflow-hidden relative">
+        <div
+          className={`flex-1 bg-gray-900 rounded-lg overflow-hidden relative galaxy-background ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
+          onWheel={handleWheel}
+        >
+          {/* Deep Space Background */}
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-purple-900 to-blue-900">
+            {/* Nebula Layer 1 */}
+            <div className="absolute inset-0 opacity-30">
+              <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-purple-600 rounded-full blur-3xl animate-pulse"></div>
+              <div className="absolute bottom-1/3 right-1/4 w-80 h-80 bg-pink-600 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}}></div>
+            </div>
+
+            {/* Nebula Layer 2 */}
+            <div className="absolute inset-0 opacity-20">
+              <div className="absolute top-1/2 left-1/4 w-64 h-64 bg-blue-500 rounded-full blur-2xl animate-pulse" style={{animationDelay: '1s'}}></div>
+              <div className="absolute bottom-1/4 right-1/3 w-72 h-72 bg-indigo-600 rounded-full blur-2xl animate-pulse" style={{animationDelay: '3s'}}></div>
+            </div>
+
+            {/* Animated Starfield */}
+            <div className="absolute inset-0">
+              {Array.from({ length: 200 }, (_, i) => (
+                <div
+                  key={i}
+                  className={`absolute rounded-full bg-white ${
+                    i % 10 === 0 ? 'w-1 h-1' : i % 5 === 0 ? 'w-0.5 h-0.5' : 'w-px h-px'
+                  }`}
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    top: `${Math.random() * 100}%`,
+                    animation: `twinkle ${2 + Math.random() * 3}s infinite`,
+                    animationDelay: `${Math.random() * 3}s`
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Floating Particles */}
+            <div className="absolute inset-0">
+              {Array.from({ length: 30 }, (_, i) => (
+                <div
+                  key={`particle-${i}`}
+                  className="absolute w-1 h-1 bg-white rounded-full opacity-20"
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    top: `${Math.random() * 100}%`,
+                    animation: `float ${10 + Math.random() * 20}s infinite linear`,
+                    animationDelay: `${Math.random() * 10}s`
+                  }}
+                />
+              ))}
+            </div>
+          </div>
           {/* Grid Background */}
           {showGrid && (
-            <div className="absolute inset-0 opacity-20">
-              <svg width="100%" height="100%" className="text-gray-600">
+            <div className="absolute inset-0 opacity-60">
+              <svg width="100%" height="100%" className="text-gray-300">
                 <defs>
                   <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="1"/>
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="1.5"/>
                   </pattern>
                 </defs>
                 <rect width="100%" height="100%" fill="url(#grid)" />
@@ -328,41 +483,80 @@ function GalaxyMap({ user, planets, onClose }) {
           )}
 
           {/* Coordinate Labels */}
-          <div className="absolute top-2 left-2 text-xs text-gray-400 font-mono">
-            <div>X: {Math.round(centerX + viewOffset.x/zoom)}</div>
-            <div>Y: {Math.round(centerY + viewOffset.y/zoom)}</div>
-            <div>Z: {centerZ}</div>
-          </div>
-
-          {/* Fog of War Overlay */}
-          <div className="absolute inset-0 bg-black opacity-80 pointer-events-none">
-            {/* Create fog holes for explored systems */}
-            {systems
-              .filter(system => system.explored)
-              .map((system, index) => {
-                const pos = getSystemPosition(system);
-                const isVisible = Math.abs(pos.x) < 300 && Math.abs(pos.y) < 200;
-
-                if (!isVisible) return null;
-
-                return (
-                  <div
-                    key={`fog-${index}`}
-                    className="absolute w-24 h-24 bg-transparent rounded-full"
-                    style={{
-                      left: `${pos.x + 200}px`,
-                      top: `${pos.y + 150}px`,
-                      transform: 'translate(-50%, -50%)',
-                      background: 'radial-gradient(circle, transparent 0%, transparent 40%, rgba(0,0,0,0.8) 70%, rgba(0,0,0,0.8) 100%)'
-                    }}
-                  />
-                );
-              })}
+          <div className="absolute top-2 left-2 text-xs text-white font-mono bg-black bg-opacity-70 px-3 py-2 rounded-lg border border-gray-600 shadow-lg">
+            <div className="font-semibold text-blue-300">Coordinates:</div>
+            <div className="text-yellow-300">X: {Math.round(centerX + viewOffset.x/zoom)}</div>
+            <div className="text-green-300">Y: {Math.round(centerY + viewOffset.y/zoom)}</div>
+            <div className="text-purple-300">Z: {centerZ}</div>
           </div>
 
           {/* Systems Display */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="relative">
+              {/* Warcraft 3-Style Fog of War Overlay - positioned inside interactive area */}
+              <div
+                ref={(el) => el && EventHandlingSystem.setupFogOverlayEvents(el)}
+                className="fog-overlay absolute"
+                style={{
+                  width: '400px',
+                  height: '300px',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  background: 'rgba(64,64,64,0.95)',
+                  pointerEvents: 'none'
+                }}
+              >
+                {/* Atmospheric fog texture overlay */}
+                <div
+                  className="absolute inset-0 opacity-30"
+                  style={{
+                    backgroundImage: `
+                      radial-gradient(circle at 20% 80%, rgba(64,64,64,0.3) 0%, transparent 50%),
+                      radial-gradient(circle at 80% 20%, rgba(96,96,96,0.2) 0%, transparent 50%),
+                      radial-gradient(circle at 40% 40%, rgba(32,32,32,0.4) 0%, transparent 50%)
+                    `,
+                    animation: 'fogDrift 30s ease-in-out infinite',
+                    pointerEvents: 'none'
+                  }}
+                />
+
+                {/* Create large, sharp fog holes for ALL explored systems */}
+                {systems
+                  .filter(system => system.explored)
+                  .map((system, index) => {
+                    const pos = getSystemPosition(system);
+                    // Position fog holes relative to the fog overlay's center (200, 150)
+                    const relativeX = pos.x + 200; // pos.x is already relative to center
+                    const relativeY = pos.y + 150; // pos.y is already relative to center
+
+                    return (
+                      <div
+                        key={`fog-${index}`}
+                        className="fog-hole absolute w-40 h-40 rounded-full"
+                        style={{
+                          left: `${relativeX}px`,
+                          top: `${relativeY}px`,
+                          transform: 'translate(-50%, -50%)',
+                          background: `
+                            radial-gradient(circle,
+                              transparent 0%,
+                              transparent 25%,
+                              rgba(64,64,64,0.8) 45%,
+                              rgba(96,96,96,0.9) 65%,
+                              rgba(128,128,128,0.95) 85%,
+                              rgba(160,160,160,0.98) 100%
+                            )
+                          `,
+                          boxShadow: '0 0 20px rgba(0,0,0,0.5)',
+                          filter: 'blur(1px)',
+                          pointerEvents: 'none'
+                        }}
+                      />
+                    );
+                  })}
+              </div>
+
               {systems.map((system, index) => {
                 const pos = getSystemPosition(system);
                 const isVisible = Math.abs(pos.x) < 300 && Math.abs(pos.y) < 200;
@@ -371,8 +565,9 @@ function GalaxyMap({ user, planets, onClose }) {
                 if (!isVisible) return null;
 
                 // Determine system ownership status
-                const hasColonies = system.planets && system.planets.some(p => p.user_id);
-                const isOwnedByUser = system.planets && system.planets.some(p => p.user_id == user.id);
+                // system.planets is a number (count), not an array
+                const hasColonies = system.planets && system.planets > 0;
+                const isOwnedByUser = system.planets && system.planets > 0 && system.owner_id == user.id;
                 const isEnemyColony = hasColonies && !isOwnedByUser;
 
                 // Enhanced system marker with colony indicators
@@ -398,7 +593,8 @@ function GalaxyMap({ user, planets, onClose }) {
                 return (
                   <div
                     key={index}
-                    className={`absolute w-16 h-16 rounded-full border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-bold ${markerClass} ${!system.explored ? 'opacity-60' : ''}`}
+                    ref={(el) => el && EventHandlingSystem.setupSystemMarkerEvents(el)}
+                    className={`system-marker absolute w-16 h-16 rounded-full border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-bold ${markerClass} ${!system.explored ? 'opacity-60' : ''}`}
                     style={{
                       left: `${pos.x + 200}px`,
                       top: `${pos.y + 150}px`,

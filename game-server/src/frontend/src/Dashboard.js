@@ -345,8 +345,6 @@ function Dashboard({ user, onLogout }) {
     switch (activeSection) {
       case 'overview':
         return <Overview user={user} planets={planets} />;
-      case 'galaxy':
-        return <GalaxyMap user={user} planets={planets} onClose={() => setActiveSection('overview')} />;
       case 'planets':
         return (
           <div className="space-y-6">
@@ -814,6 +812,15 @@ function Dashboard({ user, onLogout }) {
       <main className="container mx-auto p-6">
         {renderSection()}
       </main>
+
+      {/* Galaxy Map Modal */}
+      {activeSection === 'galaxy' && (
+        <GalaxyMap
+          user={user}
+          planets={planets}
+          onClose={() => setActiveSection('overview')}
+        />
+      )}
 
       {/* Global Chat Panel */}
       <ChatPanel

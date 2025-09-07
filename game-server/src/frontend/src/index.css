@@ -17,3 +17,139 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Galaxy Map Universe Effects */
+@keyframes twinkle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0px) translateX(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-10px) translateX(5px) rotate(90deg);
+  }
+  50% {
+    transform: translateY(-5px) translateX(-5px) rotate(180deg);
+  }
+  75% {
+    transform: translateY(-15px) translateX(10px) rotate(270deg);
+  }
+  100% {
+    transform: translateY(0px) translateX(0px) rotate(360deg);
+  }
+}
+
+@keyframes nebula-drift {
+  0% {
+    transform: translateX(-20px) translateY(-10px) scale(1);
+  }
+  50% {
+    transform: translateX(20px) translateY(10px) scale(1.05);
+  }
+  100% {
+    transform: translateX(-20px) translateY(-10px) scale(1);
+  }
+}
+
+@keyframes cosmic-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+  50% {
+    box-shadow: 0 0 20px currentColor, 0 0 40px currentColor, 0 0 60px currentColor;
+  }
+}
+
+@keyframes fogDrift {
+  0% {
+    transform: translateX(-10px) translateY(-5px) rotate(0deg);
+    opacity: 0.8;
+  }
+  25% {
+    transform: translateX(5px) translateY(-10px) rotate(1deg);
+    opacity: 0.9;
+  }
+  50% {
+    transform: translateX(10px) translateY(5px) rotate(-1deg);
+    opacity: 0.7;
+  }
+  75% {
+    transform: translateX(-5px) translateY(10px) rotate(0.5deg);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateX(-10px) translateY(-5px) rotate(0deg);
+    opacity: 0.8;
+  }
+}
+
+/* Galaxy Background Styles */
+.galaxy-background {
+  position: relative;
+  overflow: hidden;
+}
+
+.galaxy-background::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(138, 43, 226, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(30, 144, 255, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 60% 20%, rgba(255, 20, 147, 0.1) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* System Marker Enhancements */
+.system-marker {
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.system-marker:hover {
+  transform: scale(1.1);
+  z-index: 20;
+}
+
+.system-marker::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: inherit;
+  background: inherit;
+  opacity: 0.3;
+  filter: blur(4px);
+  z-index: -1;
+}
+
+/* Nebula Effects */
+.nebula-purple {
+  background: radial-gradient(circle, rgba(138, 43, 226, 0.3) 0%, rgba(75, 0, 130, 0.2) 50%, transparent 100%);
+  animation: nebula-drift 20s infinite ease-in-out;
+}
+
+.nebula-blue {
+  background: radial-gradient(circle, rgba(30, 144, 255, 0.3) 0%, rgba(0, 0, 139, 0.2) 50%, transparent 100%);
+  animation: nebula-drift 25s infinite ease-in-out reverse;
+}
+
+.nebula-pink {
+  background: radial-gradient(circle, rgba(255, 20, 147, 0.3) 0%, rgba(139, 0, 139, 0.2) 50%, transparent 100%);
+  animation: nebula-drift 30s infinite ease-in-out;
+}

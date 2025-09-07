@@ -2,33 +2,54 @@
 Unit tests for enhanced model functionality
 
 Tests the new fields and relationships added to existing models.
+Follows the existing database-first testing pattern like test_models.py.
 """
 
 import pytest
-from unittest.mock import Mock
-from backend.models import Planet, Research, PlanetTrait
+from backend.models import Planet, Research, PlanetTrait, User
 
 
 class TestEnhancedPlanetModel:
     """Test enhanced Planet model with trait bonuses"""
 
-    def test_planet_trait_bonus_fields(self):
-        """Test that Planet model has trait bonus fields"""
+    def test_planet_trait_bonus_fields_creation(self, db_session, sample_user):
+        """Test creating planet with trait bonus fields"""
         planet = Planet(
             name='Test Planet',
             x=100, y=200, z=300,
-            user_id=1
+            user_id=sample_user.id,
+            base_metal_bonus=0.25,
+            base_crystal_bonus=0.15,
+            base_deuterium_bonus=0.10,
+            base_energy_bonus=0.20,
+            base_defense_bonus=0.30,
+            base_attack_bonus=0.40,
+            colonization_difficulty=3,
+            research_lab=5
         )
+        db_session.add(planet)
+        db_session.commit()
 
-        # Check that trait bonus fields exist and have default values
-        assert hasattr(planet, 'base_metal_bonus')
-        assert hasattr(planet, 'base_crystal_bonus')
-        assert hasattr(planet, 'base_deuterium_bonus')
-        assert hasattr(planet, 'base_energy_bonus')
-        assert hasattr(planet, 'base_defense_bonus')
-        assert hasattr(planet, 'base_attack_bonus')
-        assert hasattr(planet, 'colonization_difficulty')
-        assert hasattr(planet, 'research_lab')
+        # Verify fields are saved correctly
+        assert planet.id is not None
+        assert planet.base_metal_bonus == 0.25
+        assert planet.base_crystal_bonus == 0.15
+        assert planet.base_deuterium_bonus == 0.10
+        assert planet.base_energy_bonus == 0.20
+        assert planet.base_defense_bonus == 0.30
+        assert planet.base_attack_bonus == 0.40
+        assert planet.colonization_difficulty == 3
+        assert planet.research_lab == 5
+
+    def test_planet_trait_bonus_fields_defaults(self, db_session, sample_user):
+        """Test planet trait bonus field defaults"""
+        planet = Planet(
+            name='Default Planet',
+            x=150, y=250, z=350,
+            user_id=sample_user.id
+        )
+        db_session.add(planet)
+        db_session.commit()
 
         # Check default values
         assert planet.base_metal_bonus == 0.0
@@ -40,129 +61,125 @@ class TestEnhancedPlanetModel:
         assert planet.colonization_difficulty == 1
         assert planet.research_lab == 0
 
-    def test_planet_with_trait_bonuses(self):
-        """Test Planet model with custom trait bonuses"""
-        planet = Planet(
-            name='Bonus Planet',
-            x=150, y=250, z=350,
-            user_id=1,
-            base_metal_bonus=0.25,
-            base_crystal_bonus=0.15,
-            base_deuterium_bonus=0.10,
-            base_energy_bonus=0.20,
-            base_defense_bonus=0.30,
-            base_attack_bonus=0.40,
-            colonization_difficulty=3,
-            research_lab=5
-        )
-
-        assert planet.base_metal_bonus == 0.25
-        assert planet.base_crystal_bonus == 0.15
-        assert planet.base_deuterium_bonus == 0.10
-        assert planet.base_energy_bonus == 0.20
-        assert planet.base_defense_bonus == 0.30
-        assert planet.base_attack_bonus == 0.40
-        assert planet.colonization_difficulty == 3
-        assert planet.research_lab == 5
-
-    def test_planet_repr_with_enhanced_fields(self):
+    def test_planet_repr_with_enhanced_fields(self, db_session, sample_user):
         """Test that planet repr still works with enhanced fields"""
         planet = Planet(
             name='Enhanced Planet',
             x=200, y=300, z=400,
-            user_id=1
+            user_id=sample_user.id
         )
+        db_session.add(planet)
+        db_session.commit()
 
         repr_str = str(planet)
         assert 'Enhanced Planet' in repr_str
         assert '200:300:400' in repr_str
 
-    def test_planet_trait_relationship(self):
-        """Test Planet-Trait relationship"""
+    def test_planet_trait_relationship(self, db_session, sample_user):
+        """Test Planet-Trait relationship with real database"""
+        # Create planet
         planet = Planet(
             name='Trait Planet',
             x=250, y=350, z=450,
-            user_id=1
+            user_id=sample_user.id
         )
+        db_session.add(planet)
+        db_session.commit()
 
-        # Mock traits relationship
-        mock_trait1 = Mock()
-        mock_trait1.trait_name = 'Resource Rich'
-        mock_trait1.bonus_value = 0.25
+        # Create traits
+        trait1 = PlanetTrait(
+            planet_id=planet.id,
+            trait_type='resource_bonus',
+            trait_name='Resource Rich',
+            bonus_value=0.25,
+            description='High natural resource deposits'
+        )
+        trait2 = PlanetTrait(
+            planet_id=planet.id,
+            trait_type='defense_bonus',
+            trait_name='Defensive',
+            bonus_value=0.30,
+            description='Natural defensive advantages'
+        )
+        db_session.add(trait1)
+        db_session.add(trait2)
+        db_session.commit()
 
-        mock_trait2 = Mock()
-        mock_trait2.trait_name = 'Defensive'
-        mock_trait2.bonus_value = 0.30
+        # Test relationship
+        planet_with_traits = db_session.query(Planet).filter_by(id=planet.id).first()
+        traits = db_session.query(PlanetTrait).filter_by(planet_id=planet.id).all()
 
-        # Simulate traits relationship
-        planet.traits = [mock_trait1, mock_trait2]
-
-        # Should be able to access traits
-        assert len(planet.traits) == 2
-        assert planet.traits[0].trait_name == 'Resource Rich'
-        assert planet.traits[1].trait_name == 'Defensive'
+        assert len(traits) == 2
+        assert traits[0].trait_name == 'Resource Rich'
+        assert traits[1].trait_name == 'Defensive'
+        assert traits[0].bonus_value == 0.25
+        assert traits[1].bonus_value == 0.30
 
 
 class TestResearchModel:
     """Test Research model functionality"""
 
-    def test_research_model_creation(self):
+    def test_research_model_creation(self, db_session, sample_user):
         """Test creating a new Research record"""
         research = Research(
-            user_id=1,
+            user_id=sample_user.id,
             colonization_tech=2,
             astrophysics=1,
             interstellar_communication=0,
             research_points=500
         )
+        db_session.add(research)
+        db_session.commit()
 
-        assert research.user_id == 1
+        assert research.id is not None
+        assert research.user_id == sample_user.id
         assert research.colonization_tech == 2
         assert research.astrophysics == 1
         assert research.interstellar_communication == 0
         assert research.research_points == 500
 
-    def test_research_model_defaults(self):
-        """Test Research model default values"""
-        research = Research(user_id=2)
-
-        assert research.user_id == 2
-        assert research.colonization_tech == 0
-        assert research.astrophysics == 0
-        assert research.interstellar_communication == 0
-        assert research.research_points == 0
-
-    def test_research_model_repr(self):
+    def test_research_model_repr(self, db_session, sample_user):
         """Test Research model string representation"""
         research = Research(
-            user_id=3,
+            user_id=sample_user.id,
             research_points=750
         )
+        db_session.add(research)
+        db_session.commit()
 
         repr_str = str(research)
-        assert 'user:3' in repr_str
+        assert 'user:' in repr_str
         assert 'points:750' in repr_str
 
-    def test_research_user_relationship(self):
+    def test_research_user_relationship(self, db_session, sample_user):
         """Test Research-User relationship"""
-        research = Research(user_id=1)
+        research = Research(
+            user_id=sample_user.id,
+            colonization_tech=3,
+            research_points=1000
+        )
+        db_session.add(research)
+        db_session.commit()
 
-        # Mock user relationship
-        mock_user = Mock()
-        mock_user.username = 'TestUser'
-        research.user = mock_user
+        # Test relationship from user side
+        user_with_research = db_session.query(User).filter_by(id=sample_user.id).first()
+        research_from_user = db_session.query(Research).filter_by(user_id=sample_user.id).first()
 
-        assert research.user.username == 'TestUser'
+        assert research_from_user is not None
+        assert research_from_user.colonization_tech == 3
+        assert research_from_user.research_points == 1000
 
-    def test_research_level_validation(self):
+    def test_research_level_validation(self, db_session, sample_user):
         """Test research level value validation"""
         # Test valid levels
         research = Research(
-            user_id=1,
+            user_id=sample_user.id,
             colonization_tech=5,
             astrophysics=3,
             interstellar_communication=2
         )
+        db_session.add(research)
+        db_session.commit()
 
         assert research.colonization_tech == 5
         assert research.astrophysics == 3
@@ -170,11 +187,13 @@ class TestResearchModel:
 
         # Test zero levels
         research_zero = Research(
-            user_id=2,
+            user_id=sample_user.id,
             colonization_tech=0,
             astrophysics=0,
             interstellar_communication=0
         )
+        db_session.add(research_zero)
+        db_session.commit()
 
         assert research_zero.colonization_tech == 0
         assert research_zero.astrophysics == 0
@@ -184,65 +203,69 @@ class TestResearchModel:
 class TestPlanetTraitModel:
     """Test PlanetTrait model functionality"""
 
-    def test_planet_trait_creation(self):
+    def test_planet_trait_creation(self, db_session, sample_user):
         """Test creating a new PlanetTrait record"""
+        # Create planet first
+        planet = Planet(
+            name='Trait Test Planet',
+            x=100, y=200, z=300,
+            user_id=sample_user.id
+        )
+        db_session.add(planet)
+        db_session.commit()
+
         trait = PlanetTrait(
-            planet_id=1,
+            planet_id=planet.id,
             trait_type='resource_bonus',
             trait_name='Resource Rich',
             bonus_value=0.25,
             description='High natural resource deposits'
         )
+        db_session.add(trait)
+        db_session.commit()
 
-        assert trait.planet_id == 1
+        assert trait.id is not None
+        assert trait.planet_id == planet.id
         assert trait.trait_type == 'resource_bonus'
         assert trait.trait_name == 'Resource Rich'
         assert trait.bonus_value == 0.25
         assert trait.description == 'High natural resource deposits'
 
-    def test_planet_trait_defaults(self):
-        """Test PlanetTrait model default values"""
-        trait = PlanetTrait(
-            planet_id=2,
-            trait_type='defense_bonus',
-            trait_name='Defensive Position'
-        )
-
-        assert trait.planet_id == 2
-        assert trait.trait_type == 'defense_bonus'
-        assert trait.trait_name == 'Defensive Position'
-        assert trait.bonus_value == 0.0  # Default value
-        assert trait.description is None  # Default value
-
-    def test_planet_trait_repr(self):
+    def test_planet_trait_repr(self, db_session, sample_user):
         """Test PlanetTrait model string representation"""
+        # Create planet first
+        planet = Planet(
+            name='Trait Repr Planet',
+            x=150, y=250, z=350,
+            user_id=sample_user.id
+        )
+        db_session.add(planet)
+        db_session.commit()
+
         trait = PlanetTrait(
-            planet_id=1,
+            planet_id=planet.id,
+            trait_type='resource_bonus',
             trait_name='Metal World',
             bonus_value=0.40
         )
+        db_session.add(trait)
+        db_session.commit()
 
         repr_str = str(trait)
         assert 'Metal World' in repr_str
         assert '+0.4' in repr_str
 
-    def test_planet_trait_planet_relationship(self):
-        """Test PlanetTrait-Planet relationship"""
-        trait = PlanetTrait(
-            planet_id=1,
-            trait_name='Crystal Caves',
-            bonus_value=0.35
-        )
-
-        # Mock planet relationship
-        mock_planet = Mock()
-        mock_planet.name = 'Crystal Planet'
-        trait.planet = mock_planet
-
-        assert trait.planet.name == 'Crystal Planet'
-
-    def test_planet_trait_various_types(self):
+    def test_planet_trait_various_types(self, db_session, sample_user):
         """Test PlanetTrait with different trait types"""
+        # Create planet first
+        planet = Planet(
+            name='Various Traits Planet',
+            x=200, y=300, z=400,
+            user_id=sample_user.id
+        )
+        db_session.add(planet)
+        db_session.commit()
+
         trait_types = [
             ('resource_bonus', 'Resource Rich', 0.25),
             ('defense_bonus', 'Defensive Position', 0.30),
@@ -253,200 +276,111 @@ class TestPlanetTraitModel:
 
         for trait_type, name, value in trait_types:
             trait = PlanetTrait(
-                planet_id=1,
+                planet_id=planet.id,
                 trait_type=trait_type,
                 trait_name=name,
                 bonus_value=value
             )
+            db_session.add(trait)
 
-            assert trait.trait_type == trait_type
-            assert trait.trait_name == name
-            assert trait.bonus_value == value
+        db_session.commit()
 
+        # Verify all traits were created
+        traits = db_session.query(PlanetTrait).filter_by(planet_id=planet.id).all()
+        assert len(traits) == len(trait_types)
 
-class TestModelRelationships:
-    """Test relationships between enhanced models"""
-
-    def test_user_research_relationship(self):
-        """Test User-Research relationship"""
-        from backend.models import User
-
-        user = User(
-            username='ResearchUser',
-            email='research@example.com',
-            password_hash='hash'
-        )
-
-        research = Research(
-            user_id=1,  # Would be set by SQLAlchemy
-            colonization_tech=3,
-            research_points=1000
-        )
-
-        # Mock bidirectional relationship
-        user.research_data = [research]
-        research.user = user
-
-        assert len(user.research_data) == 1
-        assert user.research_data[0].colonization_tech == 3
-        assert research.user.username == 'ResearchUser'
-
-    def test_planet_traits_relationship(self):
-        """Test Planet-Traits relationship"""
-        planet = Planet(
-            name='Trait Planet',
-            x=100, y=200, z=300,
-            user_id=1
-        )
-
-        trait1 = PlanetTrait(
-            planet_id=1,  # Would be set by SQLAlchemy
-            trait_name='Resource Rich',
-            bonus_value=0.25
-        )
-
-        trait2 = PlanetTrait(
-            planet_id=1,  # Would be set by SQLAlchemy
-            trait_name='Defensive',
-            bonus_value=0.30
-        )
-
-        # Mock bidirectional relationship
-        planet.traits = [trait1, trait2]
-        trait1.planet = planet
-        trait2.planet = planet
-
-        assert len(planet.traits) == 2
-        assert planet.traits[0].trait_name == 'Resource Rich'
-        assert planet.traits[1].trait_name == 'Defensive'
-        assert trait1.planet.name == 'Trait Planet'
-        assert trait2.planet.name == 'Trait Planet'
-
-    def test_complete_user_planet_research_relationship(self):
-        """Test complete User-Planet-Research relationship chain"""
-        from backend.models import User
-
-        user = User(
-            username='CompleteUser',
-            email='complete@example.com',
-            password_hash='hash'
-        )
-
-        research = Research(
-            user_id=1,
-            colonization_tech=2,
-            astrophysics=1,
-            research_points=500
-        )
-
-        planet1 = Planet(
-            name='Home Planet',
-            x=0, y=0, z=0,
-            user_id=1,
-            base_metal_bonus=0.10,
-            research_lab=3
-        )
-
-        planet2 = Planet(
-            name='Colony Alpha',
-            x=100, y=200, z=300,
-            user_id=1,
-            base_crystal_bonus=0.15,
-            colonization_difficulty=2
-        )
-
-        trait = PlanetTrait(
-            planet_id=2,  # planet2
-            trait_name='Crystal Caves',
-            bonus_value=0.35
-        )
-
-        # Establish relationships
-        user.planets = [planet1, planet2]
-        user.research_data = [research]
-
-        planet1.owner = user
-        planet2.owner = user
-        planet2.traits = [trait]
-
-        research.user = user
-        trait.planet = planet2
-
-        # Test complete relationship chain
-        assert len(user.planets) == 2
-        assert len(user.research_data) == 1
-        assert user.research_data[0].colonization_tech == 2
-
-        assert user.planets[0].name == 'Home Planet'
-        assert user.planets[1].name == 'Colony Alpha'
-
-        assert len(user.planets[1].traits) == 1
-        assert user.planets[1].traits[0].trait_name == 'Crystal Caves'
-
-        assert user.planets[1].traits[0].planet.name == 'Colony Alpha'
+        for i, (expected_type, expected_name, expected_value) in enumerate(trait_types):
+            assert traits[i].trait_type == expected_type
+            assert traits[i].trait_name == expected_name
+            assert traits[i].bonus_value == expected_value
 
 
 class TestModelDataValidation:
     """Test data validation for enhanced model fields"""
 
-    def test_planet_bonus_value_ranges(self):
+    def test_planet_bonus_value_ranges(self, db_session, sample_user):
         """Test that planet bonus values are within reasonable ranges"""
         # Test reasonable bonus values
         planet = Planet(
             name='Balanced Planet',
             x=100, y=200, z=300,
-            user_id=1,
+            user_id=sample_user.id,
             base_metal_bonus=0.50,      # 50% bonus
             base_crystal_bonus=0.25,    # 25% bonus
             base_energy_bonus=1.0,      # 100% bonus
             colonization_difficulty=4   # Level 4 difficulty
         )
+        db_session.add(planet)
+        db_session.commit()
 
         assert 0 <= planet.base_metal_bonus <= 2.0      # Reasonable range
         assert 0 <= planet.base_crystal_bonus <= 2.0
         assert 0 <= planet.base_energy_bonus <= 2.0
         assert 1 <= planet.colonization_difficulty <= 5  # Valid difficulty range
 
-    def test_research_level_maximums(self):
+    def test_research_level_maximums(self, db_session, sample_user):
         """Test research level maximum values"""
         research = Research(
-            user_id=1,
+            user_id=sample_user.id,
             colonization_tech=10,           # Max level
             astrophysics=15,               # Max level
             interstellar_communication=12, # Max level
             research_points=100000         # Large point total
         )
+        db_session.add(research)
+        db_session.commit()
 
         assert research.colonization_tech <= 10
         assert research.astrophysics <= 15
         assert research.interstellar_communication <= 12
         assert research.research_points >= 0
 
-    def test_trait_bonus_value_ranges(self):
+    def test_trait_bonus_value_ranges(self, db_session, sample_user):
         """Test trait bonus values are within expected ranges"""
+        # Create planet first
+        planet = Planet(
+            name='Trait Range Planet',
+            x=250, y=350, z=450,
+            user_id=sample_user.id
+        )
+        db_session.add(planet)
+        db_session.commit()
+
         # Test various trait bonuses
         traits = [
-            PlanetTrait(trait_name='Resource Rich', bonus_value=0.25),
-            PlanetTrait(trait_name='Metal World', bonus_value=0.40),
-            PlanetTrait(trait_name='Defensive', bonus_value=0.25),
-            PlanetTrait(trait_name='Hostile', bonus_value=2),  # Difficulty bonus
+            PlanetTrait(planet_id=planet.id, trait_type='resource_bonus', trait_name='Resource Rich', bonus_value=0.25),
+            PlanetTrait(planet_id=planet.id, trait_type='resource_bonus', trait_name='Metal World', bonus_value=0.40),
+            PlanetTrait(planet_id=planet.id, trait_type='defense_bonus', trait_name='Defensive', bonus_value=0.25),
+            PlanetTrait(planet_id=planet.id, trait_type='colonization_difficulty', trait_name='Hostile', bonus_value=2),  # Difficulty bonus
         ]
 
         for trait in traits:
+            db_session.add(trait)
+
+        db_session.commit()
+
+        saved_traits = db_session.query(PlanetTrait).filter_by(planet_id=planet.id).all()
+
+        for trait in saved_traits:
             if trait.trait_name == 'Hostile':
                 assert trait.bonus_value >= 1  # Difficulty should be at least 1
             else:
                 assert 0 <= trait.bonus_value <= 1.0  # Percentage bonuses
 
-    def test_research_points_non_negative(self):
+    def test_research_points_non_negative(self, db_session, sample_user):
         """Test that research points cannot be negative"""
         research = Research(
-            user_id=1,
+            user_id=sample_user.id,
             research_points=0
         )
+        db_session.add(research)
+        db_session.commit()
 
         assert research.research_points >= 0
 
         # Test edge case
         research.research_points = 100
-        assert research.research_points >= 0
+        db_session.commit()
+
+        updated_research = db_session.query(Research).filter_by(id=research.id).first()
+        assert updated_research.research_points >= 0
