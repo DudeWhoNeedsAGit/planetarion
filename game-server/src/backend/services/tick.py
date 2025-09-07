@@ -32,10 +32,10 @@ def process_resource_generation():
     changes = []
 
     for planet in planets:
-        # Calculate production rates
-        metal_rate = calculate_production_rate(planet.metal_mine, 'metal')
-        crystal_rate = calculate_production_rate(planet.crystal_mine, 'crystal')
-        deuterium_rate = calculate_production_rate(planet.deuterium_synthesizer, 'deuterium')
+        # Calculate production rates with planet trait bonuses
+        metal_rate = calculate_production_rate(planet.metal_mine, 'metal', planet)
+        crystal_rate = calculate_production_rate(planet.crystal_mine, 'crystal', planet)
+        deuterium_rate = calculate_production_rate(planet.deuterium_synthesizer, 'deuterium', planet)
 
         # Calculate energy production and consumption
         energy_production = planet.solar_plant * 20 + planet.fusion_reactor * 50
@@ -67,15 +67,31 @@ def process_resource_generation():
     db.session.commit()
     return changes
 
-def calculate_production_rate(level, resource_type):
-    """Calculate production rate for a building level"""
+def calculate_production_rate(level, resource_type, planet=None):
+    """Calculate production rate for a building level with planet trait bonuses"""
+    # Base production rates
     if resource_type == 'metal':
-        return level * 30 * (1.1 ** level)
+        base_rate = level * 30 * (1.1 ** level)
     elif resource_type == 'crystal':
-        return level * 20 * (1.1 ** level)
+        base_rate = level * 20 * (1.1 ** level)
     elif resource_type == 'deuterium':
-        return level * 10 * (1.1 ** level)
-    return 0
+        base_rate = level * 10 * (1.1 ** level)
+    else:
+        return 0
+
+    # Apply planet trait bonuses if planet is provided
+    if planet:
+        bonus_multiplier = 1.0
+        if resource_type == 'metal' and planet.base_metal_bonus:
+            bonus_multiplier += planet.base_metal_bonus
+        elif resource_type == 'crystal' and planet.base_crystal_bonus:
+            bonus_multiplier += planet.base_crystal_bonus
+        elif resource_type == 'deuterium' and planet.base_deuterium_bonus:
+            bonus_multiplier += planet.base_deuterium_bonus
+
+        base_rate *= bonus_multiplier
+
+    return base_rate
 
 def process_fleet_movements(current_time):
     """Process fleet movements and arrivals"""
@@ -292,6 +308,13 @@ def generate_exploration_planets(x, y, z, user_id):
         )
 
         db.session.add(planet)
+        db.session.flush()  # Get planet ID for trait generation
+
+        # Generate planet traits
+        from backend.services.planet_traits import PlanetTraitService
+        traits = PlanetTraitService.generate_planet_traits(planet)
+        db.session.add_all(traits)
+
         discovered_planets.append(planet)
 
     db.session.commit()

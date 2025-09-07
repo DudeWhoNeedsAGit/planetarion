@@ -54,6 +54,18 @@ class Planet(db.Model):
     battleship = db.Column(db.Integer, default=0)
     colony_ship = db.Column(db.Integer, default=0)
 
+    # Planet traits and bonuses
+    base_metal_bonus = db.Column(db.Float, default=0.0)
+    base_crystal_bonus = db.Column(db.Float, default=0.0)
+    base_deuterium_bonus = db.Column(db.Float, default=0.0)
+    base_energy_bonus = db.Column(db.Float, default=0.0)
+    base_defense_bonus = db.Column(db.Float, default=0.0)
+    base_attack_bonus = db.Column(db.Float, default=0.0)
+    colonization_difficulty = db.Column(db.Integer, default=1)  # 1-5 scale
+
+    # Research lab for research point generation
+    research_lab = db.Column(db.Integer, default=0)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
@@ -159,3 +171,41 @@ class ChatMessage(db.Model):
 
     def __repr__(self):
         return f'<ChatMessage user:{self.username} system:{self.is_system}>'
+
+
+class PlanetTrait(db.Model):
+    __tablename__ = 'planet_traits'
+
+    id = db.Column(db.Integer, primary_key=True)
+    planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False)
+    trait_type = db.Column(db.String(50), nullable=False)  # 'resource_bonus', 'defense_bonus', etc.
+    trait_name = db.Column(db.String(100), nullable=False)
+    bonus_value = db.Column(db.Float, default=0.0)
+    description = db.Column(db.Text)
+
+    # Relationships
+    planet = db.relationship('Planet', backref='traits')
+
+    def __repr__(self):
+        return f'<PlanetTrait {self.trait_name} (+{self.bonus_value})>'
+
+
+class Research(db.Model):
+    __tablename__ = 'research'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    # Research levels
+    colonization_tech = db.Column(db.Integer, default=0)
+    astrophysics = db.Column(db.Integer, default=0)
+    interstellar_communication = db.Column(db.Integer, default=0)
+
+    # Research points
+    research_points = db.Column(db.BigInteger, default=0)
+
+    # Relationships
+    user = db.relationship('User', backref='research_data')
+
+    def __repr__(self):
+        return f'<Research user:{self.user_id} points:{self.research_points}>'
