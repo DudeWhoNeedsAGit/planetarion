@@ -22,9 +22,15 @@ fleet_mgmt_bp = Blueprint('fleet_mgmt', __name__, url_prefix='/api/fleet')
 @fleet_mgmt_bp.route('', methods=['GET'])
 @jwt_required()
 def get_user_fleets():
+    print("DEBUG: Fleet GET endpoint called")
     user_id = get_jwt_identity()
-    fleets = Fleet.query.filter_by(user_id=user_id).all()
+    print(f"DEBUG: User ID from JWT: {user_id}")
 
+    print("DEBUG: Querying fleets for user...")
+    fleets = Fleet.query.filter_by(user_id=user_id).all()
+    print(f"DEBUG: Found {len(fleets)} fleets for user")
+
+    print("DEBUG: Fleet GET endpoint successful")
     return jsonify([{
         'id': fleet.id,
         'mission': fleet.mission,
@@ -48,10 +54,14 @@ def get_user_fleets():
 @fleet_mgmt_bp.route('', methods=['POST'])
 @jwt_required()
 def create_fleet():
+    print("DEBUG: Fleet POST endpoint called")
     user_id = get_jwt_identity()
+    print(f"DEBUG: User ID from JWT: {user_id}")
     data = request.get_json()
+    print(f"DEBUG: Request data: {data}")
 
     if not data or 'start_planet_id' not in data or 'ships' not in data:
+        print("DEBUG: Missing required fields")
         return jsonify({'error': 'Missing required fields'}), 400
 
     # Verify planet ownership
@@ -118,10 +128,14 @@ def create_fleet():
 @fleet_mgmt_bp.route('/send', methods=['POST'])
 @jwt_required()
 def send_fleet():
+    print("DEBUG: Fleet send endpoint called")
     user_id = get_jwt_identity()
+    print(f"DEBUG: User ID from JWT: {user_id}")
     data = request.get_json()
+    print(f"DEBUG: Request data: {data}")
 
     if not data or 'fleet_id' not in data or 'mission' not in data:
+        print("DEBUG: Missing required fields")
         return jsonify({'error': 'Missing required fields'}), 400
 
     # Get fleet
@@ -220,10 +234,14 @@ def send_fleet():
 @fleet_mgmt_bp.route('/recall/<int:fleet_id>', methods=['POST'])
 @jwt_required()
 def recall_fleet(fleet_id):
+    print("DEBUG: Fleet recall endpoint called")
+    print(f"DEBUG: Fleet ID: {fleet_id}")
     user_id = get_jwt_identity()
+    print(f"DEBUG: User ID from JWT: {user_id}")
 
     fleet = Fleet.query.filter_by(id=fleet_id, user_id=user_id).first()
     if not fleet:
+        print("DEBUG: Fleet not found")
         return jsonify({'error': 'Fleet not found'}), 404
 
     if fleet.status not in ['traveling', 'returning']:
@@ -255,6 +273,24 @@ def recall_fleet(fleet_id):
             'arrival_time': fleet.arrival_time.isoformat(),
             'eta': fleet.eta
         }
+    })
+
+@fleet_mgmt_bp.route('/clear-all', methods=['DELETE'])
+@jwt_required()
+def clear_all_fleets():
+    """Clear all fleets for the current user (for testing purposes)"""
+    print("DEBUG: Clear all fleets endpoint called")
+    user_id = get_jwt_identity()
+    print(f"DEBUG: User ID from JWT: {user_id}")
+
+    # Delete all fleets for this user
+    deleted_count = Fleet.query.filter_by(user_id=user_id).delete()
+    db.session.commit()
+
+    print(f"DEBUG: Deleted {deleted_count} fleets for user {user_id}")
+    return jsonify({
+        'message': f'Cleared {deleted_count} fleets successfully',
+        'deleted_count': deleted_count
     })
 
 def calculate_distance(planet1, planet2):

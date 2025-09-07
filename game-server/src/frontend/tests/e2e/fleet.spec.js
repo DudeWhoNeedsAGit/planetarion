@@ -1,142 +1,109 @@
 const { test, expect } = require('@playwright/test');
 
+// Helper function for login
+async function loginAsE2eTestUser(page) {
+  // Navigate to the app
+  await page.goto('/');
+
+  // Login with existing test account
+  await page.fill('input[name="username"]', 'e2etestuser');
+  await page.fill('input[name="password"]', 'testpassword123');
+
+  // Submit login
+  await page.click('button[type="submit"]');
+
+  // Wait for login to complete
+  await page.waitForTimeout(2000);
+
+  // Verify login success
+  await expect(page.locator('h2:has-text("Welcome back")')).toBeVisible();
+}
+
+// Helper function to navigate to fleets page
+async function navigateToFleets(page) {
+  await page.locator('nav').locator('text=Fleets').click();
+}
+
+// Helper function to clear all fleets for the current user (for testing empty states)
+async function clearAllFleets(page) {
+  try {
+    console.log('DEBUG: Attempting to clear all fleets...');
+
+    // Get JWT token from localStorage (set by login)
+    const token = await page.evaluate(() => localStorage.getItem('token'));
+    console.log('DEBUG: JWT token present:', !!token);
+
+    // Make API call to clear fleets with JWT token
+    const response = await page.request.delete('http://localhost:5000/api/fleet/clear-all', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log('DEBUG: Clear fleets response status:', response.status());
+    console.log('DEBUG: Clear fleets response body:', await response.text());
+  } catch (error) {
+    console.log('ERROR: Clear fleets endpoint failed:', error.message);
+    console.log('Clear fleets endpoint not available, continuing with test');
+  }
+}
+
 test.describe('Fleet Management', () => {
-  test.beforeEach(async ({ page }) => {
-    // 🔍 DEBUG: Check if e2etestuser exists before attempting login
-    console.log('\n🔍 E2E TEST DEBUG: Checking user existence...');
-    const userCheck = await page.evaluate(async () => {
-      try {
-        const response = await fetch('/users', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include'
-        });
-
-        if (response.ok) {
-          const users = await response.json();
-          console.log('👥 Found users:', users.length);
-          const testUser = users.find(u => u.username === 'e2etestuser');
-          if (testUser) {
-            console.log('✅ e2etestuser found:', testUser.id, testUser.email);
-            return true;
-          } else {
-            console.log('❌ e2etestuser NOT found in database!');
-            return false;
-          }
-        } else {
-          console.log('❌ Could not fetch users:', response.status);
-          return false;
-        }
-      } catch (error) {
-        console.log('❌ Error checking users:', error);
-        return false;
-      }
-    });
-
-    if (!userCheck) {
-      throw new Error('❌ E2E TEST SETUP FAILED: Test user "e2etestuser" does not exist. Run populate script first.');
-    }
-
-    // Login first - use credentials that match the working auth test
-    console.log('🔐 Attempting login with e2etestuser / testpassword123...');
-    await page.goto('/');
-    await page.fill('input[name="username"]', 'e2etestuser');
-    await page.fill('input[name="password"]', 'testpassword123');
-    await page.click('button[type="submit"]');
-
-    // Wait for dashboard to load
-    await page.waitForTimeout(2000);
-
-    // Verify login success
-    await expect(page.locator('h2:has-text("Welcome back")')).toBeVisible();
-    console.log('✅ Login successful');
-
-    // Test user should already have planets and ships from the populate script
-    // First, log which database the backend is using
-    const dbInfo = await page.evaluate(async () => {
-      try {
-        const response = await fetch('/api/debug/db', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include'
-        });
-
-        if (response.ok) {
-          return await response.json();
-        } else {
-          console.log('⚠️ Debug endpoint not available, continuing...');
-          return { database_uri: 'unknown' };
-        }
-      } catch (error) {
-        console.log('⚠️ Debug endpoint failed, continuing...');
-        return { database_uri: 'unknown' };
-      }
-    });
-
-    console.log('🗄️ E2E Test Database:', dbInfo.database_uri);
-
-    // Verify the user has planets available
-    const planetsCheck = await page.evaluate(async () => {
-      try {
-        const response = await fetch('/api/planet', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include'
-        });
-
-        if (response.ok) {
-          const planets = await response.json();
-          console.log('✅ User has planets:', planets.length);
-          return planets.length > 0;
-        } else {
-          console.error('Failed to get planets:', response.status, response.statusText);
-          return false;
-        }
-      } catch (error) {
-        console.error('Failed to check planets:', error);
-        return false;
-      }
-    });
-
-    if (!planetsCheck) {
-      throw new Error('❌ E2E TEST SETUP FAILED: Test user "e2etestuser" has no planets. Run populate script first.');
-    }
-
-    // Navigate to fleets using nav context
-    await page.locator('nav').locator('text=Fleets').click();
-  });
 
   test('should display fleet management section', async ({ page }) => {
-    // Check for fleet management header
-    await expect(page.locator('text=Fleet Management')).toBeVisible();
+    // Login with test user
+    await loginAsE2eTestUser(page);
+
+    // Navigate to fleets
+    await navigateToFleets(page);
+
+    // Check for fleet management header - use more robust selector
+    await expect(page.locator('h3').filter({ hasText: 'Fleet Management' })).toBeVisible();
     await expect(page.locator('text=Create Fleet')).toBeVisible();
   });
 
   test('should show no fleets message when empty', async ({ page }) => {
+    // Login with test user
+    await loginAsE2eTestUser(page);
+
+    // Clear all fleets to test empty state
+    await clearAllFleets(page);
+
+    // Navigate to fleets
+    await navigateToFleets(page);
+
     // Should show empty state - check for the message text
-    const noFleetsMessage = page.locator('text=No fleets available');
+    const noFleetsMessage = page.locator('text=No fleets available. Create your first fleet!');
 
     // Check if the message is visible
     await expect(noFleetsMessage).toBeVisible();
   });
 
   test('should open create fleet modal', async ({ page }) => {
+    // Login with test user
+    await loginAsE2eTestUser(page);
+
+    // Navigate to fleets
+    await navigateToFleets(page);
+
     // Click create fleet button
     await page.click('text=Create Fleet');
 
     // Modal should appear
     await expect(page.locator('text=Create New Fleet')).toBeVisible();
     await expect(page.locator('text=Starting Planet')).toBeVisible();
-    await expect(page.locator('text=Ships')).toBeVisible();
+    // Use more specific selector to avoid ambiguity
+    await expect(page.locator('label').filter({ hasText: 'Ships' })).toBeVisible();
   });
 
   test('should create a new fleet', async ({ page }) => {
+    // Login with test user
+    await loginAsE2eTestUser(page);
+
+    // Navigate to fleets
+    await navigateToFleets(page);
+
     // Click create fleet button
     await page.click('text=Create Fleet');
 
@@ -149,33 +116,30 @@ test.describe('Fleet Management', () => {
       // Select first available planet
       await planetSelect.selectOption({ index: 1 });
 
-      // Add some ships
-      const smallCargoInput = page.locator('input').filter({ hasText: /small_cargo|Small Cargo/ }).first();
-      if (await smallCargoInput.isVisible()) {
-        await smallCargoInput.fill('5');
-      } else {
-        // Try to find ship inputs by type
-        const numberInputs = page.locator('input[type="number"]');
-        if (await numberInputs.first().isVisible()) {
-          await numberInputs.first().fill('5');
-        }
+      // Add some ships - use more specific selector
+      const shipInputs = page.locator('input[type="number"]');
+      if (await shipInputs.first().isVisible()) {
+        // Fill the first ship input (Small Cargo)
+        await shipInputs.first().fill('5');
       }
 
       // Submit form
-      await page.click('text=Create Fleet');
+      await page.click('button[type="submit"]');
 
-      // Should show success message or close modal
+      // Should show success message
       await page.waitForTimeout(1000);
-
-      // Check if fleet was created (should appear in list or show success)
       const successMessage = page.locator('text=Fleet created successfully');
-      const fleetList = page.locator('text=Fleet #');
-
-      await expect(successMessage.or(fleetList)).toBeVisible();
+      await expect(successMessage).toBeVisible();
     }
   });
 
   test('should validate fleet creation with no ships', async ({ page }) => {
+    // Login with test user
+    await loginAsE2eTestUser(page);
+
+    // Navigate to fleets
+    await navigateToFleets(page);
+
     // Click create fleet button
     await page.click('text=Create Fleet');
 
@@ -188,7 +152,7 @@ test.describe('Fleet Management', () => {
       await planetSelect.selectOption({ index: 1 });
 
       // Submit form
-      await page.click('text=Create Fleet');
+      await page.click('button[type="submit"]');
 
       // Should show error
       await expect(page.locator('text=Fleet must contain at least one ship')).toBeVisible();
@@ -323,6 +287,12 @@ test.describe('Fleet Management', () => {
   });
 
   test('should close modals with cancel button', async ({ page }) => {
+    // Login with test user
+    await loginAsE2eTestUser(page);
+
+    // Navigate to fleets
+    await navigateToFleets(page);
+
     // Open create fleet modal
     await page.click('text=Create Fleet');
     await expect(page.locator('text=Create New Fleet')).toBeVisible();
