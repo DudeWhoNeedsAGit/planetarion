@@ -257,7 +257,6 @@ class TestTickEdgeCases:
 class TestAutomaticTickSystem:
     """Test the automatic 5-second tick system"""
 
-    @pytest.mark.skip(reason="Test takes too long")
     def test_automatic_tick_resource_generation(self, client, sample_planet):
         """Test that automatic ticks increase resources over 15 seconds (3 ticks)"""
         
@@ -317,7 +316,6 @@ class TestAutomaticTickSystem:
         assert sample_planet.deuterium >= initial_deuterium + expected_deuterium_increase - 0.1, \
             f"Deuterium increase should meet minimum: {sample_planet.deuterium - initial_deuterium} >= {expected_deuterium_increase - 0.1}"
 
-    @pytest.mark.skip(reason="Test takes too long")
     def test_automatic_tick_timing_accuracy(self, client, sample_planet):
         """Test that ticks occur at approximately 5-second intervals"""
         
