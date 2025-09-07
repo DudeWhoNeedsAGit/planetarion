@@ -370,14 +370,35 @@ function GalaxyMap({ user, planets, onClose }) {
 
                 if (!isVisible) return null;
 
+                // Determine system ownership status
+                const hasColonies = system.planets && system.planets.some(p => p.user_id);
+                const isOwnedByUser = system.planets && system.planets.some(p => p.user_id == user.id);
+                const isEnemyColony = hasColonies && !isOwnedByUser;
+
+                // Enhanced system marker with colony indicators
+                let markerClass = '';
+                let markerIcon = '';
+
+                if (system.explored) {
+                  if (isOwnedByUser) {
+                    markerClass = 'bg-green-600 border-green-400 hover:bg-green-500 text-white';
+                    markerIcon = '🏠';
+                  } else if (isEnemyColony) {
+                    markerClass = 'bg-red-600 border-red-400 hover:bg-red-500 text-white';
+                    markerIcon = '⚔️';
+                  } else {
+                    markerClass = 'bg-blue-600 border-blue-400 hover:bg-blue-500 text-white';
+                    markerIcon = '';
+                  }
+                } else {
+                  markerClass = 'bg-gray-600 border-gray-400 hover:bg-gray-500 text-gray-300';
+                  markerIcon = '';
+                }
+
                 return (
                   <div
                     key={index}
-                    className={`absolute w-16 h-16 rounded-full border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-bold ${
-                      system.explored
-                        ? 'bg-blue-600 border-blue-400 hover:bg-blue-500 text-white'
-                        : 'bg-gray-600 border-gray-400 hover:bg-gray-500 text-gray-300'
-                    } ${!system.explored ? 'opacity-60' : ''}`}
+                    className={`absolute w-16 h-16 rounded-full border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-bold ${markerClass} ${!system.explored ? 'opacity-60' : ''}`}
                     style={{
                       left: `${pos.x + 200}px`,
                       top: `${pos.y + 150}px`,
@@ -385,13 +406,18 @@ function GalaxyMap({ user, planets, onClose }) {
                       zIndex: system.explored ? 10 : 5
                     }}
                     onClick={() => handleExploreSystem(system)}
-                    title={`${system.x}:${system.y}:${system.z} - ${system.explored ? `${system.planets} planets` : 'Unexplored (Fog of War)'}`}
+                    title={`${system.x}:${system.y}:${system.z} - ${system.explored ? `${system.planets} planets` : 'Unexplored (Fog of War)'}${isOwnedByUser ? ' (Your Colony)' : isEnemyColony ? ' (Enemy Colony)' : ''}`}
                   >
                     <div className="text-center">
                       <div>{system.x - centerX}:{system.y - centerY}</div>
                       <div className="text-xs opacity-75">
                         {system.explored ? `${system.planets}P` : '???'}
                       </div>
+                      {hasColonies && (
+                        <div className="text-xs font-bold">
+                          {markerIcon}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -411,19 +437,30 @@ function GalaxyMap({ user, planets, onClose }) {
             </div>
           </div>
 
-          {/* Legend */}
-          <div className="absolute bottom-2 right-2 bg-gray-800 bg-opacity-90 p-2 rounded text-xs text-gray-300">
-            <div className="flex items-center space-x-2 mb-1">
-              <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
-              <span>Home</span>
-            </div>
-            <div className="flex items-center space-x-2 mb-1">
-              <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
-              <span>Explored</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
-              <span>Unexplored</span>
+          {/* Enhanced Legend */}
+          <div className="absolute bottom-2 right-2 bg-gray-800 bg-opacity-90 p-3 rounded text-xs text-gray-300 max-w-xs">
+            <div className="font-bold text-white mb-2">Legend</div>
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
+                <span>Home System</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-green-600 rounded-full"></div>
+                <span>Your Colonies</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-red-600 rounded-full"></div>
+                <span>Enemy Colonies</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
+                <span>Explored Systems</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
+                <span>Unexplored Systems</span>
+              </div>
             </div>
           </div>
         </div>
