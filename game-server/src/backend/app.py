@@ -61,6 +61,7 @@ def create_app(config_name=None):
         from .routes.users import users_bp
         from .routes.static import static_bp
         from .routes.populate import populate_bp
+        from .routes.chat import chat_bp
 
         app.register_blueprint(auth_bp)
         print("✅ Auth blueprint registered")
@@ -85,6 +86,9 @@ def create_app(config_name=None):
 
         app.register_blueprint(populate_bp)
         print("✅ Populate blueprint registered")
+
+        app.register_blueprint(chat_bp, url_prefix='/api/chat')
+        print("✅ Chat blueprint registered")
 
         # Health check endpoint
         @app.route('/health')

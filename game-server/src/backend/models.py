@@ -142,3 +142,20 @@ class TickLog(db.Model):
 
     def __repr__(self):
         return f'<TickLog tick:{self.tick_number} event:{self.event_type}>'
+
+
+class ChatMessage(db.Model):
+    __tablename__ = 'chat_messages'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    username = db.Column(db.String(80), nullable=False)  # Cached for performance
+    message = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    is_system = db.Column(db.Boolean, default=False)
+
+    # Relationships
+    user = db.relationship('User', backref='chat_messages')
+
+    def __repr__(self):
+        return f'<ChatMessage user:{self.username} system:{self.is_system}>'

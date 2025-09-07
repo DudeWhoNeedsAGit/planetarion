@@ -106,3 +106,13 @@ def make_auth_headers(user_id):
     from flask_jwt_extended import create_access_token
     token = create_access_token(identity=str(user_id))  # Convert to string
     return {"Authorization": f"Bearer {token}"}
+
+@pytest.fixture
+def auth_headers(sample_user):
+    """Create authentication headers for the sample user."""
+    return make_auth_headers(sample_user.id)
+
+@pytest.fixture
+def test_user(sample_user):
+    """Alias for sample_user to match test naming convention."""
+    return sample_user

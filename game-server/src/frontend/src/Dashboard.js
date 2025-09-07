@@ -5,6 +5,7 @@ import Overview from './Overview';
 import FleetManagement from './FleetManagement';
 import LuckyWheel from './LuckyWheel';
 import GalaxyMap from './GalaxyMap';
+import ChatPanel from './ChatPanel';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
 
@@ -15,6 +16,7 @@ function Dashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
   const [pollingInterval, setPollingInterval] = useState(null);
+  const [chatMinimized, setChatMinimized] = useState(false);
   const { showSuccess, showError } = useToast();
 
   useEffect(() => {
@@ -812,6 +814,12 @@ function Dashboard({ user, onLogout }) {
       <main className="container mx-auto p-6">
         {renderSection()}
       </main>
+
+      {/* Global Chat Panel */}
+      <ChatPanel
+        isMinimized={chatMinimized}
+        onToggleMinimize={() => setChatMinimized(!chatMinimized)}
+      />
     </div>
   );
 }
