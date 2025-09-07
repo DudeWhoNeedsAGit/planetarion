@@ -442,8 +442,189 @@ function GalaxyMap({ user, planets, onClose }) {
   );
 }
 
+// Enhanced Planet Card Component
+function PlanetCard({ planet, onColonize, loading, centerX, centerY, centerZ }) {
+  // Generate mock traits for demonstration (in real implementation, this would come from API)
+  const mockTraits = planet.user_id ? [] : [
+    { name: 'Rich Metal', bonus: 25 },
+    { name: 'Crystal Rich', bonus: 15 }
+  ];
+
+  return (
+    <div className={`bg-gray-600 rounded-lg p-4 border-2 transition-all duration-200 ${
+      planet.user_id
+        ? 'border-blue-500 bg-gray-600'
+        : 'border-green-500 bg-gray-700 hover:bg-gray-650'
+    }`}>
+      {/* Planet Header */}
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex-1">
+          <h4 className="text-white font-bold text-lg flex items-center">
+            🪐 {planet.name}
+          </h4>
+          <div className="text-sm text-gray-300">
+            {planet.coordinates || `${planet.x}:${planet.y}:${planet.z}`}
+          </div>
+          <div className="text-xs text-gray-400 mt-1">
+            Distance: {Math.round(CoordinateUtils.calculateDistance(
+              centerX, centerY, centerZ, planet.x, planet.y, planet.z
+            ))} units
+          </div>
+        </div>
+        <div className="text-right ml-4">
+          {planet.owner_name ? (
+            <span className="text-blue-400 text-sm font-medium px-2 py-1 bg-blue-900 rounded">
+              Owned by {planet.owner_name}
+            </span>
+          ) : (
+            <span className="text-green-400 text-sm font-medium px-2 py-1 bg-green-900 rounded">
+              Unowned
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Planet Traits */}
+      {mockTraits.length > 0 && (
+        <div className="mb-3">
+          <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
+            🎯 Planet Traits:
+          </h5>
+          <div className="flex flex-wrap gap-1">
+            {mockTraits.map((trait, index) => (
+              <span key={index} className="px-2 py-1 bg-purple-600 text-white text-xs rounded flex items-center">
+                {trait.name} (+{trait.bonus}%)
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Resources */}
+      <div className="mb-3">
+        <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
+          💎 Resources:
+        </h5>
+        <div className="grid grid-cols-3 gap-2 text-sm">
+          <div className="bg-gray-700 p-2 rounded text-center border border-yellow-600">
+            <div className="text-yellow-400 font-bold text-lg">
+              {planet.metal?.toLocaleString() || 0}
+            </div>
+            <div className="text-gray-400 text-xs">Metal</div>
+          </div>
+          <div className="bg-gray-700 p-2 rounded text-center border border-blue-600">
+            <div className="text-blue-400 font-bold text-lg">
+              {planet.crystal?.toLocaleString() || 0}
+            </div>
+            <div className="text-gray-400 text-xs">Crystal</div>
+          </div>
+          <div className="bg-gray-700 p-2 rounded text-center border border-green-600">
+            <div className="text-green-400 font-bold text-lg">
+              {planet.deuterium?.toLocaleString() || 0}
+            </div>
+            <div className="text-gray-400 text-xs">Deuterium</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Structures */}
+      {(planet.metal_mine > 0 || planet.crystal_mine > 0) && (
+        <div className="mb-3">
+          <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
+            🏭 Structures:
+          </h5>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
+              <span className="text-gray-400">Metal Mine:</span>
+              <span className="text-yellow-400 font-bold">Lv.{planet.metal_mine || 0}</span>
+            </div>
+            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
+              <span className="text-gray-400">Crystal Mine:</span>
+              <span className="text-blue-400 font-bold">Lv.{planet.crystal_mine || 0}</span>
+            </div>
+            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
+              <span className="text-gray-400">Deut. Synth:</span>
+              <span className="text-green-400 font-bold">Lv.{planet.deuterium_synthesizer || 0}</span>
+            </div>
+            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
+              <span className="text-gray-400">Solar Plant:</span>
+              <span className="text-orange-400 font-bold">Lv.{planet.solar_plant || 0}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex justify-end space-x-2 pt-2 border-t border-gray-500">
+        {!planet.user_id && (
+          <button
+            onClick={() => onColonize(planet)}
+            className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium transition-colors flex items-center"
+            disabled={loading}
+          >
+            🚀 {loading ? 'Colonizing...' : 'Colonize Planet'}
+          </button>
+        )}
+        {planet.user_id && planet.user_id !== 'current_user_id' && (
+          <button className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-medium transition-colors flex items-center">
+            ⚔️ Attack
+          </button>
+        )}
+        {planet.user_id && planet.user_id === 'current_user_id' && (
+          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-medium transition-colors flex items-center">
+            📊 View Details
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// System Statistics Component
+function SystemStatistics({ system, planets }) {
+  const totalPlanets = planets.length;
+  const ownedPlanets = planets.filter(p => p.user_id).length;
+  const unownedPlanets = totalPlanets - ownedPlanets;
+  const totalResources = planets.reduce((sum, p) =>
+    sum + (p.metal || 0) + (p.crystal || 0) + (p.deuterium || 0), 0
+  );
+
+  return (
+    <div className="bg-gray-700 rounded-lg p-4 mb-4 border border-gray-600">
+      <h4 className="text-white font-bold mb-3 flex items-center">
+        📊 System Statistics
+      </h4>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div className="text-center bg-gray-800 p-3 rounded">
+          <div className="text-2xl font-bold text-blue-400">{totalPlanets}</div>
+          <div className="text-gray-400 text-xs">Total Planets</div>
+        </div>
+        <div className="text-center bg-gray-800 p-3 rounded">
+          <div className="text-2xl font-bold text-green-400">{ownedPlanets}</div>
+          <div className="text-gray-400 text-xs">Colonized</div>
+        </div>
+        <div className="text-center bg-gray-800 p-3 rounded">
+          <div className="text-2xl font-bold text-gray-400">{unownedPlanets}</div>
+          <div className="text-gray-400 text-xs">Available</div>
+        </div>
+        <div className="text-center bg-gray-800 p-3 rounded">
+          <div className="text-2xl font-bold text-yellow-400">{totalResources.toLocaleString()}</div>
+          <div className="text-gray-400 text-xs">Total Resources</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Enhanced System Details Component
 function SystemDetails({ system, onClose, onColonize, loading }) {
   const [planets, setPlanets] = useState([]);
+
+  // Get user's home coordinates for distance calculation
+  const homePlanet = planets.find(p => p.user_id === 'current_user_id');
+  const centerX = homePlanet?.x || 100;
+  const centerY = homePlanet?.y || 200;
+  const centerZ = homePlanet?.z || 300;
 
   useEffect(() => {
     fetchSystemPlanets();
@@ -453,7 +634,7 @@ function SystemDetails({ system, onClose, onColonize, loading }) {
     try {
       console.log('🌌 Fetching system planets:', `http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`);
 
-      // Get JWT token from localStorage (following fleet pattern)
+      // Get JWT token from localStorage (following fleet test pattern)
       const token = localStorage.getItem('token');
       console.log('DEBUG: JWT token present for system planets API:', !!token);
 
@@ -481,51 +662,74 @@ function SystemDetails({ system, onClose, onColonize, loading }) {
         url: `http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`
       });
 
-      // Add fallback empty array for testing
+      // Add fallback data for testing
       console.log('🔧 Using fallback empty planets data');
       setPlanets([]);
     }
   };
 
   return (
-    <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-bold text-white">
-          System {system.x}:{system.y}:{system.z}
-        </h3>
+    <div className="mt-6 bg-gray-800 rounded-lg p-6 max-h-96 overflow-y-auto border border-gray-600">
+      {/* System Header */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex-1">
+          <h3 className="text-2xl font-bold text-white flex items-center">
+            🌌 System {system.x}:{system.y}:{system.z}
+          </h3>
+          <div className="text-gray-400 mt-1 flex items-center">
+            <span className={`px-2 py-1 rounded text-xs font-medium ${
+              system.explored
+                ? 'bg-blue-900 text-blue-300'
+                : 'bg-gray-900 text-gray-300'
+            }`}>
+              {system.explored ? '✅ Explored' : '❓ Unexplored'}
+            </span>
+            <span className="ml-4">
+              Distance: {Math.round(CoordinateUtils.calculateDistance(
+                centerX, centerY, centerZ, system.x, system.y, system.z
+              ))} units from home
+            </span>
+          </div>
+        </div>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-white"
+          className="text-gray-400 hover:text-white text-xl ml-4"
         >
           ✕
         </button>
       </div>
 
-      {planets.length === 0 ? (
-        <div className="text-gray-400">No planets discovered yet</div>
-      ) : (
-        <div className="space-y-2">
-          {planets.map(planet => (
-            <div key={planet.id} className="flex justify-between items-center p-2 bg-gray-600 rounded">
-              <div>
-                <div className="text-white font-medium">{planet.name}</div>
-                <div className="text-sm text-gray-300">
-                  {planet.owner_name ? `Owned by ${planet.owner_name}` : 'Unowned'}
-                </div>
-              </div>
-              {!planet.user_id && (
-                <button
-                  onClick={() => onColonize(planet)}
-                  className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded"
-                  disabled={loading}
-                >
-                  Colonize
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* System Statistics */}
+      <SystemStatistics system={system} planets={planets} />
+
+      {/* Planets List */}
+      <div>
+        <h4 className="text-white font-bold mb-4 flex items-center">
+          🪐 Planets ({planets.length})
+        </h4>
+
+        {planets.length === 0 ? (
+          <div className="text-gray-400 text-center py-8 bg-gray-700 rounded-lg">
+            <div className="text-4xl mb-2">🌌</div>
+            <div>No planets discovered yet</div>
+            <div className="text-sm mt-2">Send an exploration fleet to discover planets in this system</div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {planets.map(planet => (
+              <PlanetCard
+                key={planet.id}
+                planet={planet}
+                onColonize={onColonize}
+                loading={loading}
+                centerX={centerX}
+                centerY={centerY}
+                centerZ={centerZ}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
