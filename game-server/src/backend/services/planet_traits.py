@@ -251,6 +251,29 @@ class PlanetTraitService:
         return bonuses
 
     @staticmethod
+    def calculate_colonization_difficulty(x, y, z):
+        """
+        Calculate colonization difficulty for coordinates
+
+        Args:
+            x, y, z: Planet coordinates
+
+        Returns:
+            Difficulty level (1-5)
+        """
+        import random
+
+        # Base difficulty based on distance from origin
+        distance = (abs(x) + abs(y) + abs(z)) / 3
+        base_difficulty = min(5, max(1, int(distance / 200)))
+
+        # Add some randomness
+        difficulty_modifier = random.randint(-1, 1)
+        final_difficulty = max(1, min(5, base_difficulty + difficulty_modifier))
+
+        return final_difficulty
+
+    @staticmethod
     def get_trait_display_info(trait_name):
         """
         Get display information for a trait

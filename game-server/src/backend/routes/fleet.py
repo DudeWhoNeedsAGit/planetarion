@@ -13,7 +13,7 @@ All endpoints require JWT authentication and operate on the user's own fleets.
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
-from backend.models import User, Planet, Fleet
+from backend.models import User, Planet, Fleet, Research
 from datetime import datetime, timedelta
 import math
 
@@ -168,28 +168,62 @@ def send_fleet():
         fleet.status = f'exploring:{target_x}:{target_y}:{target_z}'
 
     elif data['mission'] == 'colonize':
+        # Enhanced colonization validation
+        target_x = data.get('target_x')
+        target_y = data.get('target_y')
+        target_z = data.get('target_z')
+
+        if not all([target_x is not None, target_y is not None, target_z is not None]):
+            return jsonify({'error': 'Target coordinates required for colonization'}), 400
+
         # Check if coordinates are already occupied
-        target_planet = Planet.query.filter_by(
-            x=data.get('target_x'),
-            y=data.get('target_y'),
-            z=data.get('target_z')
-        ).first()
-        if target_planet:
+        existing_planet = Planet.query.filter_by(x=target_x, y=target_y, z=target_z).first()
+        if existing_planet:
             return jsonify({'error': 'Coordinates already occupied'}), 409
 
-        # For colonization, create a temporary planet entry for distance calculation
+        # Check colonization limits
+        from backend.services.planet_traits import PlanetTraitService
+        colonization_difficulty = PlanetTraitService.calculate_colonization_difficulty(target_x, target_y, target_z)
+
+        # Get user's research level
+        user_research = Research.query.filter_by(user_id=user_id).first()
+        user_research_level = user_research.colonization_tech if user_research else 0
+
+        if colonization_difficulty > user_research_level:
+            return jsonify({
+                'error': f'Colonization difficulty {colonization_difficulty} requires research level {colonization_difficulty}',
+                'required_level': colonization_difficulty,
+                'current_level': user_research_level
+            }), 400
+
+        # Check colony limit
+        user_planets = Planet.query.filter_by(user_id=user_id).all()
+        current_colonies = len([p for p in user_planets if p.id != user_planets[0].id])  # Exclude home planet
+
+        max_colonies = 5  # Base limit, will be enhanced with research later
+        if user_research:
+            # Add research bonuses to colony limit
+            max_colonies += user_research.astrophysics * 2
+
+        if current_colonies >= max_colonies:
+            return jsonify({
+                'error': f'Colony limit reached ({current_colonies}/{max_colonies})',
+                'current_colonies': current_colonies,
+                'max_colonies': max_colonies
+            }), 400
+
+        # Create temporary planet for distance calculation
         target_planet = Planet(
             name='Empty Space',
-            x=data['target_x'],
-            y=data['target_y'],
-            z=data['target_z'],
+            x=target_x,
+            y=target_y,
+            z=target_z,
             user_id=None  # Unowned
         )
-        # Don't commit this temporary planet to DB yet
 
         fleet.mission = 'colonize'
         fleet.target_planet_id = 0  # Will be updated when colony is created
-        fleet.status = f'colonizing:{data["target_x"]}:{data["target_y"]}:{data["target_z"]}'
+        fleet.status = f'colonizing:{target_x}:{target_y}:{target_z}'
 
     else:
         # For other missions, target planet must exist

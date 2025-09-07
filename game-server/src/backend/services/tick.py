@@ -107,7 +107,7 @@ def process_fleet_movements(current_time):
 
     for fleet in arrived_fleets:
         if fleet.status.startswith('colonizing:'):
-            # Handle colonization
+            # Handle enhanced colonization with trait bonuses
             coords = fleet.status.split(':')[1:]  # Extract coordinates
             x, y, z = map(int, coords)
 
@@ -124,35 +124,63 @@ def process_fleet_movements(current_time):
                     'description': f'Colonization failed - coordinates {x}:{y}:{z} already occupied'
                 })
             else:
-                # Create new colony
-                colony = Planet(
-                    name=f"Colony {fleet.user_id}",
-                    x=x,
-                    y=y,
-                    z=z,
-                    user_id=fleet.user_id,
-                    metal=500,      # Colony starting resources
-                    crystal=250,
-                    deuterium=0,
-                    metal_mine=1,   # Basic structures
-                    crystal_mine=1,
-                    deuterium_synthesizer=0,
-                    solar_plant=1,
-                    fusion_reactor=0
-                )
-                db.session.add(colony)
-                db.session.flush()  # Get the colony ID
+                # Check colonization difficulty and user research level
+                from backend.services.planet_traits import PlanetTraitService
+                colonization_difficulty = PlanetTraitService.calculate_colonization_difficulty(x, y, z)
 
-                # Update fleet
-                fleet.status = 'stationed'
-                fleet.target_planet_id = colony.id
-                fleet.start_planet_id = colony.id  # Fleet is now stationed at the colony
+                # Get user's research level
+                user_research_level = get_user_research_level(fleet.user_id)
 
-                updates.append({
-                    'fleet_id': fleet.id,
-                    'event_type': 'colonization_success',
-                    'description': f'New colony established at {x}:{y}:{z}'
-                })
+                if colonization_difficulty > user_research_level:
+                    # Insufficient technology, fleet returns
+                    fleet.status = 'returning'
+                    fleet.mission = 'return'
+                    fleet.arrival_time = current_time + (fleet.arrival_time - fleet.departure_time)
+                    updates.append({
+                        'fleet_id': fleet.id,
+                        'event_type': 'colonization_failed',
+                        'description': f'Colonization failed - difficulty {colonization_difficulty} requires research level {colonization_difficulty}'
+                    })
+                else:
+                    # Create new colony with enhanced starting resources based on traits
+                    colony_name = generate_colony_name(fleet.user_id, x, y, z)
+
+                    # Calculate starting resources based on planet traits
+                    starting_resources = calculate_starting_resources(x, y, z)
+
+                    colony = Planet(
+                        name=colony_name,
+                        x=x,
+                        y=y,
+                        z=z,
+                        user_id=fleet.user_id,
+                        metal=starting_resources['metal'],
+                        crystal=starting_resources['crystal'],
+                        deuterium=starting_resources['deuterium'],
+                        metal_mine=1,   # Basic structures
+                        crystal_mine=1,
+                        deuterium_synthesizer=0,
+                        solar_plant=1,
+                        fusion_reactor=0
+                    )
+                    db.session.add(colony)
+                    db.session.flush()  # Get the colony ID
+
+                    # Generate planet traits for the colony
+                    traits = PlanetTraitService.generate_planet_traits(colony)
+                    db.session.add_all(traits)
+
+                    # Update fleet
+                    fleet.status = 'stationed'
+                    fleet.target_planet_id = colony.id
+                    fleet.start_planet_id = colony.id
+
+                    trait_names = [t.trait_name for t in traits]
+                    updates.append({
+                        'fleet_id': fleet.id,
+                        'event_type': 'colonization_success',
+                        'description': f'New colony "{colony_name}" established at {x}:{y}:{z} with traits: {", ".join(trait_names)}'
+                    })
 
         elif fleet.status == 'traveling':
             # Fleet has arrived at destination
@@ -319,6 +347,53 @@ def generate_exploration_planets(x, y, z, user_id):
 
     db.session.commit()
     return discovered_planets
+
+def get_user_research_level(user_id):
+    """Get user's colonization research level"""
+    from backend.models import Research
+    research = Research.query.filter_by(user_id=user_id).first()
+    if research:
+        return research.colonization_tech
+    return 0  # Default research level
+
+def generate_colony_name(user_id, x, y, z):
+    """Generate a unique colony name"""
+    from backend.models import Planet, User
+
+    # Get user's existing colonies
+    user_planets = Planet.query.filter_by(user_id=user_id).all()
+    colony_number = len([p for p in user_planets if p.id != user_planets[0].id]) + 1
+
+    # Get user info for name generation
+    user = User.query.get(user_id)
+    if user:
+        return f"{user.username}'s Colony {colony_number}"
+    else:
+        return f"Colony {colony_number}"
+
+def calculate_starting_resources(x, y, z):
+    """Calculate starting resources for a new colony based on location and traits"""
+    import random
+
+    # Base starting resources
+    base_metal = 500
+    base_crystal = 250
+    base_deuterium = 0
+
+    # Distance from origin affects starting resources (closer = more resources)
+    distance_from_origin = math.sqrt(x*x + y*y + z*z)
+    distance_multiplier = max(0.5, 2.0 - (distance_from_origin / 1000))  # Closer planets get more resources
+
+    # Add some randomness
+    metal = int(base_metal * distance_multiplier * random.uniform(0.8, 1.2))
+    crystal = int(base_crystal * distance_multiplier * random.uniform(0.8, 1.2))
+    deuterium = int(base_deuterium + random.randint(0, 50))  # Small random deuterium
+
+    return {
+        'metal': metal,
+        'crystal': crystal,
+        'deuterium': deuterium
+    }
 
 def get_tick_statistics():
     """Get statistics about recent ticks"""
