@@ -111,8 +111,7 @@ function GalaxyMap({ user, planets, onClose }) {
   const centerY = homePlanet?.y || 200;
   const centerZ = homePlanet?.z || 300;
 
-  // Fog of war state - track explored systems
-  const [exploredSystems, setExploredSystems] = useState(new Set());
+
 
   console.log('Galaxy Map Debug:', {
     userId: user.id,
@@ -493,70 +492,6 @@ function GalaxyMap({ user, planets, onClose }) {
           {/* Systems Display */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="relative">
-              {/* Warcraft 3-Style Fog of War Overlay - positioned inside interactive area */}
-              <div
-                ref={(el) => el && EventHandlingSystem.setupFogOverlayEvents(el)}
-                className="fog-overlay absolute"
-                data-test="fog-overlay"
-                style={{
-                  width: `${400 / zoom}px`,
-                  height: `${300 / zoom}px`,
-                  left: `${200 + viewOffset.x}px`,
-                  top: `${150 + viewOffset.y}px`,
-                  transform: 'translate(-50%, -50%)',
-                  background: 'rgba(64,64,64,0.95)',
-                  pointerEvents: 'none'
-                }}
-              >
-                {/* Atmospheric fog texture overlay */}
-                <div
-                  className="absolute inset-0 opacity-30"
-                  style={{
-                    backgroundImage: `
-                      radial-gradient(circle at 20% 80%, rgba(64,64,64,0.3) 0%, transparent 50%),
-                      radial-gradient(circle at 80% 20%, rgba(96,96,96,0.2) 0%, transparent 50%),
-                      radial-gradient(circle at 40% 40%, rgba(32,32,32,0.4) 0%, transparent 50%)
-                    `,
-                    animation: 'fogDrift 30s ease-in-out infinite',
-                    pointerEvents: 'none'
-                  }}
-                />
-
-                {/* Create large, sharp fog holes for ALL explored systems */}
-                {systems
-                  .filter(system => system.explored)
-                  .map((system, index) => {
-                    const pos = getSystemPosition(system);
-                    // Position fog holes relative to the fog overlay's center (200, 150)
-                    const relativeX = pos.x + 200; // pos.x is already relative to center
-                    const relativeY = pos.y + 150; // pos.y is already relative to center
-
-                    return (
-                      <div
-                        key={`fog-${index}`}
-                        className="fog-hole absolute w-40 h-40 rounded-full"
-                        style={{
-                          left: `${relativeX}px`,
-                          top: `${relativeY}px`,
-                          transform: 'translate(-50%, -50%)',
-                          background: `
-                            radial-gradient(circle,
-                              transparent 0%,
-                              transparent 25%,
-                              rgba(64,64,64,0.8) 45%,
-                              rgba(96,96,96,0.9) 65%,
-                              rgba(128,128,128,0.95) 85%,
-                              rgba(160,160,160,0.98) 100%
-                            )
-                          `,
-                          boxShadow: '0 0 20px rgba(0,0,0,0.5)',
-                          filter: 'blur(1px)',
-                          pointerEvents: 'none'
-                        }}
-                      />
-                    );
-                  })}
-              </div>
 
               {systems.map((system, index) => {
                 const pos = getSystemPosition(system);
@@ -603,7 +538,7 @@ function GalaxyMap({ user, planets, onClose }) {
                       zIndex: system.explored ? 10 : 5
                     }}
                     onClick={() => handleExploreSystem(system)}
-                    title={`${system.x}:${system.y}:${system.z} - ${system.explored ? `${system.planets} planets` : 'Unexplored (Fog of War)'}${isOwnedByUser ? ' (Your Colony)' : isEnemyColony ? ' (Enemy Colony)' : ''}`}
+                    title={`${system.x}:${system.y}:${system.z} - ${system.explored ? `${system.planets} planets` : 'Unexplored'}${isOwnedByUser ? ' (Your Colony)' : isEnemyColony ? ' (Enemy Colony)' : ''}`}
                   >
                     <div className="text-center">
                       <div>{system.x - centerX}:{system.y - centerY}</div>
