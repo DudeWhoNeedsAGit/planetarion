@@ -40,17 +40,24 @@ def update_schema():
 
         # Check Fleet table
         fleet_columns = [col['name'] for col in inspector.get_columns('fleets')]
-        required_fleet_cols = ['target_coordinates']
+        required_fleet_cols = ['target_coordinates', 'combat_experience', 'last_combat_time', 'combat_victories', 'combat_defeats']
         missing_fleet_cols = [col for col in required_fleet_cols if col not in fleet_columns]
 
-        if missing_planet_cols or missing_fleet_cols:
-            print("⚠️  Some columns may be missing. You might need to recreate the database.")
+        # Check for new tables
+        existing_tables = inspector.get_table_names()
+        required_tables = ['combat_reports', 'debris_fields']
+        missing_tables = [table for table in required_tables if table not in existing_tables]
+
+        if missing_planet_cols or missing_fleet_cols or missing_tables:
+            print("⚠️  Some columns/tables may be missing. You might need to recreate the database.")
             if missing_planet_cols:
                 print(f"   Missing Planet columns: {missing_planet_cols}")
             if missing_fleet_cols:
                 print(f"   Missing Fleet columns: {missing_fleet_cols}")
+            if missing_tables:
+                print(f"   Missing tables: {missing_tables}")
         else:
-            print("✅ All required columns are present!")
+            print("✅ All required columns and tables are present!")
 
 if __name__ == '__main__':
     update_schema()

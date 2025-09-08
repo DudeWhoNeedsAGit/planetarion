@@ -1,0 +1,390 @@
+/* Battle Reports Styles */
+
+.battle-reports {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.reports-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #333;
+}
+
+.reports-header h2 {
+  color: #fff;
+  margin: 0;
+  font-size: 1.8em;
+}
+
+.filter-select {
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #555;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.loading, .no-reports {
+  text-align: center;
+  color: #888;
+  padding: 40px;
+  font-size: 16px;
+}
+
+.reports-list {
+  display: grid;
+  gap: 15px;
+}
+
+/* Battle Report Card */
+.battle-report-card {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 15px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.battle-report-card:hover {
+  border-color: #555;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.battle-report-card.victory {
+  border-left: 4px solid #28a745;
+}
+
+.battle-report-card.defeat {
+  border-left: 4px solid #dc3545;
+}
+
+.report-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.outcome-indicator {
+  font-size: 24px;
+  margin-right: 12px;
+}
+
+.battle-info h3 {
+  color: #fff;
+  margin: 0 0 4px 0;
+  font-size: 16px;
+}
+
+.battle-info p {
+  color: #ccc;
+  margin: 0;
+  font-size: 14px;
+}
+
+.timestamp {
+  color: #888;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.casualties-summary {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.attacker-losses, .defender-losses {
+  font-size: 13px;
+  color: #bbb;
+}
+
+.debris-info {
+  background: #2a2a2a;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #ffc107;
+  border: 1px solid #444;
+}
+
+/* Modal Styles */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.battle-report-detail {
+  background: #1a1a1a;
+  border-radius: 8px;
+  max-width: 800px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid #333;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.modal-header h2 {
+  color: #fff;
+  margin: 0;
+  font-size: 1.5em;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-button:hover {
+  color: #fff;
+}
+
+/* Battle Summary */
+.battle-summary {
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.participants {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  margin-bottom: 20px;
+}
+
+.attacker, .defender {
+  text-align: center;
+  flex: 1;
+}
+
+.attacker h3, .defender h3 {
+  color: #fff;
+  margin: 0 0 5px 0;
+}
+
+.attacker p, .defender p {
+  color: #888;
+  margin: 0;
+  font-size: 14px;
+}
+
+.vs {
+  color: #666;
+  font-weight: bold;
+  font-size: 18px;
+  margin: 0 20px;
+}
+
+.outcome h3 {
+  text-align: center;
+  margin: 0;
+  font-size: 1.3em;
+}
+
+.victory-text {
+  color: #28a745;
+}
+
+.defeat-text {
+  color: #dc3545;
+}
+
+/* Combat Rounds */
+.combat-rounds {
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.combat-rounds h3 {
+  color: #fff;
+  margin: 0 0 15px 0;
+}
+
+.combat-round {
+  background: #2a2a2a;
+  border-radius: 6px;
+  padding: 15px;
+  margin-bottom: 10px;
+  border: 1px solid #444;
+}
+
+.combat-round h4 {
+  color: #fff;
+  margin: 0 0 10px 0;
+  font-size: 16px;
+}
+
+.round-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.firepower, .damage {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.attacker-fire, .defender-fire,
+.attacker-damage, .defender-damage {
+  font-size: 13px;
+  color: #ccc;
+  padding: 5px 8px;
+  background: #1a1a1a;
+  border-radius: 3px;
+}
+
+.attacker-fire, .attacker-damage {
+  border-left: 3px solid #007bff;
+}
+
+.defender-fire, .defender-damage {
+  border-left: 3px solid #dc3545;
+}
+
+/* Final Results */
+.final-results {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.final-losses h4, .debris-field h4 {
+  color: #fff;
+  margin: 0 0 10px 0;
+}
+
+.losses-breakdown {
+  display: flex;
+  gap: 20px;
+}
+
+.ship-losses {
+  flex: 1;
+}
+
+.ship-losses h5 {
+  color: #ccc;
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.loss-item {
+  color: #bbb;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.debris-field p {
+  color: #ffc107;
+  margin: 0 0 5px 0;
+  font-size: 14px;
+}
+
+.recycled-notice {
+  color: #28a745;
+  font-size: 12px;
+  margin: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .battle-reports {
+    padding: 10px;
+  }
+
+  .reports-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .reports-header h2 {
+    text-align: center;
+  }
+
+  .participants {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .vs {
+    margin: 10px 0;
+  }
+
+  .round-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .losses-breakdown {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .final-results {
+    grid-template-columns: 1fr;
+  }
+
+  .battle-report-detail {
+    width: 95%;
+    margin: 10px;
+  }
+}
+
+/* Scrollbar Styling */
+.battle-report-detail::-webkit-scrollbar {
+  width: 8px;
+}
+
+.battle-report-detail::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.battle-report-detail::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.battle-report-detail::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}

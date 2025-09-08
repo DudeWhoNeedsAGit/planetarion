@@ -1,0 +1,520 @@
+/* Colonization Opportunities Styles */
+
+.colonization-opportunities {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.opportunities-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #333;
+}
+
+.opportunities-header h3 {
+  color: #fff;
+  margin: 0;
+  font-size: 1.5em;
+}
+
+.refresh-button {
+  background: #2a2a2a;
+  border: 1px solid #555;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: #3a3a3a;
+  border-color: #777;
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.loading {
+  text-align: center;
+  color: #888;
+  padding: 40px;
+  font-size: 16px;
+}
+
+.no-opportunities {
+  text-align: center;
+  color: #888;
+  padding: 60px 20px;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.no-opportunities-icon {
+  font-size: 48px;
+  margin-bottom: 15px;
+}
+
+.no-opportunities p {
+  margin: 0 0 10px 0;
+  font-size: 18px;
+  color: #ccc;
+}
+
+.no-opportunities small {
+  color: #777;
+  font-size: 14px;
+}
+
+.opportunities-list {
+  display: grid;
+  gap: 20px;
+}
+
+/* Colonization Card */
+.colonization-card {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.colonization-card:hover {
+  border-color: #555;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.colonization-card.urgent {
+  border-left: 4px solid #ffc107;
+  background: linear-gradient(135deg, #1a1a1a, #2a2a1a);
+}
+
+.colonization-card.expired {
+  opacity: 0.6;
+  border-color: #666;
+}
+
+.planet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+.planet-info h4 {
+  color: #fff;
+  margin: 0 0 5px 0;
+  font-size: 18px;
+}
+
+.coordinates {
+  color: #888;
+  margin: 0 0 5px 0;
+  font-size: 14px;
+}
+
+.previous-owner {
+  color: #ccc;
+  margin: 0;
+  font-size: 14px;
+}
+
+.owner-name {
+  color: #007bff;
+  font-weight: bold;
+}
+
+.time-remaining {
+  text-align: right;
+}
+
+.timer {
+  font-size: 18px;
+  font-weight: bold;
+  color: #28a745;
+  margin-bottom: 2px;
+}
+
+.timer.urgent {
+  color: #ffc107;
+  animation: pulse 2s infinite;
+}
+
+.timer-label {
+  font-size: 12px;
+  color: #888;
+}
+
+/* Planet Resources */
+.planet-resources {
+  margin-bottom: 15px;
+}
+
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.resource-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #2a2a2a;
+  border-radius: 6px;
+  border: 1px solid #444;
+}
+
+.resource-icon {
+  font-size: 16px;
+}
+
+.resource-value {
+  color: #fff;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.resource-label {
+  color: #ccc;
+  font-size: 12px;
+}
+
+/* Planet Buildings */
+.planet-buildings {
+  margin-bottom: 15px;
+}
+
+.planet-buildings h5 {
+  color: #fff;
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.buildings-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.building-tag {
+  background: #007bff;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.building-tag.more {
+  background: #6c757d;
+}
+
+/* Card Actions */
+.card-actions {
+  text-align: center;
+}
+
+.colonize-button {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: #fff;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 160px;
+}
+
+.colonize-button:hover:not(.disabled) {
+  background: linear-gradient(135deg, #218838, #1aa085);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+}
+
+.colonize-button.disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Modal Styles */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.colonization-dialog {
+  background: #1a1a1a;
+  border-radius: 8px;
+  max-width: 500px;
+  width: 90%;
+  border: 1px solid #333;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.dialog-header h3 {
+  color: #fff;
+  margin: 0;
+  font-size: 1.4em;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-button:hover {
+  color: #fff;
+}
+
+.dialog-content {
+  padding: 20px;
+}
+
+.planet-summary h4 {
+  color: #fff;
+  margin: 0 0 8px 0;
+  font-size: 18px;
+}
+
+.planet-summary .coordinates {
+  color: #888;
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.planet-summary .previous-owner {
+  color: #ccc;
+  margin: 0;
+  font-size: 14px;
+}
+
+.colonization-details {
+  margin: 20px 0;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #333;
+}
+
+.detail-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.detail-item .label {
+  color: #ccc;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.detail-item .value {
+  color: #fff;
+  font-size: 14px;
+  text-align: right;
+}
+
+.detail-item .value.urgent {
+  color: #ffc107;
+  font-weight: bold;
+}
+
+.colonization-warnings {
+  background: #2a2a2a;
+  border-radius: 6px;
+  padding: 15px;
+  margin: 20px 0;
+  border: 1px solid #444;
+}
+
+.warning-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.warning-item:last-child {
+  margin-bottom: 0;
+}
+
+.warning-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.warning-text {
+  color: #ccc;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 12px;
+  padding: 20px;
+  border-top: 1px solid #333;
+  justify-content: flex-end;
+}
+
+.cancel-button, .confirm-button {
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.cancel-button {
+  background: #6c757d;
+  color: #fff;
+}
+
+.cancel-button:hover {
+  background: #5a6268;
+}
+
+.confirm-button {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: #fff;
+}
+
+.confirm-button:hover:not(.disabled) {
+  background: linear-gradient(135deg, #218838, #1aa085);
+}
+
+.confirm-button.disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .colonization-opportunities {
+    padding: 10px;
+  }
+
+  .opportunities-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .opportunities-header h3 {
+    text-align: center;
+  }
+
+  .planet-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .time-remaining {
+    text-align: center;
+  }
+
+  .resource-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .buildings-list {
+    justify-content: center;
+  }
+
+  .dialog-actions {
+    flex-direction: column;
+  }
+
+  .cancel-button, .confirm-button {
+    width: 100%;
+  }
+
+  .colonization-dialog {
+    width: 95%;
+    margin: 10px;
+  }
+}
+
+/* Mobile specific adjustments */
+@media (max-width: 480px) {
+  .colonization-card {
+    padding: 15px;
+  }
+
+  .planet-info h4 {
+    font-size: 16px;
+  }
+
+  .resource-item {
+    padding: 6px 10px;
+  }
+
+  .resource-value {
+    font-size: 14px;
+  }
+
+  .colonize-button {
+    padding: 10px 20px;
+    font-size: 14px;
+    min-width: 140px;
+  }
+}

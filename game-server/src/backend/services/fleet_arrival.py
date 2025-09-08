@@ -29,10 +29,14 @@ class FleetArrivalService:
             print(f"DEBUG: Processing fleet {fleet.id} with mission {fleet.mission}")
             if fleet.mission == 'colonize':
                 FleetArrivalService._process_colonization(fleet)
+            elif fleet.mission == 'attack':
+                FleetArrivalService._process_attack(fleet)
             elif fleet.mission == 'return':
                 FleetArrivalService._process_return(fleet)
             elif fleet.mission == 'explore':
                 FleetArrivalService._process_exploration(fleet)
+            elif fleet.mission == 'recycle':
+                FleetArrivalService._process_recycle(fleet)
             # Add other mission types as needed
 
     @staticmethod
@@ -197,6 +201,112 @@ class FleetArrivalService:
             print(f"ERROR: Failed to process exploration for fleet {fleet.id}: {str(e)}")
             db.session.rollback()
             # Ensure fleet is returned to stationed even on error
+            FleetArrivalService._return_fleet_to_stationed(fleet)
+
+    @staticmethod
+    def _process_attack(fleet):
+        """Handle attack fleet arrival"""
+        print(f"DEBUG: Processing attack for fleet {fleet.id}")
+
+        try:
+            # Get target planet
+            target_planet = Planet.query.get(fleet.target_planet_id)
+            if not target_planet:
+                print(f"ERROR: Target planet {fleet.target_planet_id} not found")
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                return
+
+            # Check if planet is still owned by enemy (might have been captured)
+            if target_planet.user_id == fleet.user_id:
+                print(f"WARNING: Target planet {target_planet.id} now owned by attacker")
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                return
+
+            # Find defending fleet
+            defending_fleet = Fleet.query.filter_by(
+                user_id=target_planet.user_id,
+                start_planet_id=fleet.target_planet_id,
+                status__in=['stationed', 'defending']
+            ).first()
+
+            if defending_fleet:
+                # Fleet vs Fleet combat
+                print(f"DEBUG: Fleet vs Fleet combat: {fleet.id} vs {defending_fleet.id}")
+                from backend.services.combat_engine import CombatEngine
+                combat_result = CombatEngine.calculate_battle(fleet, defending_fleet, target_planet)
+                CombatEngine.process_combat_result(combat_result, fleet, defending_fleet, target_planet)
+            else:
+                # Attack on undefended planet
+                print(f"DEBUG: Attacking undefended planet {target_planet.id}")
+                from backend.services.combat_engine import CombatEngine
+                combat_result = CombatEngine.calculate_planet_attack(fleet, target_planet)
+                CombatEngine.process_planet_attack_result(combat_result, fleet, target_planet)
+
+            print(f"SUCCESS: Attack mission completed for fleet {fleet.id}")
+
+        except Exception as e:
+            print(f"ERROR: Failed to process attack for fleet {fleet.id}: {str(e)}")
+            db.session.rollback()
+            FleetArrivalService._return_fleet_to_stationed(fleet)
+
+    @staticmethod
+    def _process_recycle(fleet):
+        """Handle recycle fleet arrival"""
+        print(f"DEBUG: Processing recycle for fleet {fleet.id}")
+
+        try:
+            # Get target planet
+            target_planet = Planet.query.get(fleet.target_planet_id)
+            if not target_planet:
+                print(f"ERROR: Target planet {fleet.target_planet_id} not found")
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                return
+
+            # Find debris field at planet
+            debris_field = target_planet.debris_fields.first()
+            if not debris_field:
+                print(f"WARNING: No debris field found at planet {target_planet.id}")
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                return
+
+            # Calculate recycler capacity
+            recycler_capacity = fleet.recycler * 1000  # Assume 1000 cargo capacity per recycler
+
+            # Collect resources
+            collected_metal = min(debris_field.metal, recycler_capacity // 2)
+            collected_crystal = min(debris_field.crystal, recycler_capacity // 2)
+            collected_deuterium = min(debris_field.deuterium, recycler_capacity // 2)
+
+            # Update debris field
+            debris_field.metal -= collected_metal
+            debris_field.crystal -= collected_crystal
+            debris_field.deuterium -= collected_deuterium
+
+            # Add resources to fleet (simplified - would need cargo tracking)
+            # For now, just log the collection
+            print(f"SUCCESS: Collected {collected_metal} metal, {collected_crystal} crystal, {collected_deuterium} deuterium")
+
+            # Create tick log entry
+            tick_log = TickLog(
+                planet_id=target_planet.id,
+                fleet_id=fleet.id,
+                event_type='recycle',
+                event_description=f'Fleet {fleet.id} collected {collected_metal}M {collected_crystal}C {collected_deuterium}D from debris field'
+            )
+            db.session.add(tick_log)
+
+            # Clean up empty debris field
+            if debris_field.metal <= 0 and debris_field.crystal <= 0 and debris_field.deuterium <= 0:
+                db.session.delete(debris_field)
+
+            FleetArrivalService._return_fleet_to_stationed(fleet)
+            db.session.commit()
+
+            print(f"SUCCESS: Recycle mission completed for fleet {fleet.id}")
+
+        except Exception as e:
+            print(f"ERROR: Failed to process recycle for fleet {fleet.id}: {str(e)}")
+            db.session.rollback()
             FleetArrivalService._return_fleet_to_stationed(fleet)
 
     @staticmethod

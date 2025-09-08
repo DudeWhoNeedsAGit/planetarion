@@ -12,6 +12,7 @@ Tests the fleet travel calculation service including:
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
+from freezegun import freeze_time
 from backend.services.fleet_travel import FleetTravelService
 from backend.models import Planet, Fleet
 
@@ -135,21 +136,22 @@ class TestFleetTravelService:
         info = FleetTravelService.calculate_travel_info(fleet)
         assert info is None
 
+    @freeze_time("2025-01-01 12:00:00")
     def test_calculate_travel_info_traveling_fleet(self, app):
         """Test travel info calculation for traveling fleet"""
         with app.app_context():
-            # Create mock planets
+            # Create real planets for better type safety
             start_planet = Planet(name='Start', x=0, y=0, z=0)
             target_planet = Planet(name='Target', x=10, y=0, z=0)
 
-            # Create mock fleet with proper ship attributes
-            fleet = Mock()
+            # Create mock fleet with Mock(spec=Fleet) for type safety
+            fleet = Mock(spec=Fleet)
             fleet.status = 'traveling'
             fleet.start_planet_id = 1
             fleet.target_planet_id = 2
-            fleet.departure_time = datetime.utcnow() - timedelta(hours=1)  # 1 hour ago
-            fleet.arrival_time = datetime.utcnow() + timedelta(hours=1)    # 1 hour from now
-            # Add ship attributes to avoid Mock comparison issues
+            fleet.departure_time = datetime(2025, 1, 1, 11, 0, 0)  # 1 hour ago
+            fleet.arrival_time = datetime(2025, 1, 1, 13, 0, 0)    # 1 hour from now
+            # Add ship attributes as integers to avoid Mock comparison issues
             fleet.small_cargo = 5
             fleet.large_cargo = 0
             fleet.light_fighter = 0
@@ -175,18 +177,20 @@ class TestFleetTravelService:
                 assert info['fleet_speed'] == 5000  # Small cargo speed
                 assert abs(info['progress_percentage'] - 50.0) < 1.0  # Approximately halfway through
 
+    @freeze_time("2025-01-01 12:00:00")
     def test_calculate_travel_info_coordinate_based_mission(self, app):
         """Test travel info calculation for coordinate-based missions"""
         with app.app_context():
-            # Create mock start planet
+            # Create real start planet for better type safety
             start_planet = Planet(name='Start', x=0, y=0, z=0)
 
-            # Create mock fleet with coordinate-based status and ship attributes
-            fleet = Mock()
+            # Create mock fleet with Mock(spec=Fleet) for type safety
+            fleet = Mock(spec=Fleet)
             fleet.status = 'colonizing:100:200:300'
             fleet.start_planet_id = 1
-            fleet.departure_time = datetime.utcnow() - timedelta(hours=1)
-            fleet.arrival_time = datetime.utcnow() + timedelta(hours=1)
+            fleet.departure_time = datetime(2025, 1, 1, 11, 0, 0)
+            fleet.arrival_time = datetime(2025, 1, 1, 13, 0, 0)
+            # Add all ship attributes as integers to avoid Mock comparison issues
             fleet.small_cargo = 5
             fleet.large_cargo = 0
             fleet.light_fighter = 0
@@ -194,6 +198,7 @@ class TestFleetTravelService:
             fleet.cruiser = 0
             fleet.battleship = 0
             fleet.colony_ship = 1
+            fleet.target_planet_id = None  # No target planet for coordinate-based mission
 
             # Mock database queries
             with patch.object(Planet, 'query') as mock_query:
@@ -204,7 +209,7 @@ class TestFleetTravelService:
                 info = FleetTravelService.calculate_travel_info(fleet)
 
                 assert info is not None
-                assert info['target_coordinates'] == '100:200:300'
+                assert info['target_coordinates'] == '100.0:200.0:300.0'  # Formatted as floats
                 assert info['is_coordinate_based'] == True
                 assert info['fleet_speed'] == 2500  # Colony ship speed
 
@@ -231,9 +236,11 @@ class TestFleetTravelService:
     def test_calculate_travel_info_missing_start_planet(self, app):
         """Test travel info calculation when start planet doesn't exist"""
         with app.app_context():
-            fleet = Mock()
+            # Use Mock(spec=Fleet) for type safety
+            fleet = Mock(spec=Fleet)
             fleet.status = 'traveling'
             fleet.start_planet_id = 999
+            # Add ship attributes as integers to avoid Mock comparison issues
             fleet.small_cargo = 5
             fleet.large_cargo = 0
             fleet.light_fighter = 0
@@ -241,33 +248,38 @@ class TestFleetTravelService:
             fleet.cruiser = 0
             fleet.battleship = 0
             fleet.colony_ship = 0
+            # Add datetime attributes to avoid Mock arithmetic issues
+            fleet.departure_time = datetime(2025, 1, 1, 11, 0, 0)
+            fleet.arrival_time = datetime(2025, 1, 1, 13, 0, 0)
 
-            # Mock database queries to return None
+            # Mock Planet.query.get() to return None for start planet
             with patch.object(Planet, 'query') as mock_query:
-                mock_filter_by = Mock()
-                mock_filter_by.first.return_value = None
-                mock_query.filter_by.return_value = mock_filter_by
+                mock_get = Mock()
+                mock_get.side_effect = lambda planet_id: None if planet_id == 999 else None
+                mock_query.get = mock_get
 
                 info = FleetTravelService.calculate_travel_info(fleet)
                 assert info is None
 
+    @freeze_time("2025-01-01 12:00:00")
     def test_get_fleet_status_info_complete_fleet(self, app):
         """Test complete fleet status info retrieval"""
         with app.app_context():
-            # Create mock planets
+            # Create real planets for better type safety
             start_planet = Planet(name='Start', x=0, y=0, z=0)
             target_planet = Planet(name='Target', x=10, y=0, z=0)
 
-            # Create mock fleet
-            fleet = Mock()
+            # Create mock fleet with Mock(spec=Fleet) for type safety
+            fleet = Mock(spec=Fleet)
             fleet.id = 123
             fleet.mission = 'colonize'
             fleet.status = 'traveling'
-            fleet.departure_time = datetime.utcnow() - timedelta(hours=1)
-            fleet.arrival_time = datetime.utcnow() + timedelta(hours=1)
+            fleet.departure_time = datetime(2025, 1, 1, 11, 0, 0)
+            fleet.arrival_time = datetime(2025, 1, 1, 13, 0, 0)
             fleet.eta = 3600
             fleet.start_planet_id = 1
             fleet.target_planet_id = 2
+            # Add ship attributes as integers to avoid Mock comparison issues
             fleet.small_cargo = 5
             fleet.large_cargo = 2
             fleet.colony_ship = 1
@@ -296,20 +308,22 @@ class TestFleetTravelService:
         info = FleetTravelService.get_fleet_status_info(None)
         assert info is None
 
+    @freeze_time("2025-01-01 12:00:00")
     def test_progress_calculation_edge_cases(self, app):
         """Test progress calculation edge cases"""
         with app.app_context():
-            # Create mock planets
+            # Create real planets for better type safety
             start_planet = Planet(name='Start', x=0, y=0, z=0)
             target_planet = Planet(name='Target', x=10, y=0, z=0)
 
             # Test completed journey (progress = 100%)
-            fleet = Mock()
+            fleet = Mock(spec=Fleet)
             fleet.status = 'traveling'
             fleet.start_planet_id = 1
             fleet.target_planet_id = 2
-            fleet.departure_time = datetime.utcnow() - timedelta(hours=2)  # 2 hours ago
-            fleet.arrival_time = datetime.utcnow() - timedelta(hours=1)    # 1 hour ago (completed)
+            fleet.departure_time = datetime(2025, 1, 1, 10, 0, 0)  # 2 hours ago
+            fleet.arrival_time = datetime(2025, 1, 1, 11, 0, 0)    # 1 hour ago (completed)
+            # Add ship attributes as integers to avoid Mock comparison issues
             fleet.small_cargo = 5
             fleet.large_cargo = 0
             fleet.light_fighter = 0
@@ -318,10 +332,11 @@ class TestFleetTravelService:
             fleet.battleship = 0
             fleet.colony_ship = 0
 
+            # Mock Planet.query.get() to return the real planet objects
             with patch.object(Planet, 'query') as mock_query:
-                mock_filter_by = Mock()
-                mock_filter_by.first.side_effect = [start_planet, target_planet]
-                mock_query.filter_by.return_value = mock_filter_by
+                mock_get = Mock()
+                mock_get.side_effect = lambda planet_id: start_planet if planet_id == 1 else target_planet
+                mock_query.get = mock_get
 
                 info = FleetTravelService.calculate_travel_info(fleet)
 
@@ -329,20 +344,22 @@ class TestFleetTravelService:
                 assert info['progress_percentage'] >= 100.0
                 assert info['current_position'] == '10.0:0.0:0.0'  # Should be at target
 
+    @freeze_time("2025-01-01 12:00:00")
     def test_current_position_interpolation(self, app):
         """Test current position interpolation during travel"""
         with app.app_context():
-            # Create mock planets
+            # Create real planets for better type safety
             start_planet = Planet(name='Start', x=0, y=0, z=0)
             target_planet = Planet(name='Target', x=100, y=200, z=300)
 
             # Fleet halfway through journey
-            fleet = Mock()
+            fleet = Mock(spec=Fleet)
             fleet.status = 'traveling'
             fleet.start_planet_id = 1
             fleet.target_planet_id = 2
-            fleet.departure_time = datetime.utcnow() - timedelta(hours=1)  # 1 hour ago
-            fleet.arrival_time = datetime.utcnow() + timedelta(hours=1)    # 1 hour from now
+            fleet.departure_time = datetime(2025, 1, 1, 11, 0, 0)  # 1 hour ago
+            fleet.arrival_time = datetime(2025, 1, 1, 13, 0, 0)    # 1 hour from now
+            # Add ship attributes as integers to avoid Mock comparison issues
             fleet.small_cargo = 5
             fleet.large_cargo = 0
             fleet.light_fighter = 0
@@ -351,10 +368,11 @@ class TestFleetTravelService:
             fleet.battleship = 0
             fleet.colony_ship = 0
 
+            # Mock Planet.query.get() to return the real planet objects
             with patch.object(Planet, 'query') as mock_query:
-                mock_filter_by = Mock()
-                mock_filter_by.first.side_effect = [start_planet, target_planet]
-                mock_query.filter_by.return_value = mock_filter_by
+                mock_get = Mock()
+                mock_get.side_effect = lambda planet_id: start_planet if planet_id == 1 else target_planet
+                mock_query.get = mock_get
 
                 info = FleetTravelService.calculate_travel_info(fleet)
 
@@ -380,6 +398,7 @@ class TestFleetTravelServiceIntegration:
         assert hasattr(FleetTravelService, 'format_time_remaining')
         assert hasattr(FleetTravelService, 'get_fleet_status_info')
 
+    @freeze_time("2025-01-01 12:00:00")
     def test_realistic_fleet_scenario(self, app):
         """Test a realistic fleet travel scenario"""
         with app.app_context():
@@ -387,22 +406,27 @@ class TestFleetTravelServiceIntegration:
             earth = Planet(name='Earth', x=100, y=200, z=300)
             mars = Planet(name='Mars', x=150, y=250, z=350)
 
-            # Create fleet with mixed ship composition
-            fleet = Mock()
+            # Create fleet with mixed ship composition and Mock(spec=Fleet) for type safety
+            fleet = Mock(spec=Fleet)
             fleet.status = 'traveling'
             fleet.start_planet_id = 1
             fleet.target_planet_id = 2
-            fleet.departure_time = datetime.utcnow() - timedelta(minutes=30)  # 30 min ago
-            fleet.arrival_time = datetime.utcnow() + timedelta(minutes=30)    # 30 min from now
+            fleet.departure_time = datetime(2025, 1, 1, 11, 30, 0)  # 30 min ago
+            fleet.arrival_time = datetime(2025, 1, 1, 12, 30, 0)    # 30 min from now
+            # Add ship attributes as integers to avoid Mock comparison issues
             fleet.small_cargo = 10
             fleet.large_cargo = 5
             fleet.light_fighter = 20
             fleet.cruiser = 3
+            fleet.colony_ship = 0
+            fleet.heavy_fighter = 0
+            fleet.battleship = 0
 
+            # Mock Planet.query.get() to return the real planet objects
             with patch.object(Planet, 'query') as mock_query:
-                mock_filter_by = Mock()
-                mock_filter_by.first.side_effect = [earth, mars]
-                mock_query.filter_by.return_value = mock_filter_by
+                mock_get = Mock()
+                mock_get.side_effect = lambda planet_id: earth if planet_id == 1 else mars
+                mock_query.get = mock_get
 
                 info = FleetTravelService.calculate_travel_info(fleet)
 
@@ -411,4 +435,4 @@ class TestFleetTravelServiceIntegration:
                 assert info['total_duration_hours'] > 0
                 assert 0 <= info['progress_percentage'] <= 100
                 assert ':' in info['current_position']
-                assert info['fleet_speed'] == 5000  # Small cargo speed (fastest in fleet)
+                assert info['fleet_speed'] == 3500  # Large cargo speed (slowest in fleet: large_cargo=3500, cruiser=3500)

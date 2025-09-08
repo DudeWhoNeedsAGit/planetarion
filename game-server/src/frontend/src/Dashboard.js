@@ -5,6 +5,7 @@ import Overview from './Overview';
 import FleetManagement from './FleetManagement';
 import LuckyWheel from './LuckyWheel';
 import GalaxyMap from './GalaxyMap';
+import CombatDashboard from './CombatDashboard';
 import ChatPanel from './ChatPanel';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
@@ -657,6 +658,8 @@ function Dashboard({ user, onLogout }) {
         );
       case 'fleets':
         return <FleetManagement user={user} planets={planets} />;
+      case 'combat':
+        return <CombatDashboard user={user} />;
       case 'wheel':
         return (
           <div className="max-w-md mx-auto">

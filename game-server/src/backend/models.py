@@ -93,6 +93,7 @@ class Fleet(db.Model):
     cruiser = db.Column(db.Integer, default=0)
     battleship = db.Column(db.Integer, default=0)
     colony_ship = db.Column(db.Integer, default=0)
+    recycler = db.Column(db.Integer, default=0)
 
     # Fleet status
     status = db.Column(db.String(20), default='stationed')
@@ -105,6 +106,12 @@ class Fleet(db.Model):
 
     # Coordinate-based targeting for colonization
     target_coordinates = db.Column(db.String(50))  # Format: "x:y:z"
+
+    # Combat experience and statistics
+    combat_experience = db.Column(db.Integer, default=0)
+    last_combat_time = db.Column(db.DateTime)
+    combat_victories = db.Column(db.Integer, default=0)
+    combat_defeats = db.Column(db.Integer, default=0)
 
     def __repr__(self):
         return f'<Fleet {self.mission} from {self.start_planet_id} to {self.target_planet_id}>'
@@ -216,3 +223,48 @@ class Research(db.Model):
 
     def __repr__(self):
         return f'<Research user:{self.user_id} points:{self.research_points}>'
+
+
+class CombatReport(db.Model):
+    __tablename__ = 'combat_reports'
+
+    id = db.Column(db.Integer, primary_key=True)
+    attacker_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    defender_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    rounds = db.Column(db.Text)  # JSON string of combat rounds
+    attacker_losses = db.Column(db.Text)  # JSON string of ship losses
+    defender_losses = db.Column(db.Text)  # JSON string of ship losses
+    debris_metal = db.Column(db.BigInteger, default=0)
+    debris_crystal = db.Column(db.BigInteger, default=0)
+    debris_deuterium = db.Column(db.BigInteger, default=0)
+
+    # Relationships
+    attacker = db.relationship('User', foreign_keys=[attacker_id], backref='attacker_reports')
+    defender = db.relationship('User', foreign_keys=[defender_id], backref='defender_reports')
+    winner = db.relationship('User', foreign_keys=[winner_id], backref='won_reports')
+    planet = db.relationship('Planet', backref='combat_reports')
+
+    def __repr__(self):
+        return f'<CombatReport attacker:{self.attacker_id} vs defender:{self.defender_id} winner:{self.winner_id}>'
+
+
+class DebrisField(db.Model):
+    __tablename__ = 'debris_fields'
+
+    id = db.Column(db.Integer, primary_key=True)
+    planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False)
+    metal = db.Column(db.BigInteger, default=0)
+    crystal = db.Column(db.BigInteger, default=0)
+    deuterium = db.Column(db.BigInteger, default=0)
+    recycler_fleet_id = db.Column(db.Integer, db.ForeignKey('fleets.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    planet = db.relationship('Planet', backref='debris_fields')
+    recycler_fleet = db.relationship('Fleet', backref='recycling_debris')
+
+    def __repr__(self):
+        return f'<DebrisField planet:{self.planet_id} metal:{self.metal} crystal:{self.crystal}>'

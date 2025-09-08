@@ -51,7 +51,8 @@ def get_user_fleets():
             'heavy_fighter': fleet.heavy_fighter,
             'cruiser': fleet.cruiser,
             'battleship': fleet.battleship,
-            'colony_ship': fleet.colony_ship
+            'colony_ship': fleet.colony_ship,
+            'recycler': fleet.recycler
         },
         'departure_time': fleet.departure_time.isoformat() if fleet.departure_time else None,
         'arrival_time': fleet.arrival_time.isoformat() if fleet.arrival_time else None,
@@ -109,6 +110,7 @@ def create_fleet():
         cruiser=ships.get('cruiser', 0),
         battleship=ships.get('battleship', 0),
         colony_ship=ships.get('colony_ship', 0),
+        recycler=ships.get('recycler', 0),
         departure_time=datetime.utcnow(),
         arrival_time=datetime.utcnow()  # Will be updated when sent
     )
@@ -131,7 +133,8 @@ def create_fleet():
                 'heavy_fighter': fleet.heavy_fighter,
                 'cruiser': fleet.cruiser,
                 'battleship': fleet.battleship,
-                'colony_ship': fleet.colony_ship
+                'colony_ship': fleet.colony_ship,
+                'recycler': fleet.recycler
             }
         }
     }), 201
@@ -177,6 +180,61 @@ def send_fleet():
         fleet.mission = 'explore'
         fleet.target_planet_id = 0  # Temporary
         fleet.status = f'exploring:{target_x}:{target_y}:{target_z}'
+
+    elif data['mission'] == 'attack':
+        # Attack mission - target must be enemy planet
+        if 'target_planet_id' not in data:
+            return jsonify({'error': 'Target planet required for attack mission'}), 400
+
+        target_planet = Planet.query.get(data['target_planet_id'])
+        if not target_planet:
+            return jsonify({'error': 'Target planet not found'}), 404
+
+        # Cannot attack own planets
+        if target_planet.user_id == user_id:
+            return jsonify({'error': 'Cannot attack your own planet'}), 400
+
+        # Check if target planet is owned (attacks on unowned planets would be colonization)
+        if not target_planet.user_id:
+            return jsonify({'error': 'Cannot attack unowned planet. Use colonization instead.'}), 400
+
+        fleet.mission = 'attack'
+        fleet.target_planet_id = data['target_planet_id']
+        fleet.status = 'traveling'
+
+    elif data['mission'] == 'defend':
+        # Defend mission - station fleet at planet for defense
+        if 'target_planet_id' not in data:
+            return jsonify({'error': 'Target planet required for defend mission'}), 400
+
+        target_planet = Planet.query.get(data['target_planet_id'])
+        if not target_planet:
+            return jsonify({'error': 'Target planet not found'}), 404
+
+        # Must own the planet to defend it
+        if target_planet.user_id != user_id:
+            return jsonify({'error': 'Cannot defend planet you do not own'}), 400
+
+        fleet.mission = 'defend'
+        fleet.target_planet_id = data['target_planet_id']
+        fleet.status = 'defending'
+
+    elif data['mission'] == 'recycle':
+        # Recycle mission - collect debris from planet
+        if 'target_planet_id' not in data:
+            return jsonify({'error': 'Target planet required for recycle mission'}), 400
+
+        target_planet = Planet.query.get(data['target_planet_id'])
+        if not target_planet:
+            return jsonify({'error': 'Target planet not found'}), 404
+
+        # Check if there are recyclers in the fleet
+        if fleet.recycler <= 0:
+            return jsonify({'error': 'Fleet must contain recycler ships for recycle mission'}), 400
+
+        fleet.mission = 'recycle'
+        fleet.target_planet_id = data['target_planet_id']
+        fleet.status = 'traveling'
 
     elif data['mission'] == 'colonize':
         # Enhanced colonization validation - handle both planet selection and coordinate entry

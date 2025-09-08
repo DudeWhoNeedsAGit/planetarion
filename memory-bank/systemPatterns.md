@@ -218,6 +218,58 @@ game-server/src/frontend/tests/e2e/
 - **E2E**: Complete user workflows, authentication flows
 - **Manual**: Exploratory testing, edge cases
 
+### Mock Testing Best Practices
+
+**Critical Findings from Fleet Travel Test Fixes**:
+
+#### Mock Specification Patterns
+- **Use `Mock(spec=Model)`**: Always specify the model class to prevent attribute typos
+- **Example**: `fleet = Mock(spec=Fleet)` instead of `fleet = Mock()`
+- **Benefit**: Catches typos like `fleet.small_cargp` at test time instead of runtime
+
+#### Database Query Mocking
+- **Mock at the right level**: Use `Planet.query.get` side effects for proper object returns
+- **Pattern**:
+```python
+with patch.object(Planet, 'query') as mock_query:
+    mock_get = Mock()
+    mock_get.side_effect = lambda planet_id: start_planet if planet_id == 1 else target_planet
+    mock_query.get = mock_get
+```
+- **Benefit**: Returns actual Planet objects instead of Mock objects for arithmetic operations
+
+#### Arithmetic Operation Handling
+- **Problem**: `Mock() + Mock()` raises `TypeError: unsupported operand type(s) for +: 'Mock' and 'Mock'`
+- **Solution**: Use real objects or explicit numeric attributes
+- **Pattern**: `fleet.departure_time = datetime(2025, 1, 1, 11, 0, 0)` instead of Mock datetime
+
+#### Coordinate-Based Mission Testing
+- **Status validation**: Test coordinate-based missions like `colonizing:100:200:300`
+- **Pattern**: Ensure service accepts both standard statuses and coordinate-based patterns
+- **Validation**: Test both parsing logic and coordinate extraction
+
+#### Position Interpolation Testing
+- **Linear interpolation**: Test fleet position calculations during travel
+- **Formula**: `current_x = start_x + (target_x - start_x) * (progress / 100)`
+- **Edge cases**: Test completed journeys (100% progress) and position at target
+
+#### Fleet Speed Calculation Testing
+- **Slowest ship rule**: Fleet speed determined by slowest ship type
+- **Test cases**: Mixed fleet compositions, empty fleets, single ship types
+- **Validation**: Ensure correct speed hierarchy (colony_ship slowest, small_cargo fastest)
+
+#### Test Data Setup Patterns
+- **Real Planet objects**: Use `Planet(name='Test', x=0, y=0, z=0)` for reliable coordinates
+- **Consistent mocking**: Apply same mock patterns across related tests
+- **Error handling**: Test invalid inputs and edge cases systematically
+
+#### Debug Logging in Tests
+- **Temporary logging**: Add `print()` statements during debugging
+- **Pattern**: `print(f"DEBUG: {variable_name}={value}")`
+- **Cleanup**: Remove debug prints after fixing issues
+
+**Key Takeaway**: Loose mocking leads to runtime errors. Always use `Mock(spec=Model)` and real objects where arithmetic operations are needed.
+
 ## Deployment Patterns
 
 ### Containerization

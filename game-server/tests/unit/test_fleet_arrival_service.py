@@ -10,6 +10,7 @@ that focus on business logic while mocking external dependencies where possible.
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
+from freezegun import freeze_time
 from backend.services.fleet_arrival import FleetArrivalService
 from backend.models import Fleet, Planet, User
 
@@ -48,37 +49,39 @@ class TestFleetArrivalService:
             # This should not raise any errors
             FleetArrivalService.process_arrived_fleets()
 
+    @freeze_time("2025-01-01 12:00:00")
     def test_coordinate_parsing_from_status(self, app):
         """Test coordinate parsing from fleet status"""
         with app.app_context():
-            # Test valid coordinate parsing
-            mock_fleet = Mock()
+            # Test valid coordinate parsing with Mock(spec=Fleet) for type safety
+            mock_fleet = Mock(spec=Fleet)
             mock_fleet.status = 'colonizing:100:200:300'
             mock_fleet.colony_ship = 1
             mock_fleet.user_id = 1
             mock_fleet.user = Mock()
             mock_fleet.user.username = 'TestUser'
+            mock_fleet.explored_systems = None  # Explicit attribute instead of hasattr patch
+
+            # Use real Planet object instead of Mock for better type safety
+            target_planet = Planet(
+                name="Test Planet",
+                x=100, y=200, z=300,
+                user_id=None
+            )
 
             # Mock planet query using proper SQLAlchemy mocking
             with patch.object(Planet, 'query') as mock_query:
-                mock_planet = Mock()
-                mock_planet.user_id = None
-                mock_planet.name = 'Test Planet'
-
                 # Set up the query chain
                 mock_filter_by = Mock()
-                mock_filter_by.first.return_value = mock_planet
+                mock_filter_by.first.return_value = target_planet
                 mock_query.filter_by.return_value = mock_filter_by
 
                 # Mock database operations
                 with patch('backend.services.fleet_arrival.db') as mock_db:
-                    with patch('backend.services.fleet_arrival.datetime') as mock_datetime:
-                        mock_datetime.utcnow.return_value = datetime(2025, 1, 1, 12, 0, 0)
+                    FleetArrivalService._process_colonization(mock_fleet)
 
-                        FleetArrivalService._process_colonization(mock_fleet)
-
-                        # Verify coordinates were parsed correctly
-                        mock_query.filter_by.assert_called_with(x=100, y=200, z=300)
+                    # Verify coordinates were parsed correctly
+                    mock_query.filter_by.assert_called_with(x=100, y=200, z=300)
 
     def test_coordinate_parsing_from_target_coordinates(self, app):
         """Test coordinate parsing from target_coordinates field"""
@@ -195,14 +198,17 @@ class TestFleetArrivalService:
                         # Verify database commit
                         mock_db.session.commit.assert_called()
 
+    @freeze_time("2025-01-01 12:00:00")
     def test_exploration_successful(self, app):
         """Test successful exploration"""
         with app.app_context():
-            mock_fleet = Mock()
+            # Use Mock(spec=Fleet) for type safety
+            mock_fleet = Mock(spec=Fleet)
             mock_fleet.status = 'exploring:100:200:300'
             mock_fleet.user_id = 1
             mock_fleet.user = Mock()
             mock_fleet.user.username = 'TestUser'
+            mock_fleet.explored_systems = None  # Explicit attribute instead of hasattr patch
 
             # Mock no existing planet
             with patch.object(Planet, 'query') as mock_query:
@@ -211,19 +217,18 @@ class TestFleetArrivalService:
                 mock_query.filter_by.return_value = mock_filter_by
 
                 with patch('backend.services.fleet_arrival.db') as mock_db:
-                    with patch('backend.services.fleet_arrival.datetime') as mock_datetime:
-                        mock_datetime.utcnow.return_value = datetime(2025, 1, 1, 12, 0, 0)
+                    with patch('backend.services.fleet_arrival.json') as mock_json:
+                        # Mock JSON dumps to avoid Mock serialization issues
+                        mock_json.dumps.return_value = '{"coordinates": "100:200:300", "explored_at": "2025-01-01T12:00:00", "fleet_id": 123}'
 
-                        # Mock hasattr to return False for explored_systems to avoid JSON issues
-                        with patch('backend.services.fleet_arrival.hasattr', side_effect=lambda obj, attr: False if attr == 'explored_systems' else hasattr.__wrapped__(obj, attr)):
-                            FleetArrivalService._process_exploration(mock_fleet)
+                        FleetArrivalService._process_exploration(mock_fleet)
 
-                            # Verify fleet was returned to stationed
-                            assert mock_fleet.status == 'stationed'
-                            assert mock_fleet.mission == 'stationed'
+                        # Verify fleet was returned to stationed
+                        assert mock_fleet.status == 'stationed'
+                        assert mock_fleet.mission == 'stationed'
 
-                            # Verify database commit
-                            mock_db.session.commit.assert_called()
+                        # Verify database commit
+                        mock_db.session.commit.assert_called()
 
     def test_return_mission_processing(self):
         """Test return mission processing"""

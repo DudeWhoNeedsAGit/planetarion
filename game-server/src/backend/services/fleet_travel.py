@@ -30,7 +30,11 @@ class FleetTravelService:
         Returns:
             dict: Travel information including distance, duration, progress, position
         """
-        if not fleet or fleet.status not in ['traveling', 'returning']:
+        # Allow traveling, returning, and coordinate-based missions (colonizing, exploring)
+        valid_statuses = ['traveling', 'returning']
+        is_coordinate_based = fleet.status and (fleet.status.startswith('colonizing:') or fleet.status.startswith('exploring:'))
+
+        if not fleet or (fleet.status not in valid_statuses and not is_coordinate_based):
             return None
 
         # Get start and target planets
@@ -39,7 +43,7 @@ class FleetTravelService:
             return None
 
         # For coordinate-based missions (colonization, exploration), create target planet
-        if ':' in str(fleet.status) and (fleet.status.startswith(('colonizing:', 'exploring:'))):
+        if fleet.status and (fleet.status.startswith('colonizing:') or fleet.status.startswith('exploring:')):
             # Extract coordinates from status
             coords_part = fleet.status.split(':')[1:]
             if len(coords_part) == 3:
@@ -87,14 +91,25 @@ class FleetTravelService:
             progress_percentage = 0
             current_x, current_y, current_z = start_planet.x, start_planet.y, start_planet.z
 
+        # Ensure coordinates are numeric before formatting
+        try:
+            current_pos = f"{float(current_x):.1f}:{float(current_y):.1f}:{float(current_z):.1f}"
+            start_coords = f"{float(start_planet.x)}:{float(start_planet.y)}:{float(start_planet.z)}"
+            target_coords = f"{float(target_planet.x)}:{float(target_planet.y)}:{float(target_planet.z)}"
+        except (TypeError, ValueError):
+            # Fallback for cases where coordinates might not be numeric (e.g., test mocks)
+            current_pos = f"{current_x}:{current_y}:{current_z}"
+            start_coords = f"{start_planet.x}:{start_planet.y}:{start_planet.z}"
+            target_coords = f"{target_planet.x}:{target_planet.y}:{target_planet.z}"
+
         return {
             'distance': round(distance, 2),
             'total_duration_hours': round(total_duration_hours, 2),
             'progress_percentage': round(progress_percentage, 1),
-            'current_position': f"{current_x:.1f}:{current_y:.1f}:{current_z:.1f}",
+            'current_position': current_pos,
             'fleet_speed': round(fleet_speed, 1),
-            'start_coordinates': f"{start_planet.x}:{start_planet.y}:{start_planet.z}",
-            'target_coordinates': f"{target_planet.x}:{target_planet.y}:{target_planet.z}",
+            'start_coordinates': start_coords,
+            'target_coordinates': target_coords,
             'is_coordinate_based': ':' in str(fleet.status)
         }
 

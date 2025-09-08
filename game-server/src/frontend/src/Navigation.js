@@ -6,6 +6,7 @@ function Navigation({ activeSection, onSectionChange }) {
     { id: 'planets', label: 'Planets', icon: '🪐' },
     { id: 'galaxy', label: 'Galaxy Map', icon: '🌌' },
     { id: 'fleets', label: 'Fleets', icon: '🚀' },
+    { id: 'combat', label: 'Combat', icon: '⚔️' },
     { id: 'wheel', label: 'Lucky Wheel', icon: '🎰' },
     { id: 'shipyard', label: 'Shipyard', icon: '⚙️' },
     { id: 'research', label: 'Research', icon: '🔬' },

@@ -42,7 +42,12 @@ help: # Show all available commands
 # Local development tests (SQLite, no Docker)
 unit: # Run unit tests (fast, no Docker)
 	@echo "🧪 Running Unit Tests (SQLite)..."
-	. venv/bin/activate && python -m pytest tests/unit -v --tb=short --disable-warnings
+	@if [ -n "$(TEST_FILE)" ]; then \
+		echo "🎯 Running specific test file: $(TEST_FILE)"; \
+		. venv/bin/activate && python -m pytest $(TEST_FILE) -v --tb=short --disable-warnings; \
+	else \
+		. venv/bin/activate && python -m pytest tests/unit -v --tb=short --disable-warnings; \
+	fi
 
 integration: # Run integration tests (fast, no Docker)
 	@echo "🔗 Running Integration Tests (SQLite)..."
