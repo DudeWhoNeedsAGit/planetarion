@@ -104,18 +104,10 @@ def get_nearby_systems(center_x, center_y, center_z):
         user = None  # TODO: Add proper user handling
         print("DEBUG: User handling - using dummy user for now")
 
-        # Get systems within exploration range (simplified to 50 units)
-        range_limit = 50
-        print(f"DEBUG: Exploration range: {range_limit} units")
-
-        print("DEBUG: Querying database for planets within range...")
-        # Find all planets within range
-        planets = Planet.query.filter(
-            Planet.x.between(center_x - range_limit, center_x + range_limit),
-            Planet.y.between(center_y - range_limit, center_y + range_limit),
-            Planet.z.between(center_z - range_limit, center_z + range_limit)
-        ).all()
-        print(f"DEBUG: Found {len(planets)} planets within range")
+        print("DEBUG: Loading complete galaxy data (no range limit)...")
+        # Find ALL planets in the database for complete galaxy view
+        planets = Planet.query.all()
+        print(f"DEBUG: Found {len(planets)} planets in entire galaxy")
 
         # Group by system coordinates
         print("DEBUG: Grouping planets by system coordinates...")
@@ -128,9 +120,13 @@ def get_nearby_systems(center_x, center_y, center_z):
                     'y': planet.y,
                     'z': planet.z,
                     'planets': 0,
-                    'explored': True
+                    'explored': True,
+                    'owner_id': planet.user_id  # Set owner based on first planet found
                 }
             systems[key]['planets'] += 1
+            # If multiple planets with different owners, mark as contested (None)
+            if systems[key]['owner_id'] != planet.user_id:
+                systems[key]['owner_id'] = None
         print(f"DEBUG: Grouped into {len(systems)} systems")
 
         # Load user's explored systems
@@ -165,7 +161,8 @@ def get_nearby_systems(center_x, center_y, center_z):
                     'y': y,
                     'z': z,
                     'planets': 0,
-                    'explored': key in explored_systems
+                    'explored': key in explored_systems,
+                    'owner_id': None  # Unowned systems
                 }
 
         result = list(systems.values())

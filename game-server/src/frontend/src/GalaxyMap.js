@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import planetImage from './images/p4.png';
 
 // Enhanced Debug Infrastructure for E2E Testing
 const DEBUG_MODE = process.env.NODE_ENV === 'development' || process.env.REACT_APP_DEBUG_MODE === 'true';
@@ -98,7 +99,9 @@ const CoordinateUtils = {
 function GalaxyMap({ user, planets, onClose }) {
   const [systems, setSystems] = useState([]);
   const [selectedSystem, setSelectedSystem] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Start with loading true
+  const [error, setError] = useState(null);
+  const [galaxyLoaded, setGalaxyLoaded] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
   const [showGrid, setShowGrid] = useState(true);
@@ -129,12 +132,18 @@ function GalaxyMap({ user, planets, onClose }) {
   });
 
   useEffect(() => {
-    fetchNearbySystems();
-  }, [centerX, centerY, centerZ]);
+    // Load galaxy data once when component mounts
+    if (!galaxyLoaded) {
+      fetchNearbySystems();
+    }
+  }, []); // Empty dependency array - only run once on mount
 
   const fetchNearbySystems = async () => {
     try {
-      console.log('🌌 Fetching nearby systems:', `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`);
+      setLoading(true);
+      setError(null);
+
+      console.log('🌌 Fetching complete galaxy data once:', `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`);
 
       // Get JWT token from localStorage (following fleet test pattern)
       const token = localStorage.getItem('token');
@@ -155,14 +164,17 @@ function GalaxyMap({ user, planets, onClose }) {
       }
 
       const data = await response.json();
-      console.log('✅ Systems fetched successfully:', data);
+      console.log('✅ Complete galaxy data loaded successfully:', `${data.length} systems`);
       setSystems(data);
+      setGalaxyLoaded(true);
     } catch (error) {
-      console.error('❌ Error fetching systems:', {
+      console.error('❌ Error fetching galaxy data:', {
         message: error.message,
         status: error.status,
         url: `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`
       });
+
+      setError('Failed to load galaxy data');
 
       // Add fallback data for testing (following fleet pattern)
       console.log('🔧 Using fallback test data with mix of explored/unexplored systems');
@@ -173,6 +185,9 @@ function GalaxyMap({ user, planets, onClose }) {
         { x: centerX - 30, y: centerY + 15, z: centerZ - 20, explored: false, planets: 0, owner_id: null },
         { x: centerX + 25, y: centerY - 35, z: centerZ + 45, explored: true, planets: 1, owner_id: null }
       ]);
+      setGalaxyLoaded(true);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -410,16 +425,45 @@ function GalaxyMap({ user, planets, onClose }) {
           </div>
         </div>
 
+        {/* Loading State */}
+        {loading && (
+          <div className="flex-1 bg-gray-900 rounded-lg flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <div className="text-white text-lg font-semibold">Loading Galaxy Data...</div>
+              <div className="text-gray-400 text-sm mt-2">Fetching all planets and systems</div>
+            </div>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="flex-1 bg-gray-900 rounded-lg flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-red-500 text-4xl mb-4">⚠️</div>
+              <div className="text-white text-lg font-semibold">Failed to Load Galaxy</div>
+              <div className="text-gray-400 text-sm mt-2">{error}</div>
+              <button
+                onClick={() => fetchNearbySystems()}
+                className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Map Container */}
-        <div
-          className={`flex-1 bg-gray-900 rounded-lg overflow-hidden relative galaxy-background ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
-          onWheel={handleWheel}
-        >
-          {/* Deep Space Background */}
+        {!loading && !error && (
+          <div
+            className={`flex-1 bg-gray-900 rounded-lg overflow-hidden relative galaxy-background ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+            onWheel={handleWheel}
+          >
+            {/* Deep Space Background */}
           <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-purple-900 to-blue-900">
             {/* Nebula Layer 1 */}
             <div className="absolute inset-0 opacity-30">
@@ -495,10 +539,7 @@ function GalaxyMap({ user, planets, onClose }) {
 
               {systems.map((system, index) => {
                 const pos = getSystemPosition(system);
-                const isVisible = Math.abs(pos.x) < 300 && Math.abs(pos.y) < 200;
                 const systemKey = `${system.x}:${system.y}:${system.z}`;
-
-                if (!isVisible) return null;
 
                 // Determine system ownership status
                 // system.planets is a number (count), not an array
@@ -506,50 +547,61 @@ function GalaxyMap({ user, planets, onClose }) {
                 const isOwnedByUser = system.planets && system.planets > 0 && system.owner_id == user.id;
                 const isEnemyColony = hasColonies && !isOwnedByUser;
 
-                // Enhanced system marker with colony indicators
-                let markerClass = '';
+                // Enhanced system marker with planet image background
+                let borderClass = '';
                 let markerIcon = '';
+                let textColor = 'text-white';
 
                 if (system.explored) {
                   if (isOwnedByUser) {
-                    markerClass = 'bg-green-600 border-green-400 hover:bg-green-500 text-white';
+                    borderClass = 'border-green-400 hover:border-green-300';
                     markerIcon = '🏠';
                   } else if (isEnemyColony) {
-                    markerClass = 'bg-red-600 border-red-400 hover:bg-red-500 text-white';
+                    borderClass = 'border-red-400 hover:border-red-300';
                     markerIcon = '⚔️';
                   } else {
-                    markerClass = 'bg-blue-600 border-blue-400 hover:bg-blue-500 text-white';
+                    borderClass = 'border-blue-400 hover:border-blue-300';
                     markerIcon = '';
                   }
                 } else {
-                  markerClass = 'bg-gray-600 border-gray-400 hover:bg-gray-500 text-gray-300';
+                  borderClass = 'border-gray-400 hover:border-gray-300';
                   markerIcon = '';
+                  textColor = 'text-gray-300';
                 }
 
                 return (
-                  <div
-                    key={index}
-                    ref={(el) => el && EventHandlingSystem.setupSystemMarkerEvents(el)}
-                    className={`system-marker absolute w-16 h-16 rounded-full border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-bold ${markerClass} ${!system.explored ? 'opacity-60' : ''}`}
-                    style={{
-                      left: `${pos.x + 200}px`,
-                      top: `${pos.y + 150}px`,
-                      transform: 'translate(-50%, -50%)',
-                      zIndex: system.explored ? 10 : 5
-                    }}
-                    onClick={() => handleExploreSystem(system)}
-                    title={`${system.x}:${system.y}:${system.z} - ${system.explored ? `${system.planets} planets` : 'Unexplored'}${isOwnedByUser ? ' (Your Colony)' : isEnemyColony ? ' (Enemy Colony)' : ''}`}
-                  >
-                    <div className="text-center">
-                      <div>{system.x - centerX}:{system.y - centerY}</div>
-                      <div className="text-xs opacity-75">
-                        {system.explored ? `${system.planets}P` : '???'}
+                  <div key={index} className="absolute" style={{ left: `${pos.x + 200}px`, top: `${pos.y + 150}px`, transform: 'translate(-50%, -50%)' }}>
+                    {/* Coordinates above the planet */}
+                    <div className="text-center mb-1">
+                      <div className={`text-xs font-bold ${textColor} bg-black bg-opacity-70 px-2 py-1 rounded shadow-lg`}>
+                        {system.x - centerX}:{system.y - centerY}
                       </div>
-                      {hasColonies && (
-                        <div className="text-xs font-bold">
-                          {markerIcon}
+                    </div>
+
+                    {/* Planet marker */}
+                    <div
+                      ref={(el) => el && EventHandlingSystem.setupSystemMarkerEvents(el)}
+                      className={`system-marker w-16 h-16 rounded-full border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-bold ${borderClass} ${!system.explored ? 'opacity-60' : ''}`}
+                      style={{
+                        zIndex: system.explored ? 10 : 5,
+                        backgroundImage: `url(${planetImage})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        backgroundRepeat: 'no-repeat'
+                      }}
+                      onClick={() => handleExploreSystem(system)}
+                      title={`${system.x}:${system.y}:${system.z} - ${system.explored ? `${system.planets} planets` : 'Unexplored'}${isOwnedByUser ? ' (Your Colony)' : isEnemyColony ? ' (Enemy Colony)' : ''}`}
+                    >
+                      <div className="text-center">
+                        <div className={`text-xs opacity-75 ${textColor}`}>
+                          {system.explored ? `${system.planets}P` : '???'}
                         </div>
-                      )}
+                        {hasColonies && (
+                          <div className={`text-xs font-bold ${textColor}`}>
+                            {markerIcon}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -596,9 +648,9 @@ function GalaxyMap({ user, planets, onClose }) {
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
-        {/* System Details Panel */}
         {selectedSystem && (
           <SystemDetails
             system={selectedSystem}

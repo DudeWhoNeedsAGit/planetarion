@@ -5,11 +5,96 @@ from faker import Faker
 import random
 from datetime import datetime, timedelta
 import bcrypt
+import math
 
 populate_bp = Blueprint('populate', __name__)
 
 # Initialize Faker
 fake = Faker()
+
+# Universe Configuration
+UNIVERSE_CONFIG = {
+    'min_coord': -10000,
+    'max_coord': 10000,
+    'min_distance': 25,  # Minimum distance between planets
+    'num_clusters': 8,   # Number of galaxy clusters
+    'cluster_radius': 800,  # Radius of each cluster
+    'cluster_spacing': 3000,  # Minimum distance between clusters
+}
+
+def calculate_distance(x1, y1, z1, x2, y2, z2):
+    """Calculate 3D distance between two points"""
+    return math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+def is_valid_position(x, y, z, existing_planets, min_distance=25):
+    """Check if a position is valid (not too close to existing planets)"""
+    for planet in existing_planets:
+        distance = calculate_distance(x, y, z, planet.x, planet.y, planet.z)
+        if distance < min_distance:
+            return False
+    return True
+
+def generate_cluster_centers(num_clusters, min_distance):
+    """Generate centers for galaxy clusters"""
+    centers = []
+    max_attempts = 1000
+
+    for _ in range(num_clusters):
+        for attempt in range(max_attempts):
+            x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+
+            # Check distance from other cluster centers
+            valid = True
+            for cx, cy, cz in centers:
+                if calculate_distance(x, y, z, cx, cy, cz) < min_distance:
+                    valid = False
+                    break
+
+            if valid:
+                centers.append((x, y, z))
+                break
+        else:
+            # If we can't find a valid position, place it randomly
+            x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            centers.append((x, y, z))
+
+    return centers
+
+def generate_planet_position(existing_planets, cluster_center=None, is_core_planet=False):
+    """Generate a valid planet position"""
+    max_attempts = 100
+
+    for attempt in range(max_attempts):
+        if cluster_center and not is_core_planet:
+            # Generate position within cluster
+            cx, cy, cz = cluster_center
+            radius = UNIVERSE_CONFIG['cluster_radius']
+            x = cx + random.randint(-radius, radius)
+            y = cy + random.randint(-radius, radius)
+            z = cz + random.randint(-radius, radius)
+        else:
+            # Generate random position across universe
+            x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+
+        # Ensure coordinates are within bounds
+        x = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], x))
+        y = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], y))
+        z = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], z))
+
+        if is_valid_position(x, y, z, existing_planets, UNIVERSE_CONFIG['min_distance']):
+            return x, y, z
+
+    # If we can't find a valid position, place it with minimal distance check
+    x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+    y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+    z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+    return x, y, z
 
 @populate_bp.route('/populate', methods=['POST'])
 def populate_database():
@@ -85,7 +170,7 @@ def populate_database():
 
         db.session.commit()
 
-        # Generate planets
+        # Generate planets with improved spacing and clustering
         planets = []
         planet_names = [
             "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
@@ -93,17 +178,50 @@ def populate_database():
             "Sigma", "Tau", "Upsilon", "Phi", "Chi", "Psi", "Omega"
         ]
 
+        print("DEBUG: Generating galaxy clusters...")
+        cluster_centers = generate_cluster_centers(
+            UNIVERSE_CONFIG['num_clusters'],
+            UNIVERSE_CONFIG['cluster_spacing']
+        )
+        print(f"DEBUG: Generated {len(cluster_centers)} galaxy clusters")
+
+        # Assign users to clusters - ensure e2etestuser gets a dedicated cluster
+        user_clusters = {}
+        test_user_cluster = cluster_centers[0]  # Reserve first cluster for test user
+
+        for i, user in enumerate(users):
+            if user.username == 'e2etestuser':
+                user_clusters[user.id] = test_user_cluster
+                print(f"DEBUG: Assigned e2etestuser to cluster at {test_user_cluster}")
+            else:
+                # Start from cluster 1 for other users
+                cluster_idx = (i % (len(cluster_centers) - 1)) + 1
+                user_clusters[user.id] = cluster_centers[cluster_idx]
+
+        print("DEBUG: Generating planets with proper spacing...")
+
         for user in users:
             num_planets = 1 if minimal else random.randint(1, 5)
-            for i in range(num_planets):
-                x = random.randint(1, 1000)
-                y = random.randint(1, 1000)
-                z = random.randint(1, 1000)
+            cluster_center = user_clusters.get(user.id)
 
-                name = f"{planet_names[i % len(planet_names)]} {user.username}"
+            # Special handling for e2etestuser to ensure proper spacing
+            if user.username == 'e2etestuser':
+                print(f"DEBUG: Generating {num_planets} planets for e2etestuser with spacing")
+                # Generate positions for all e2etestuser planets first to ensure proper spacing
+                test_user_positions = []
+                for i in range(num_planets):
+                    x, y, z = generate_planet_position(
+                        planets + test_user_positions,  # Include already generated positions
+                        cluster_center,
+                        is_core_planet=(i == 0)  # First planet is core planet
+                    )
+                    test_user_positions.append(type('MockPlanet', (), {'x': x, 'y': y, 'z': z})())
 
-                # Add ships to test user's planets for E2E testing
-                if user.username == 'e2etestuser':
+                # Now create the actual planets with the pre-calculated positions
+                for i, mock_planet in enumerate(test_user_positions):
+                    x, y, z = mock_planet.x, mock_planet.y, mock_planet.z
+                    name = f"{planet_names[i % len(planet_names)]} {user.username}"
+
                     planet = Planet(
                         name=name,
                         x=x,
@@ -128,7 +246,21 @@ def populate_database():
                         colony_ship=2,
                         created_at=fake.date_time_this_year()
                     )
-                else:
+                    planets.append(planet)
+                    db.session.add(planet)
+                    print(f"DEBUG: Created e2etestuser planet '{name}' at ({x}, {y}, {z})")
+            else:
+                # Standard planet generation for other users
+                for i in range(num_planets):
+                    # Use improved positioning with spacing
+                    x, y, z = generate_planet_position(
+                        planets,
+                        cluster_center,
+                        is_core_planet=(i == 0)  # First planet is core planet
+                    )
+
+                    name = f"{planet_names[i % len(planet_names)]} {user.username}"
+
                     planet = Planet(
                         name=name,
                         x=x,
@@ -145,8 +277,12 @@ def populate_database():
                         fusion_reactor=random.randint(0, 5),
                         created_at=fake.date_time_this_year()
                     )
-                planets.append(planet)
-                db.session.add(planet)
+                    planets.append(planet)
+                    db.session.add(planet)
+
+        print(f"DEBUG: Generated {len(planets)} planets across {len(cluster_centers)} clusters")
+        print(f"DEBUG: Universe bounds: {UNIVERSE_CONFIG['min_coord']} to {UNIVERSE_CONFIG['max_coord']}")
+        print(f"DEBUG: Minimum planet spacing: {UNIVERSE_CONFIG['min_distance']} units")
 
         db.session.commit()
 
