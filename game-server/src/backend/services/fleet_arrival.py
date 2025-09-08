@@ -42,15 +42,26 @@ class FleetArrivalService:
 
         try:
             # Parse target coordinates from fleet status or target_coordinates
-            if ':' in fleet.status:
-                # Extract coordinates from status (format: colonizing:x:y:z)
+            if ':' in fleet.status and fleet.status.startswith(('colonizing:', 'exploring:')):
+                # Extract coordinates from status (format: colonizing:x:y:z or exploring:x:y:z)
                 coords_part = fleet.status.split(':')[1:]
-                target_x, target_y, target_z = map(int, coords_part)
-            elif fleet.target_coordinates:
+                try:
+                    target_x, target_y, target_z = map(int, coords_part)
+                except ValueError:
+                    print(f"ERROR: Invalid coordinates in status for fleet {fleet.id}: {fleet.status}")
+                    FleetArrivalService._return_fleet_to_stationed(fleet)
+                    return
+            elif hasattr(fleet, 'target_coordinates') and fleet.target_coordinates:
                 # Extract coordinates from target_coordinates field
-                target_x, target_y, target_z = map(int, fleet.target_coordinates.split(':'))
+                try:
+                    target_x, target_y, target_z = map(int, fleet.target_coordinates.split(':'))
+                except ValueError:
+                    print(f"ERROR: Invalid target_coordinates for fleet {fleet.id}: {fleet.target_coordinates}")
+                    FleetArrivalService._return_fleet_to_stationed(fleet)
+                    return
             else:
-                print(f"ERROR: No coordinates found for colonization fleet {fleet.id}")
+                print(f"ERROR: No coordinates found for fleet {fleet.id}")
+                FleetArrivalService._return_fleet_to_stationed(fleet)
                 return
 
             print(f"DEBUG: Colonization target coordinates: {target_x}:{target_y}:{target_z}")
@@ -62,6 +73,7 @@ class FleetArrivalService:
 
             if not target_planet:
                 print(f"ERROR: Target planet not found at coordinates {target_x}:{target_y}:{target_z}")
+                FleetArrivalService._return_fleet_to_stationed(fleet)
                 return
 
             if target_planet.user_id:
@@ -123,38 +135,55 @@ class FleetArrivalService:
 
         try:
             # Parse target coordinates
-            if ':' in fleet.status:
+            if ':' in fleet.status and fleet.status.startswith('exploring:'):
+                # Extract coordinates from status (format: exploring:x:y:z)
                 coords_part = fleet.status.split(':')[1:]
-                target_x, target_y, target_z = map(int, coords_part)
-            elif fleet.target_coordinates:
-                target_x, target_y, target_z = map(int, fleet.target_coordinates.split(':'))
+                try:
+                    target_x, target_y, target_z = map(int, coords_part)
+                except ValueError:
+                    print(f"ERROR: Invalid coordinates in status for exploration fleet {fleet.id}: {fleet.status}")
+                    FleetArrivalService._return_fleet_to_stationed(fleet)
+                    return
+            elif hasattr(fleet, 'target_coordinates') and fleet.target_coordinates:
+                # Extract coordinates from target_coordinates field
+                try:
+                    target_x, target_y, target_z = map(int, fleet.target_coordinates.split(':'))
+                except ValueError:
+                    print(f"ERROR: Invalid target_coordinates for exploration fleet {fleet.id}: {fleet.target_coordinates}")
+                    FleetArrivalService._return_fleet_to_stationed(fleet)
+                    return
             else:
                 print(f"ERROR: No coordinates found for exploration fleet {fleet.id}")
+                FleetArrivalService._return_fleet_to_stationed(fleet)
                 return
 
             # Mark system as explored for the user
             user = fleet.user
-            if user.explored_systems:
-                try:
-                    explored = json.loads(user.explored_systems)
-                except:
-                    explored = []
-            else:
-                explored = []
+            username = getattr(user, 'username', f'user_{fleet.user_id}')
 
-            system_key = f"{target_x}:{target_y}:{target_z}"
-            if system_key not in explored:
-                explored.append({
-                    'coordinates': system_key,
-                    'explored_at': datetime.utcnow().isoformat(),
-                    'fleet_id': fleet.id
-                })
-                user.explored_systems = json.dumps(explored)
+            # Only update explored systems if user has the attribute (not a mock)
+            if hasattr(user, 'explored_systems'):
+                if user.explored_systems:
+                    try:
+                        explored = json.loads(user.explored_systems)
+                    except:
+                        explored = []
+                else:
+                    explored = []
+
+                system_key = f"{target_x}:{target_y}:{target_z}"
+                if system_key not in explored:
+                    explored.append({
+                        'coordinates': system_key,
+                        'explored_at': datetime.utcnow().isoformat(),
+                        'fleet_id': fleet.id
+                    })
+                    user.explored_systems = json.dumps(explored)
 
             # Create tick log entry
             tick_log = TickLog(
                 event_type='exploration',
-                event_description=f'System {system_key} explored by {user.username}'
+                event_description=f'System {target_x}:{target_y}:{target_z} explored by {username}'
             )
             db.session.add(tick_log)
 
@@ -162,11 +191,13 @@ class FleetArrivalService:
             FleetArrivalService._return_fleet_to_stationed(fleet)
 
             db.session.commit()
-            print(f"SUCCESS: System {system_key} explored")
+            print(f"SUCCESS: System {target_x}:{target_y}:{target_z} explored")
 
         except Exception as e:
             print(f"ERROR: Failed to process exploration for fleet {fleet.id}: {str(e)}")
             db.session.rollback()
+            # Ensure fleet is returned to stationed even on error
+            FleetArrivalService._return_fleet_to_stationed(fleet)
 
     @staticmethod
     def _return_fleet_to_stationed(fleet):

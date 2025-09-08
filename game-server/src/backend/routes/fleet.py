@@ -30,6 +30,13 @@ def get_user_fleets():
     fleets = Fleet.query.filter_by(user_id=user_id).all()
     print(f"DEBUG: Found {len(fleets)} fleets for user")
 
+    # Import here to avoid circular imports
+    from backend.services.fleet_travel import FleetTravelService
+
+    # Get planet information for display
+    planets = Planet.query.filter_by(user_id=user_id).all()
+    planet_dict = {p.id: p for p in planets}
+
     print("DEBUG: Fleet GET endpoint successful")
     return jsonify([{
         'id': fleet.id,
@@ -48,7 +55,11 @@ def get_user_fleets():
         },
         'departure_time': fleet.departure_time.isoformat() if fleet.departure_time else None,
         'arrival_time': fleet.arrival_time.isoformat() if fleet.arrival_time else None,
-        'eta': fleet.eta
+        'eta': fleet.eta,
+        # Enhanced travel information
+        'travel_info': FleetTravelService.calculate_travel_info(fleet),
+        'start_planet': get_planet_info(fleet.start_planet_id, planet_dict),
+        'target_planet': get_planet_info(fleet.target_planet_id, planet_dict) if fleet.target_planet_id and fleet.target_planet_id > 0 else None
     } for fleet in fleets])
 
 @fleet_mgmt_bp.route('', methods=['POST'])
@@ -168,18 +179,43 @@ def send_fleet():
         fleet.status = f'exploring:{target_x}:{target_y}:{target_z}'
 
     elif data['mission'] == 'colonize':
-        # Enhanced colonization validation
+        # Enhanced colonization validation - handle both planet selection and coordinate entry
+
+        # Check if fleet has colony ships
+        if fleet.colony_ship <= 0:
+            return jsonify({'error': 'Fleet must contain at least one colony ship for colonization missions'}), 400
+
         target_x = data.get('target_x')
         target_y = data.get('target_y')
         target_z = data.get('target_z')
+        target_planet_id = data.get('target_planet_id')
 
-        if not all([target_x is not None, target_y is not None, target_z is not None]):
-            return jsonify({'error': 'Target coordinates required for colonization'}), 400
+        # Handle planet selection (coordinates will be auto-filled by frontend)
+        if target_planet_id and str(target_planet_id).isdigit():
+            target_planet = Planet.query.get(int(target_planet_id))
+            if not target_planet:
+                return jsonify({'error': 'Target planet not found'}), 404
 
-        # Check if coordinates are already occupied
-        existing_planet = Planet.query.filter_by(x=target_x, y=target_y, z=target_z).first()
-        if existing_planet:
-            return jsonify({'error': 'Coordinates already occupied'}), 409
+            if target_planet.user_id:
+                return jsonify({'error': 'Planet is already colonized'}), 409
+
+            # Use planet's coordinates
+            target_x, target_y, target_z = target_planet.x, target_planet.y, target_planet.z
+            fleet.target_planet_id = target_planet.id
+
+        # Handle direct coordinate entry
+        elif target_x is not None and target_y is not None and target_z is not None:
+            target_x, target_y, target_z = int(target_x), int(target_y), int(target_z)
+
+            # Check if coordinates are already occupied
+            existing_planet = Planet.query.filter_by(x=target_x, y=target_y, z=target_z).first()
+            if existing_planet:
+                return jsonify({'error': 'Coordinates already occupied'}), 409
+
+            fleet.target_planet_id = 0  # Will be updated when colony is created
+
+        else:
+            return jsonify({'error': 'Either target coordinates or target planet required for colonization'}), 400
 
         # Check colonization limits
         from backend.services.planet_traits import PlanetTraitService
@@ -222,7 +258,6 @@ def send_fleet():
         )
 
         fleet.mission = 'colonize'
-        fleet.target_planet_id = 0  # Will be updated when colony is created
         fleet.target_coordinates = f"{target_x}:{target_y}:{target_z}"  # Store coordinates for arrival processing
         fleet.status = f'colonizing:{target_x}:{target_y}:{target_z}'
 
@@ -327,6 +362,30 @@ def clear_all_fleets():
         'message': f'Cleared {deleted_count} fleets successfully',
         'deleted_count': deleted_count
     })
+
+def get_planet_info(planet_id, planet_dict):
+    """Get planet information for API response"""
+    if not planet_id:
+        return None
+
+    # Try to get from cached dict first
+    planet = planet_dict.get(planet_id)
+    if not planet:
+        # Fallback to database query
+        planet = Planet.query.get(planet_id)
+
+    if not planet:
+        return {
+            'id': planet_id,
+            'name': 'Unknown',
+            'coordinates': 'N/A'
+        }
+
+    return {
+        'id': planet.id,
+        'name': planet.name,
+        'coordinates': f"{planet.x}:{planet.y}:{planet.z}"
+    }
 
 def calculate_distance(planet1, planet2):
     """Calculate distance between two planets using 3D coordinates"""
