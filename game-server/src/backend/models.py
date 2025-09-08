@@ -66,6 +66,10 @@ class Planet(db.Model):
     # Research lab for research point generation
     research_lab = db.Column(db.Integer, default=0)
 
+    # Colony tracking
+    is_home_planet = db.Column(db.Boolean, default=False)
+    colonized_at = db.Column(db.DateTime)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
@@ -98,6 +102,9 @@ class Fleet(db.Model):
 
     # Exploration data
     explored_coordinates = db.Column(db.Text)  # JSON string of explored coords
+
+    # Coordinate-based targeting for colonization
+    target_coordinates = db.Column(db.String(50))  # Format: "x:y:z"
 
     def __repr__(self):
         return f'<Fleet {self.mission} from {self.start_planet_id} to {self.target_planet_id}>'

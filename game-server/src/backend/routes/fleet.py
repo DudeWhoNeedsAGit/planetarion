@@ -223,6 +223,7 @@ def send_fleet():
 
         fleet.mission = 'colonize'
         fleet.target_planet_id = 0  # Will be updated when colony is created
+        fleet.target_coordinates = f"{target_x}:{target_y}:{target_z}"  # Store coordinates for arrival processing
         fleet.status = f'colonizing:{target_x}:{target_y}:{target_z}'
 
     else:

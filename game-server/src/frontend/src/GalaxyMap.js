@@ -136,7 +136,16 @@ function GalaxyMap({ user, planets, onClose }) {
     if (!galaxyLoaded) {
       fetchNearbySystems();
     }
-  }, []); // Empty dependency array - only run once on mount
+
+    // Set up polling for real-time galaxy updates
+    const interval = setInterval(() => {
+      if (!loading) {
+        fetchNearbySystems();
+      }
+    }, 10000); // Poll every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [galaxyLoaded, loading]); // Include dependencies
 
   const fetchNearbySystems = async () => {
     try {
@@ -285,7 +294,7 @@ function GalaxyMap({ user, planets, onClose }) {
       );
 
       if (!colonyFleet) {
-        alert('No fleets with colony ships available!');
+        alert('No fleets with colony ships available! Build colony ships in the Shipyard first.');
         return;
       }
 
@@ -305,13 +314,24 @@ function GalaxyMap({ user, planets, onClose }) {
       });
 
       if (!sendResponse.ok) {
-        throw new Error(`HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
+        const errorData = await sendResponse.json();
+        throw new Error(errorData.error || `HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
       }
 
-      alert(`Colonization fleet sent to ${planet.name}`);
+      const result = await sendResponse.json();
+      console.log('✅ Colonization fleet sent successfully:', result);
+
+      // Show success message with ETA
+      const etaSeconds = result.fleet?.eta || 0;
+      const etaMinutes = Math.ceil(etaSeconds / 60);
+      alert(`🚀 Colonization fleet sent to ${planet.name}!\n\nETA: ${etaMinutes} minutes\n\nThe planet will be colonized automatically when the fleet arrives.`);
+
+      // Refresh galaxy data immediately to show the fleet is in transit
+      await fetchNearbySystems();
+
     } catch (error) {
-      console.error('Error sending colonization fleet:', error);
-      alert('Failed to send colonization fleet');
+      console.error('❌ Error sending colonization fleet:', error);
+      alert(`Failed to send colonization fleet: ${error.message}`);
     } finally {
       setLoading(false);
     }

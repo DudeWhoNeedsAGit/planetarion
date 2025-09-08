@@ -350,21 +350,45 @@ function Dashboard({ user, onLogout }) {
           <div className="space-y-6">
             {/* Planet Selection */}
             <div className="mb-6">
-              <h2 className="text-2xl font-bold mb-4 text-white">Your Planets</h2>
+              <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
+                🪐 Your Planets ({planets.length})
+              </h2>
               <div className="flex space-x-4 overflow-x-auto">
-                {planets.map(planet => (
-                  <button
-                    key={planet.id}
-                    onClick={() => setSelectedPlanet(planet)}
-                    className={`px-4 py-2 rounded whitespace-nowrap ${
-                      selectedPlanet?.id === planet.id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    {planet.name} ({planet.coordinates})
-                  </button>
-                ))}
+                {planets.map(planet => {
+                  const isHomePlanet = planet.is_home_planet;
+                  const isColony = !isHomePlanet;
+
+                  return (
+                    <button
+                      key={planet.id}
+                      onClick={() => setSelectedPlanet(planet)}
+                      className={`px-4 py-2 rounded whitespace-nowrap transition-all duration-200 ${
+                        selectedPlanet?.id === planet.id
+                          ? 'bg-blue-600 text-white shadow-lg scale-105'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:scale-102'
+                      } ${isHomePlanet ? 'ring-2 ring-yellow-400' : 'ring-2 ring-green-400'}`}
+                      title={isHomePlanet ? '🏠 Home Planet' : '🌍 Colony'}
+                    >
+                      <span className="flex items-center space-x-2">
+                        <span>{isHomePlanet ? '🏠' : '🌍'}</span>
+                        <span>{planet.name}</span>
+                        <span className="text-xs opacity-75">({planet.x}:{planet.y}:{planet.z})</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Planet Summary */}
+              <div className="mt-4 flex items-center space-x-6 text-sm text-gray-400">
+                <span className="flex items-center space-x-1">
+                  <span className="w-3 h-3 bg-yellow-400 rounded-full"></span>
+                  <span>Home Planet: {planets.filter(p => p.is_home_planet).length}</span>
+                </span>
+                <span className="flex items-center space-x-1">
+                  <span className="w-3 h-3 bg-green-400 rounded-full"></span>
+                  <span>Colonies: {planets.filter(p => !p.is_home_planet).length}</span>
+                </span>
               </div>
             </div>
 

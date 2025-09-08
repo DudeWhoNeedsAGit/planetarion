@@ -13,6 +13,10 @@ def run_tick():
     resource_changes = process_resource_generation()
     fleet_updates = process_fleet_movements(tick_start_time)
 
+    # Process arrived fleets using the new FleetArrivalService
+    from .fleet_arrival import FleetArrivalService
+    FleetArrivalService.process_arrived_fleets()
+
     # Log tick completion
     tick_end_time = datetime.utcnow()
     log_tick(tick_number, tick_start_time, resource_changes, fleet_updates)
