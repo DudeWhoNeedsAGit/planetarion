@@ -272,27 +272,25 @@ const GalaxyMap = ({
         {debugElement.render('GalaxyMap', 'sector-grid', sectors && sectors.length > 0)}
       </div>
 
-      {/* Space background only in explored sectors */}
-      {sectors && sectors
-        .filter((s) => s.explored)
-        .map((s, idx) => {
-          const pos = getSectorPosition(s);
-          return (
-            <div
-              key={`bg-${idx}`}
-              className="absolute bg-gradient-to-br from-blue-900 via-black to-purple-900"
-              style={{
-                left: `${pos.x}px`,
-                top: `${pos.y}px`,
-                width: `${SECTOR_SIZE * zoom}px`,
-                height: `${SECTOR_SIZE * zoom}px`,
-                transform: "translate(-50%, -50%)",
-                pointerEvents: "none",
-                zIndex: 0,
-              }}
-            />
-          );
-        })}
+      {/* Space background - always visible */}
+      {sectors && sectors.map((s, idx) => {
+        const pos = getSectorPosition(s);
+        return (
+          <div
+            key={`bg-${idx}`}
+            className="absolute bg-gradient-to-br from-blue-900 via-black to-purple-900"
+            style={{
+              left: `${pos.x}px`,
+              top: `${pos.y}px`,
+              width: `${SECTOR_SIZE * zoom}px`,
+              height: `${SECTOR_SIZE * zoom}px`,
+              transform: "translate(-50%, -50%)",
+              pointerEvents: "none",
+              zIndex: 0,
+            }}
+          />
+        );
+      })}
 
       {/* Systems */}
       {systems && systems.map((sys, idx) => {
@@ -314,24 +312,7 @@ const GalaxyMap = ({
         );
       })}
 
-      {/* Enhanced Fog overlay with sector-based styling */}
-      {sectors && sectors.map((s, idx) => {
-        const pos = getSectorPosition(s);
-        return (
-          <div
-            key={`fog-${idx}`}
-            className={`sector-fog ${s.explored ? 'explored' : 'unexplored'}`}
-            style={{
-              left: `${pos.x}px`,
-              top: `${pos.y}px`,
-              width: `${SECTOR_SIZE * zoom}px`,
-              height: `${SECTOR_SIZE * zoom}px`,
-              transform: "translate(-50%, -50%)",
-              zIndex: 4,
-            }}
-          />
-        );
-      })}
+
 
       {/* Sector Progress Indicator */}
       <div className="sector-progress">

@@ -69,28 +69,7 @@ code {
   }
 }
 
-@keyframes fogDrift {
-  0% {
-    transform: translateX(-10px) translateY(-5px) rotate(0deg);
-    opacity: 0.8;
-  }
-  25% {
-    transform: translateX(5px) translateY(-10px) rotate(1deg);
-    opacity: 0.9;
-  }
-  50% {
-    transform: translateX(10px) translateY(5px) rotate(-1deg);
-    opacity: 0.7;
-  }
-  75% {
-    transform: translateX(-5px) translateY(10px) rotate(0.5deg);
-    opacity: 0.8;
-  }
-  100% {
-    transform: translateX(-10px) translateY(-5px) rotate(0deg);
-    opacity: 0.8;
-  }
-}
+
 
 /* Galaxy Background Styles */
 .galaxy-background {
@@ -161,14 +140,7 @@ code {
   z-index: 3;
 }
 
-/* Fog Overlay */
-.fog-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.05);
-  animation: fogDrift 60s infinite linear;
-  z-index: 4;
-}
+
 
 /* Sector-Based Visual Enhancements */
 
@@ -205,38 +177,7 @@ code {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* Sector Fog Overlay */
-.sector-fog {
-  position: absolute;
-  background: rgba(64, 64, 64, 0.8);
-  border: 1px solid rgba(128, 128, 128, 0.3);
-  transition: opacity 0.7s ease-out;
-  animation: sectorFogPulse 30s infinite ease-in-out;
-}
 
-.sector-fog.explored {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.sector-fog.unexplored {
-  opacity: 1;
-  background: radial-gradient(circle at center,
-    rgba(32, 32, 32, 0.9) 0%,
-    rgba(64, 64, 64, 0.8) 70%,
-    rgba(96, 96, 96, 0.6) 100%);
-}
-
-@keyframes sectorFogPulse {
-  0%, 100% {
-    opacity: 0.8;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.9;
-    transform: scale(1.02);
-  }
-}
 
 /* Sector Progress Indicator */
 .sector-progress {
