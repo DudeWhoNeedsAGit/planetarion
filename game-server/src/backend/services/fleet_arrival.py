@@ -8,6 +8,7 @@ It manages colonization, resource collection, and other mission completion logic
 from datetime import datetime
 from backend.database import db
 from backend.models import Fleet, Planet, User, TickLog, Research
+from backend.services.planet_traits import PlanetTraitService
 import json
 
 
