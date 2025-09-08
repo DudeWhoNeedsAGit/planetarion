@@ -1,0 +1,28 @@
+{
+  "debugEnabled": true,
+  "logging": {
+    "console": true,
+    "file": true,
+    "filePath": "galaxy-debug.log",
+    "maxLogSize": 1048576,
+    "maxLogFiles": 5
+  },
+  "visual": {
+    "debugPanel": true,
+    "elementBoundaries": true,
+    "coordinateOverlay": true,
+    "errorHighlighting": true
+  },
+  "tracing": {
+    "componentLifecycle": true,
+    "propsValidation": true,
+    "dataFlow": true,
+    "apiCalls": true,
+    "stateChanges": true,
+    "coordinateTransform": true
+  },
+  "levels": {
+    "console": "DEBUG",
+    "file": "INFO"
+  }
+}

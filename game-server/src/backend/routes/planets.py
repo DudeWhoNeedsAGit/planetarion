@@ -11,8 +11,10 @@ This module is primarily for administrative or public planet data access.
 """
 
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import Planet, User
+from backend.services.sector import SectorService
 
 planets_bp = Blueprint('planets', __name__, url_prefix='/api')
 
@@ -211,3 +213,128 @@ def create_planet():
         'coordinates': f"{planet.x}:{planet.y}:{planet.z}",
         'user_id': planet.user_id
     }), 201
+
+# Sector-based Fog of War Endpoints
+# Following RESTful API Design and Blueprint Pattern from systemPatterns.md
+
+@planets_bp.route('/sectors/explored', methods=['GET'])
+@jwt_required()
+def get_explored_sectors():
+    """
+    Get all explored sectors for the authenticated user
+
+    Following RESTful API Design patterns:
+    - GET method for data retrieval
+    - JWT authentication for user-specific data
+    - Consistent JSON response format
+    """
+    try:
+        user_id = get_jwt_identity()
+        print(f"DEBUG: Getting explored sectors for user {user_id}")
+
+        explored_sectors = SectorService.get_explored_sectors(user_id)
+        print(f"DEBUG: Found {len(explored_sectors)} explored sectors")
+
+        return jsonify({
+            'explored_sectors': explored_sectors,
+            'total_count': len(explored_sectors)
+        })
+
+    except Exception as e:
+        print(f"ERROR: Failed to get explored sectors: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@planets_bp.route('/sectors/explore', methods=['POST'])
+@jwt_required()
+def explore_sector():
+    """
+    Mark a sector as explored (typically called when exploring a system)
+
+    Following RESTful API Design patterns:
+    - POST method for state changes
+    - JWT authentication required
+    - Proper error handling and status codes
+    """
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+
+        if not data or 'system_x' not in data or 'system_y' not in data:
+            return jsonify({'error': 'Missing required fields: system_x, system_y'}), 400
+
+        system_x = data['system_x']
+        system_y = data['system_y']
+
+        print(f"DEBUG: Exploring system {system_x}:{system_y} for user {user_id}")
+
+        # Use SectorService to handle exploration logic
+        result = SectorService.explore_system(user_id, system_x, system_y)
+
+        print(f"DEBUG: Exploration result: {result}")
+
+        return jsonify({
+            'success': True,
+            'newly_explored': result['newly_explored'],
+            'sector': {
+                'x': result['sector_x'],
+                'y': result['sector_y'],
+                'bounds': result['sector_bounds']
+            },
+            'system': {
+                'x': result['system_x'],
+                'y': result['system_y']
+            }
+        })
+
+    except Exception as e:
+        print(f"ERROR: Failed to explore sector: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@planets_bp.route('/sectors/statistics', methods=['GET'])
+@jwt_required()
+def get_sector_statistics():
+    """
+    Get exploration statistics for the authenticated user
+
+    Following established reporting patterns from systemPatterns.md
+    """
+    try:
+        user_id = get_jwt_identity()
+        print(f"DEBUG: Getting sector statistics for user {user_id}")
+
+        stats = SectorService.get_sector_statistics(user_id)
+
+        return jsonify({
+            'statistics': stats,
+            'user_id': user_id
+        })
+
+    except Exception as e:
+        print(f"ERROR: Failed to get sector statistics: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@planets_bp.route('/sectors/reset', methods=['POST'])
+@jwt_required()
+def reset_exploration():
+    """
+    Reset all exploration data for the authenticated user (admin/debug function)
+
+    Following established admin patterns from systemPatterns.md
+    """
+    try:
+        user_id = get_jwt_identity()
+        print(f"DEBUG: Resetting exploration data for user {user_id}")
+
+        success = SectorService.reset_exploration(user_id)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Exploration data reset successfully'
+            })
+        else:
+            return jsonify({'error': 'Failed to reset exploration data'}), 500
+
+    except Exception as e:
+        print(f"ERROR: Failed to reset exploration: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500

@@ -1,9 +1,8 @@
-````markdown
-# Galaxy Map Debugging & Fixes
+# Galaxy Map Debugging & Refactor Task
 
 ## 🎯 Task Overview
-The Galaxy Map component has **critical UX and test failures**.  
-This task focuses on fixing **fog overlay**, **player marker**, **coordinate display**, and **test selectors**.
+The Galaxy Map component currently has **critical visual and interaction issues**.  
+This task focuses on refactoring to align with **Space 4X (Master of Orion, Stellaris, Endless Space)** and optionally **roguelike exploration (FTL, Everspace)** fog-of-war behavior.
 
 ---
 
@@ -14,7 +13,7 @@ This task focuses on fixing **fog overlay**, **player marker**, **coordinate dis
 
 2. **Resolve UI Bugs**
    - Remove persistent **gray center area** (fog overlay moves with map).
-   - Make **yellow player marker** move consistently with map panning.
+   - Make **yellow player marker** move correctly with map panning.
    - Correct **coordinate display calculations**.
 
 3. **Improve Test Reliability**
@@ -23,28 +22,24 @@ This task focuses on fixing **fog overlay**, **player marker**, **coordinate dis
 
 ---
 
-## 🔍 Analysis
+## 🔍 Analysis & Current Issues
 
-### Failing Tests
-| Test | Intent | Current Issue |
-|------|--------|---------------|
-| `fog of war is visible with Warcraft 3 styling` | Check fog overlay + texture layer | Test expects Tailwind selectors (`.absolute.bg-gray-900.opacity-95`), but DOM uses `.fog-overlay` |
-| `galaxy map visual appearance` | Verify fog, coordinates, grid, system markers | Selectors mismatch + fog overlay is static, player marker fixed |
-
-### UI Bugs
-- **Gray center area** → Fog overlay statically positioned:
-  ```jsx
-  left: '50%', top: '50%', transform: 'translate(-50%, -50%)'
+### 1. Fog Overlay
+**Current Code:**
+```jsx
+<div className="fog-overlay absolute" style={{
+  left: '50%',
+  top: '50%',
+  transform: 'translate(-50%, -50%)',
+  background: 'rgba(64,64,64,0.95)'
+}}>
+  <div className="absolute inset-0 opacity-30" style={{ backgroundImage: `radial-gradient(...)` }} />
+</div>
 ````
 
-* **Player marker stuck** → Fixed at `(200,150)` px instead of using `viewOffset`.
-* **Coordinates wrong** → `viewOffset` treated as galaxy coords, but it’s pixels.
+**Issue:** Fixed to screen center; fog holes for explored systems do **not move** with panning/zoom.
 
----
-
-## 🛠 Proposed Fixes
-
-### 1. Fog Overlay Positioning
+**Fix:** Move fog overlay in map-space relative to `viewOffset` and scale with `zoom`.
 
 ```jsx
 <div className="fog-overlay absolute" style={{
@@ -52,17 +47,31 @@ This task focuses on fixing **fog overlay**, **player marker**, **coordinate dis
   height: `${300 / zoom}px`,
   left: `${200 + viewOffset.x}px`,
   top:  `${150 + viewOffset.y}px`,
-  transform: 'translate(-50%, -50%) scale(${1/zoom})',
+  transform: `translate(-50%, -50%) scale(${1/zoom})`,
   background: 'rgba(64,64,64,0.95)',
   pointerEvents: 'none'
-}} />
+}}>
 ```
 
-### 2. Player Marker Positioning
+---
+
+### 2. Player Marker
+
+**Current Code:**
 
 ```jsx
-<div data-test="player-marker"
-  className="absolute w-4 h-4 bg-yellow-400 rounded-full border-2 border-yellow-200"
+<div className="absolute w-4 h-4 bg-yellow-400 rounded-full border-2 border-yellow-200"
+  style={{ left: '200px', top: '150px' }}
+  title="Your home system"
+/>
+```
+
+**Issue:** Fixed screen coordinates; does **not move** with map panning.
+
+**Fix:** Position relative to `viewOffset` like system markers:
+
+```jsx
+<div className="absolute w-4 h-4 bg-yellow-400 rounded-full border-2 border-yellow-200"
   style={{
     left: `${200 + viewOffset.x}px`,
     top:  `${150 + viewOffset.y}px`,
@@ -73,14 +82,63 @@ This task focuses on fixing **fog overlay**, **player marker**, **coordinate dis
 />
 ```
 
-### 3. Correct Coordinate Calculation
+---
+
+### 3. Coordinate Display
+
+**Current Code:**
+
+```jsx
+<div className="text-yellow-300">X: {Math.round(centerX + viewOffset.x/zoom)}</div>
+<div className="text-green-300">Y: {Math.round(centerY + viewOffset.y/zoom)}</div>
+<div className="text-purple-300">Z: {centerZ}</div>
+```
+
+**Issue:** Treats pixel offsets as galaxy coordinates; updates incorrectly when panning.
+
+**Fix:** Convert pixel offsets to galaxy coordinates:
 
 ```js
 const displayedCenterX = centerX - viewOffset.x / zoom;
 const displayedCenterY = centerY - viewOffset.y / zoom;
+<div className="text-yellow-300">X: {Math.round(displayedCenterX)}</div>
+<div className="text-green-300">Y: {Math.round(displayedCenterY)}</div>
+<div className="text-purple-300">Z: {centerZ}</div>
 ```
 
-### 4. Update Test Selectors
+---
+
+### 4. System Markers
+
+**Current:** Uses `getSystemPosition(system)`:
+
+```js
+const getSystemPosition = (system) => ({
+  x: (system.x - centerX) * zoom + viewOffset.x,
+  y: (system.y - centerY) * zoom + viewOffset.y
+});
+```
+
+**Issue:** Correct for markers, but **fog overlay and player marker were not using this**, causing misalignment.
+
+**Fix:** Align all map-space elements using same positioning logic.
+
+---
+
+## 🔹 Summary of Required Changes
+
+| Component          | Issue                                       | Fix                                                    |
+| ------------------ | ------------------------------------------- | ------------------------------------------------------ |
+| Fog Overlay        | Screen-fixed, gray center                   | Anchor to map-space with `viewOffset` and `zoom`       |
+| Player Marker      | Screen-fixed                                | Anchor to map-space with `viewOffset` and `zoom`       |
+| Coordinate Display | Pixel offsets treated as galaxy coordinates | Correct calculation: `center - viewOffset / zoom`      |
+| System Markers     | Mostly OK                                   | Ensure fog and player marker layers align consistently |
+
+---
+
+## 🛠 Test Updates
+
+### Playwright Locators
 
 ```javascript
 // Fog test
@@ -96,47 +154,17 @@ await expect(page.locator('[data-test="system-marker"]').first()).toBeVisible();
 
 ---
 
-## 📋 Implementation Steps
+## ⚡ Notes
 
-1. **Code Changes**
-
-   * Refactor `fog-overlay` and `player-marker` to move with `viewOffset`.
-   * Fix coordinate display math.
-   * Add `data-test` attributes:
-
-     * `fog-overlay`
-     * `coords`
-     * `grid`
-     * `system-marker`
-     * `player-marker`
-
-2. **Test Updates**
-
-   * Update Playwright locators to use `data-test` attributes.
-   * Remove fragile chained Tailwind selectors.
-
-3. **Validation**
-
-   * Run manual panning → ensure fog and player marker move with map.
-   * Verify coordinates update correctly.
-   * Run `pnpm test:e2e -- galaxy-map` → confirm all pass.
-
----
-
-## ⚡ Performance Notes
-
-* Consider wrapping markers/fog in a parent container with `transform: translate/scale` (GPU-friendly).
-* Use `React.memo` for system markers.
-* Virtualize/cull offscreen systems to avoid DOM bloat.
+* Aligns behavior with **Space 4X games**: fog tied to galaxy coordinates, marker moves with map, coordinates reflect viewport.
+* Preserves **progressive reveal** for roguelike-style exploration.
+* All map-space elements (`fog`, `player marker`, `system markers`) now move consistently with panning and zoom.
 
 ---
 
 ## 📌 Deliverables
 
-* [ ] Refactored `GalaxyMap` component (fog + marker dynamic positioning)
-* [ ] Fixed coordinate calculation
+* [ ] Refactored `GalaxyMap` component with map-space fog, player marker, and coordinates
 * [ ] Updated Playwright tests with `data-test` selectors
-* [ ] Verified passing test suite & visual regression snapshot
+* [ ] Verified passing test suite & visual regression
 
-```
-```

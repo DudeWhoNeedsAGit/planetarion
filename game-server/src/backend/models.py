@@ -14,6 +14,7 @@ class User(db.Model):
 
     # Exploration data
     explored_systems = db.Column(db.Text)  # JSON string of explored coordinates
+    explored_sectors = db.Column(db.Text)  # JSON string of explored sectors
 
     # Relationships
     planets = db.relationship('Planet', backref='owner', lazy=True)

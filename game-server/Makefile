@@ -15,6 +15,7 @@ help: # Show all available commands
 	@echo "  make e2e               - Run end-to-end tests (Docker + PostgreSQL)"
 	@echo "  make e2e-ui            - Run E2E tests with local UI (no Docker)"
 	@echo "  make e2e-ui TEST_FILE=tests/e2e/dashboard.spec.js - Run specific E2E test file"
+	@echo "  make e2e-ui SKIP_POPULATE=true - Skip database population (use existing data)"
 	@echo "  make frontend          - Run frontend tests (Docker)"
 	@echo "  make all               - Run all tests (unit + integration + e2e)"
 	@echo ""
@@ -113,21 +114,26 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	@echo "   ✅ Port 5000 is listening"
 	@echo ""
 	@echo "📊 Populating test database..."
-	@echo "   Waiting for backend to initialize..."
-	@sleep 8
-	@echo "   Checking backend health..."
-	@for i in 1 2 3 4 5; do \
-		if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
-			echo "   ✅ Backend is healthy"; \
-			break; \
-		else \
-			echo "   ⏳ Backend not ready yet (attempt $$i/5)..."; \
-			sleep 2; \
-		fi; \
-	done
-	@echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_e2e.db"
-	@export DATABASE_URL='sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py
-	@echo "✅ Test database populated"
+	@if [ "$$SKIP_POPULATE" = "true" ]; then \
+		echo "   ⏭️  Skipping database population (SKIP_POPULATE=true)"; \
+		echo "   ℹ️  Using existing database if available"; \
+	else \
+		echo "   Waiting for backend to initialize..."; \
+		sleep 8; \
+		echo "   Checking backend health..."; \
+		for i in 1 2 3 4 5; do \
+			if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
+				echo "   ✅ Backend is healthy"; \
+				break; \
+			else \
+				echo "   ⏳ Backend not ready yet (attempt $$i/5)..."; \
+				sleep 2; \
+			fi; \
+		done; \
+		echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_e2e.db"; \
+		export DATABASE_URL='sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py; \
+		echo "✅ Test database populated"; \
+	fi
 	@echo ""
 	@echo "🎨 Starting frontend server..."
 	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 &
@@ -250,21 +256,26 @@ test: # Start local test environment (SQLite + servers + test data)
 	@echo "   ✅ Port 5000 is listening"
 	@echo ""
 	@echo "📊 Populating test database..."
-	@echo "   Waiting for backend to initialize..."
-	@sleep 8
-	@echo "   Checking backend health..."
-	@for i in 1 2 3 4 5; do \
-		if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
-			echo "   ✅ Backend is healthy"; \
-			break; \
-		else \
-			echo "   ⏳ Backend not ready yet (attempt $$i/5)..."; \
-			sleep 2; \
-		fi; \
-	done
-	@echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_e2e.db"
-	@export DATABASE_URL='sqlite:///./instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py
-	@echo "✅ Test database populated"
+	@if [ "$$SKIP_POPULATE" = "true" ]; then \
+		echo "   ⏭️  Skipping database population (SKIP_POPULATE=true)"; \
+		echo "   ℹ️  Using existing database if available"; \
+	else \
+		echo "   Waiting for backend to initialize..."; \
+		sleep 8; \
+		echo "   Checking backend health..."; \
+		for i in 1 2 3 4 5; do \
+			if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
+				echo "   ✅ Backend is healthy"; \
+				break; \
+			else \
+				echo "   ⏳ Backend not ready yet (attempt $$i/5)..."; \
+				sleep 2; \
+			fi; \
+		done; \
+		echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_e2e.db"; \
+		export DATABASE_URL='sqlite:///./instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py; \
+		echo "✅ Test database populated"; \
+	fi
 	@echo ""
 	@echo "🎨 Starting frontend server..."
 	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 &

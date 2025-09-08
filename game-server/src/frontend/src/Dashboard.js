@@ -816,9 +816,20 @@ function Dashboard({ user, onLogout }) {
       {/* Galaxy Map Modal */}
       {activeSection === 'galaxy' && (
         <GalaxyMap
-          user={user}
-          planets={planets}
-          onClose={() => setActiveSection('overview')}
+          systems={planets.map(planet => {
+            const [x, y, z] = planet.coordinates.split(':').map(Number);
+            return {
+              id: planet.id,
+              name: planet.name,
+              x: x,
+              y: y,
+              z: z,
+              user_id: planet.user_id
+            };
+          })}
+          initialCenter={{ x: 500, y: 500 }}
+          zoom={1}
+          userId={user?.id}
         />
       )}
 

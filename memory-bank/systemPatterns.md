@@ -28,6 +28,48 @@
 
 ## Design Patterns
 
+### CSS Layer Stacking Pattern (Galaxy Map)
+
+#### **Context**
+Complex visual layering in React components with multiple overlapping elements (backgrounds, overlays, interactive markers) requires careful z-index management to prevent visual conflicts and ensure proper user interaction.
+
+#### **Problem Solved**
+- System markers disappearing behind fog overlays
+- Nebula layers interfering with interactive elements
+- Inconsistent hover effects due to z-index conflicts
+- Poor visual hierarchy in space-themed UI
+
+#### **Solution Pattern**
+```css
+/* Layer Stack Hierarchy */
+.galaxy-background::before { z-index: 0; }  /* Base gradients */
+.nebula-purple { z-index: 1; }               /* Animated nebulae */
+.nebula-blue { z-index: 2; }
+.nebula-pink { z-index: 3; }
+.fog-overlay { z-index: 4; }                 /* Atmospheric fog */
+.system-marker { z-index: 5; }               /* Interactive elements */
+.system-marker:hover { z-index: 6; }         /* Hover state above fog */
+```
+
+#### **Implementation Details**
+- **Absolute Positioning**: All layers use `position: absolute; inset: 0;`
+- **Progressive Z-Index**: Incremental z-index values (0-6) for clear hierarchy
+- **Hover Elevation**: Interactive elements rise above overlays on hover
+- **Opacity Control**: Fog overlay uses gentle `0.05` opacity to avoid masking
+- **Performance**: Reduced blur effects (`blur(2px)` vs `blur(4px)`) for better rendering
+
+#### **Benefits**
+- **Visual Clarity**: No elements hidden behind overlays
+- **User Experience**: Smooth hover interactions without visual conflicts
+- **Maintainability**: Clear z-index hierarchy for future modifications
+- **Performance**: Optimized opacity and blur values
+- **Consistency**: Standardized positioning across all layers
+
+#### **Files Involved**
+- `game-server/src/frontend/src/index.css` - CSS layer definitions
+- `game-server/src/frontend/src/GalaxyMap.js` - React component implementation
+- Applied to galaxy map fog-of-war system with nebulae backgrounds
+
 ### Backend Patterns
 
 #### Repository Pattern

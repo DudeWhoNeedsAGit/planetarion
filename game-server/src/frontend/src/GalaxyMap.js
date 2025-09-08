@@ -1,972 +1,392 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useSectorData } from "./useSectorData";
 
-// Enhanced Debug Infrastructure for E2E Testing
-const DEBUG_MODE = process.env.NODE_ENV === 'development' || process.env.REACT_APP_DEBUG_MODE === 'true';
+// Import debug system with error handling
+let galaxyDebugger, debugComponent, debugProps, debugDataFlow, debugElement, debugLog;
+try {
+  const debugModule = require("./GalaxyDebug");
+  galaxyDebugger = debugModule.default;
+  debugComponent = debugModule.debugComponent;
+  debugProps = debugModule.debugProps;
+  debugDataFlow = debugModule.debugDataFlow;
+  debugElement = debugModule.debugElement;
+  debugLog = debugModule.debugLog;
+  console.log("✅ GalaxyDebug module imported successfully");
+} catch (error) {
+  console.error("❌ Failed to import GalaxyDebug module:", error);
+  // Fallback to no-op functions
+  galaxyDebugger = { config: { debugEnabled: false } };
+  debugComponent = { mount: () => {}, unmount: () => {}, update: () => {} };
+  debugProps = () => {};
+  debugDataFlow = () => {};
+  debugElement = { create: () => {}, render: () => {} };
+  debugLog = () => {};
+}
 
-const debugLog = (message, data = null) => {
-  if (DEBUG_MODE) {
-    const timestamp = new Date().toISOString();
-    console.log(`[GalaxyMap Debug ${timestamp}] ${message}`, data);
-  }
-};
+// Config
+const SECTOR_SIZE = 50; // units
+const MAP_WIDTH = 1000;
+const MAP_HEIGHT = 1000;
+const TOTAL_SECTORS = (MAP_WIDTH / SECTOR_SIZE) * (MAP_HEIGHT / SECTOR_SIZE);
 
-// Test-specific debug markers for E2E test identification
-const TEST_DEBUG = {
-  consoleMessages: true,
-  systemMarkers: true,
-  fogOverlay: true,
-  apiCalls: true,
-  eventHandling: true
-};
+const GalaxyMap = ({
+  systems,
+  initialCenter = { x: 500, y: 500 },
+  zoom = 1,
+  userId
+}) => {
+  console.log('🚀 GalaxyMap component function called with props:', { systems, initialCenter, zoom, userId });
 
-// Event Handling System for proper click management
-const EventHandlingSystem = {
-  setupSystemMarkerEvents: (element) => {
-    if (!element) return;
-
-    element.style.pointerEvents = 'auto';
-    element.style.zIndex = '20';
-    element.setAttribute('data-test-marker', 'system-marker');
-
-    if (TEST_DEBUG.eventHandling) {
-      debugLog('System marker event setup', {
-        pointerEvents: element.style.pointerEvents,
-        zIndex: element.style.zIndex,
-        testMarker: element.getAttribute('data-test-marker')
-      });
-    }
-  },
-
-  setupFogOverlayEvents: (element) => {
-    if (!element) return;
-
-    element.style.pointerEvents = 'none';
-    element.style.zIndex = '5';
-    element.setAttribute('data-test-fog', 'fog-overlay');
-
-    if (TEST_DEBUG.eventHandling) {
-      debugLog('Fog overlay event setup', {
-        pointerEvents: element.style.pointerEvents,
-        zIndex: element.style.zIndex,
-        testFog: element.getAttribute('data-test-fog')
-      });
-    }
-  }
-};
-
-// Coordinate System Utilities
-const CoordinateUtils = {
-  // Validate coordinate bounds
-  isValidCoordinate: (x, y, z) => {
-    return (
-      typeof x === 'number' && !isNaN(x) && x >= -10000 && x <= 10000 &&
-      typeof y === 'number' && !isNaN(y) && y >= -10000 && y <= 10000 &&
-      typeof z === 'number' && !isNaN(z) && z >= -10000 && z <= 10000
-    );
-  },
-
-  // Format coordinates for display
-  formatCoordinates: (x, y, z) => {
-    return `${x}:${y}:${z}`;
-  },
-
-  // Calculate distance between two coordinate points
-  calculateDistance: (x1, y1, z1, x2, y2, z2) => {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const dz = z2 - z1;
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-  },
-
-  // Check if coordinates are within exploration range
-  isWithinRange: (centerX, centerY, centerZ, targetX, targetY, targetZ, range = 50) => {
-    const distance = CoordinateUtils.calculateDistance(centerX, centerY, centerZ, targetX, targetY, targetZ);
-    return distance <= range;
-  },
-
-  // Generate relative coordinates for display
-  getRelativeCoordinates: (centerX, centerY, centerZ, targetX, targetY, targetZ) => {
-    return {
-      relativeX: targetX - centerX,
-      relativeY: targetY - centerY,
-      relativeZ: targetZ - centerZ
-    };
-  }
-};
-
-function GalaxyMap({ user, planets, onClose }) {
-  const [systems, setSystems] = useState([]);
-  const [selectedSystem, setSelectedSystem] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [zoom, setZoom] = useState(1);
   const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
-  const [showGrid, setShowGrid] = useState(true);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [center, setCenter] = useState(initialCenter);
+  const [sectors, setSectors] = useState([]);
+  const [hoveredSector, setHoveredSector] = useState(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
 
-  // Get user's home planet coordinates as center
-  const homePlanet = planets.find(p => p.user_id == user.id); // Use loose equality for type safety
-  const centerX = homePlanet?.x || 100; // Default to 100 instead of 0
-  const centerY = homePlanet?.y || 200;
-  const centerZ = homePlanet?.z || 300;
+  // Debug: Component mount
+  useEffect(() => {
+    console.log('🔍 GalaxyMap: Component mounting with debug...');
+    try {
+      debugComponent.mount('GalaxyMap', { systems, initialCenter, zoom, userId });
+      console.log('✅ GalaxyMap: Debug mount called successfully');
 
-  // Fog of war state - track explored systems
-  const [exploredSystems, setExploredSystems] = useState(new Set());
+      // Validate props
+      const expectedProps = [
+        { name: 'systems', type: 'object' },
+        { name: 'initialCenter', type: 'object' },
+        { name: 'zoom', type: 'number' },
+        { name: 'userId', type: 'number' }
+      ];
+      debugProps('GalaxyMap', { systems, initialCenter, zoom, userId }, expectedProps);
+      console.log('✅ GalaxyMap: Debug props validation called successfully');
+    } catch (error) {
+      console.error('❌ GalaxyMap: Debug system failed:', error);
+    }
 
-  console.log('Galaxy Map Debug:', {
-    userId: user.id,
-    userIdType: typeof user.id,
-    planetsCount: planets.length,
-    planets: planets.map(p => ({
-      id: p.id,
-      user_id: p.user_id,
-      user_id_type: typeof p.user_id,
-      coordinates: p.coordinates || `${p.x}:${p.y}:${p.z}`
-    })),
-    homePlanet: homePlanet ? `${homePlanet.x}:${homePlanet.y}:${homePlanet.z}` : 'Not found',
-    center: `${centerX}:${centerY}:${centerZ}`,
-    apiUrl: `/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`
+    return () => {
+      try {
+        debugComponent.unmount('GalaxyMap');
+        console.log('✅ GalaxyMap: Debug unmount called successfully');
+      } catch (error) {
+        console.error('❌ GalaxyMap: Debug unmount failed:', error);
+      }
+    };
+  }, []);
+
+  // Debug: Props changes
+  const prevPropsRef = useRef();
+  useEffect(() => {
+    if (prevPropsRef.current) {
+      debugComponent.update('GalaxyMap', prevPropsRef.current, { systems, initialCenter, zoom, userId });
+    }
+    prevPropsRef.current = { systems, initialCenter, zoom, userId };
   });
 
+  // Use sector data hook
+  const {
+    exploredSectors,
+    loading: sectorsLoading,
+    error: sectorsError,
+    exploreSector,
+    isSectorExplored
+  } = useSectorData(userId);
+
+  // Generate grid sectors - optimized to avoid calling isSectorExplored for every sector
   useEffect(() => {
-    fetchNearbySystems();
-  }, [centerX, centerY, centerZ]);
+    debugLog('INFO', 'GalaxyMap', 'Generating sector grid', {
+      exploredSectorsCount: exploredSectors.length,
+      mapDimensions: { width: MAP_WIDTH, height: MAP_HEIGHT },
+      sectorSize: SECTOR_SIZE
+    });
 
-  const fetchNearbySystems = async () => {
-    try {
-      console.log('🌌 Fetching nearby systems:', `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`);
+    // Create a lookup map for explored sectors for O(1) lookup
+    const exploredLookup = new Map();
+    exploredSectors.forEach(sector => {
+      exploredLookup.set(`${sector.x}:${sector.y}`, true);
+    });
 
-      // Get JWT token from localStorage (following fleet test pattern)
-      const token = localStorage.getItem('token');
-      console.log('DEBUG: JWT token present for galaxy API:', !!token);
+    const generated = [];
+    for (let x = 0; x < MAP_WIDTH; x += SECTOR_SIZE) {
+      for (let y = 0; y < MAP_HEIGHT; y += SECTOR_SIZE) {
+        const sectorX = Math.floor(x / SECTOR_SIZE);
+        const sectorY = Math.floor(y / SECTOR_SIZE);
+        const explored = exploredLookup.has(`${sectorX}:${sectorY}`);
 
-      const response = await fetch(`http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
-      });
-
-      console.log('DEBUG: Galaxy API response status:', response.status);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        generated.push({
+          x: sectorX,
+          y: sectorY,
+          explored: explored
+        });
       }
-
-      const data = await response.json();
-      console.log('✅ Systems fetched successfully:', data);
-      setSystems(data);
-    } catch (error) {
-      console.error('❌ Error fetching systems:', {
-        message: error.message,
-        status: error.status,
-        url: `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`
-      });
-
-      // Add fallback data for testing (following fleet pattern)
-      console.log('🔧 Using fallback test data with mix of explored/unexplored systems');
-      setSystems([
-        { x: centerX + 10, y: centerY + 20, z: centerZ + 30, explored: false, planets: 0, owner_id: null },
-        { x: centerX - 15, y: centerY - 25, z: centerZ - 35, explored: true, planets: 2, owner_id: user.id },
-        { x: centerX + 40, y: centerY + 50, z: centerZ + 60, explored: false, planets: 0, owner_id: null },
-        { x: centerX - 30, y: centerY + 15, z: centerZ - 20, explored: false, planets: 0, owner_id: null },
-        { x: centerX + 25, y: centerY - 35, z: centerZ + 45, explored: true, planets: 1, owner_id: null }
-      ]);
     }
-  };
 
+    debugDataFlow('GalaxyMap', 'sector-generation', { exploredSectors }, { sectors: generated }, true);
+    setSectors(generated);
+  }, [exploredSectors]); // Only depend on exploredSectors, not isSectorExplored
+
+  // Convert sector coordinates to screen position
+  const getSectorPosition = (sector) => ({
+    x: (sector.x - center.x) * zoom + window.innerWidth / 2 + viewOffset.x,
+    y: (sector.y - center.y) * zoom + window.innerHeight / 2 + viewOffset.y,
+  });
+
+  // Convert system coordinates to screen position
+  const getSystemPosition = (system) => ({
+    x: (system.x - center.x) * zoom + window.innerWidth / 2 + viewOffset.x,
+    y: (system.y - center.y) * zoom + window.innerHeight / 2 + viewOffset.y,
+  });
+
+  // Handle system exploration via API
   const handleExploreSystem = async (system) => {
-    if (system.explored) {
-      // Show system details
-      setSelectedSystem(system);
-      return;
-    }
+    debugLog('INFO', 'GalaxyMap', 'System exploration initiated', {
+      system: { x: system.x, y: system.y, z: system.z },
+      userId
+    });
 
-    // Send exploration fleet
-    setLoading(true);
     try {
-      // Get JWT token from localStorage (following fleet pattern)
-      const token = localStorage.getItem('token');
-      console.log('DEBUG: JWT token present for fleet API:', !!token);
+      // Call API to explore sector
+      const startTime = Date.now();
+      const result = await exploreSector(system.x, system.y);
+      const duration = Date.now() - startTime;
 
-      // Find a fleet to send (simplified - use first available)
-      const fleetResponse = await fetch('http://localhost:5000/api/fleet', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
+      debugDataFlow('GalaxyMap', 'explore-sector-api', { system, userId }, { result, duration }, result.success);
+
+      if (result.success) {
+        debugLog('INFO', 'GalaxyMap', 'Sector exploration successful', {
+          sector: result.sector,
+          newly_explored: result.newly_explored,
+          duration
+        });
+
+        // Update local sector state
+        setSectors(prev =>
+          prev.map(sector =>
+            sector.x === result.sector.x && sector.y === result.sector.y
+              ? { ...sector, explored: true }
+              : sector
+          )
+        );
+
+        // Optional: Show success feedback
+        if (result.newly_explored) {
+          debugLog('INFO', 'GalaxyMap', 'New sector discovered', {
+            coordinates: `${result.sector.x}:${result.sector.y}`,
+            totalExplored: exploredSectors.length + 1
+          });
+        } else {
+          debugLog('INFO', 'GalaxyMap', 'Sector was already explored', {
+            coordinates: `${result.sector.x}:${result.sector.y}`
+          });
         }
-      });
-
-      if (!fleetResponse.ok) {
-        throw new Error(`HTTP ${fleetResponse.status}: ${fleetResponse.statusText}`);
+      } else {
+        debugLog('WARN', 'GalaxyMap', 'Sector exploration returned unsuccessful', { result });
       }
-
-      const fleetData = await fleetResponse.json();
-      const availableFleet = fleetData.find(f => f.status === 'stationed');
-
-      if (!availableFleet) {
-        alert('No available fleets for exploration!');
-        return;
-      }
-
-      const sendResponse = await fetch('http://localhost:5000/api/fleet/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
-        body: JSON.stringify({
-          fleet_id: availableFleet.id,
-          mission: 'explore',
-          target_x: system.x,
-          target_y: system.y,
-          target_z: system.z
-        })
-      });
-
-      if (!sendResponse.ok) {
-        throw new Error(`HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
-      }
-
-      alert(`Exploration fleet sent to ${system.x}:${system.y}:${system.z}`);
     } catch (error) {
-      console.error('Error sending exploration fleet:', error);
-      alert('Failed to send exploration fleet');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleColonizePlanet = async (planet) => {
-    if (planet.user_id) {
-      alert('Planet is already colonized!');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Get JWT token from localStorage (following fleet pattern)
-      const token = localStorage.getItem('token');
-      console.log('DEBUG: JWT token present for colonization API:', !!token);
-
-      // Find a fleet with colony ship
-      const fleetResponse = await fetch('http://localhost:5000/api/fleet', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
+      debugLog('ERROR', 'GalaxyMap', 'Sector exploration failed', {
+        system,
+        error: error.message,
+        stack: error.stack
       });
-
-      if (!fleetResponse.ok) {
-        throw new Error(`HTTP ${fleetResponse.status}: ${fleetResponse.statusText}`);
-      }
-
-      const fleetData = await fleetResponse.json();
-      const colonyFleet = fleetData.find(f =>
-        f.status === 'stationed' && f.ships.colony_ship > 0
-      );
-
-      if (!colonyFleet) {
-        alert('No fleets with colony ships available!');
-        return;
-      }
-
-      const sendResponse = await fetch('http://localhost:5000/api/fleet/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
-        body: JSON.stringify({
-          fleet_id: colonyFleet.id,
-          mission: 'colonize',
-          target_x: planet.x,
-          target_y: planet.y,
-          target_z: planet.z
-        })
-      });
-
-      if (!sendResponse.ok) {
-        throw new Error(`HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
-      }
-
-      alert(`Colonization fleet sent to ${planet.name}`);
-    } catch (error) {
-      console.error('Error sending colonization fleet:', error);
-      alert('Failed to send colonization fleet');
-    } finally {
-      setLoading(false);
+      // Optional: Show error feedback to user
     }
   };
 
-  // Zoom controls
-  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.2, 2));
-  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.2, 0.5));
-  const resetView = () => {
-    setZoom(1);
-    setViewOffset({ x: 0, y: 0 });
-  };
+  // Show loading state
+  if (sectorsLoading) {
+    return (
+      <div className="relative w-full h-full overflow-hidden bg-black flex items-center justify-center">
+        <div className="text-white text-lg">Loading galaxy sectors...</div>
+      </div>
+    );
+  }
 
-  // Calculate system position for grid display
-  const getSystemPosition = (system) => {
-    const relativeX = (system.x - centerX) * zoom + viewOffset.x;
-    const relativeY = (system.y - centerY) * zoom + viewOffset.y;
-    return { x: relativeX, y: relativeY };
-  };
+  // Show error state
+  if (sectorsError) {
+    return (
+      <div className="relative w-full h-full overflow-hidden bg-black flex items-center justify-center">
+        <div className="text-red-400 text-center">
+          <div className="text-lg mb-2">Failed to load galaxy sectors</div>
+          <div className="text-sm">{sectorsError}</div>
+        </div>
+      </div>
+    );
+  }
 
-  // Mouse drag handlers for panning
-  const handleMouseDown = (e) => {
-    if (e.button === 0) { // Left mouse button only
-      setIsDragging(true);
-      setDragStart({ x: e.clientX, y: e.clientY });
-      e.preventDefault();
-    }
-  };
+  // Calculate progress
+  const exploredCount = exploredSectors.length;
+  const progressPercentage = TOTAL_SECTORS > 0 ? (exploredCount / TOTAL_SECTORS) * 100 : 0;
 
-  const handleMouseMove = (e) => {
-    if (isDragging) {
-      const deltaX = e.clientX - dragStart.x;
-      const deltaY = e.clientY - dragStart.y;
-      setViewOffset(prev => ({
-        x: prev.x + deltaX,
-        y: prev.y + deltaY
-      }));
-      setDragStart({ x: e.clientX, y: e.clientY });
-      e.preventDefault();
-    }
-  };
-
-  const handleMouseUp = (e) => {
-    if (isDragging) {
-      setIsDragging(false);
-      e.preventDefault();
-    }
-  };
-
-  const handleMouseLeave = (e) => {
-    if (isDragging) {
-      setIsDragging(false);
-    }
-  };
-
-  // Mouse wheel zoom handler
-  const handleWheel = (e) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom(prev => Math.max(0.5, Math.min(2, prev + zoomFactor)));
-  };
+  debugLog('INFO', 'GalaxyMap', 'Rendering galaxy map', {
+    sectorsCount: sectors.length,
+    systemsCount: systems?.length || 0,
+    exploredCount: exploredSectors.length,
+    progressPercentage: progressPercentage.toFixed(1) + '%'
+  });
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-6xl w-full h-5/6 flex flex-col">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-white">Galaxy Map</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-xl"
-          >
-            ✕
-          </button>
+    <div className="relative w-full h-full overflow-hidden bg-black">
+      {/* Debug Panel */}
+      {galaxyDebugger.config?.visual?.debugPanel && (
+        <div className="debug-panel">
+          <h4>🔍 Debug Info</h4>
+          <div>Sectors: {sectors.length}</div>
+          <div>Systems: {systems?.length || 0}</div>
+          <div>Explored: {exploredCount}</div>
+          <div>Progress: {progressPercentage.toFixed(1)}%</div>
+          <div>Center: ({center.x}, {center.y})</div>
+          <div>Zoom: {zoom}</div>
         </div>
+      )}
 
-        {/* Controls */}
-        <div className="flex justify-between items-center mb-4">
-          <div className="text-sm text-gray-300">
-            Center: {centerX}:{centerY}:{centerZ} | Zoom: {Math.round(zoom * 100)}% | Range: {Math.round(50 / zoom)} units
-          </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={handleZoomOut}
-              className="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-sm"
-              disabled={zoom <= 0.5}
-            >
-              −
-            </button>
-            <button
-              onClick={handleZoomIn}
-              className="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-sm"
-              disabled={zoom >= 2}
-            >
-              +
-            </button>
-            <button
-              onClick={resetView}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm"
-            >
-              Reset
-            </button>
-            <button
-              onClick={() => setShowGrid(!showGrid)}
-              className={`px-3 py-1 text-white rounded text-sm ${
-                showGrid ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-600 hover:bg-gray-500'
-              }`}
-            >
-              Grid {showGrid ? 'ON' : 'OFF'}
-            </button>
-          </div>
-        </div>
+      {/* Sector Grid Overlay */}
+      <div className="sector-grid">
+        {debugElement.create('GalaxyMap', 'sector-grid', { count: sectors.length })}
+        {sectors && sectors.map((sector, idx) => {
+          const pos = getSectorPosition(sector);
+          // Removed debug log for sector-boundary creation to reduce noise
+          // debugElement.create('GalaxyMap', 'sector-boundary', {
+          //   sector: `${sector.x}:${sector.y}`,
+          //   explored: sector.explored,
+          //   position: pos
+          // });
 
-        {/* Map Container */}
-        <div
-          className={`flex-1 bg-gray-900 rounded-lg overflow-hidden relative galaxy-background ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
-          onWheel={handleWheel}
-        >
-          {/* Deep Space Background */}
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-purple-900 to-blue-900">
-            {/* Nebula Layer 1 */}
-            <div className="absolute inset-0 opacity-30">
-              <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-purple-600 rounded-full blur-3xl animate-pulse"></div>
-              <div className="absolute bottom-1/3 right-1/4 w-80 h-80 bg-pink-600 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}}></div>
-            </div>
+          return (
+            <div
+              key={`boundary-${idx}`}
+              className={`sector-boundary ${sector.explored ? 'explored' : 'unexplored'}`}
+              style={{
+                left: `${pos.x}px`,
+                top: `${pos.y}px`,
+                width: `${SECTOR_SIZE * zoom}px`,
+                height: `${SECTOR_SIZE * zoom}px`,
+                transform: "translate(-50%, -50%)",
+              }}
+              onMouseEnter={(e) => {
+                setHoveredSector(sector);
+                setTooltipPosition({ x: e.clientX, y: e.clientY });
+              }}
+              onMouseLeave={() => setHoveredSector(null)}
+            />
+          );
+        })}
+        {debugElement.render('GalaxyMap', 'sector-grid', sectors && sectors.length > 0)}
+      </div>
 
-            {/* Nebula Layer 2 */}
-            <div className="absolute inset-0 opacity-20">
-              <div className="absolute top-1/2 left-1/4 w-64 h-64 bg-blue-500 rounded-full blur-2xl animate-pulse" style={{animationDelay: '1s'}}></div>
-              <div className="absolute bottom-1/4 right-1/3 w-72 h-72 bg-indigo-600 rounded-full blur-2xl animate-pulse" style={{animationDelay: '3s'}}></div>
-            </div>
+      {/* Space background only in explored sectors */}
+      {sectors && sectors
+        .filter((s) => s.explored)
+        .map((s, idx) => {
+          const pos = getSectorPosition(s);
+          return (
+            <div
+              key={`bg-${idx}`}
+              className="absolute bg-gradient-to-br from-blue-900 via-black to-purple-900"
+              style={{
+                left: `${pos.x}px`,
+                top: `${pos.y}px`,
+                width: `${SECTOR_SIZE * zoom}px`,
+                height: `${SECTOR_SIZE * zoom}px`,
+                transform: "translate(-50%, -50%)",
+                pointerEvents: "none",
+                zIndex: 0,
+              }}
+            />
+          );
+        })}
 
-            {/* Animated Starfield */}
-            <div className="absolute inset-0">
-              {Array.from({ length: 200 }, (_, i) => (
-                <div
-                  key={i}
-                  className={`absolute rounded-full bg-white ${
-                    i % 10 === 0 ? 'w-1 h-1' : i % 5 === 0 ? 'w-0.5 h-0.5' : 'w-px h-px'
-                  }`}
-                  style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    animation: `twinkle ${2 + Math.random() * 3}s infinite`,
-                    animationDelay: `${Math.random() * 3}s`
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* Floating Particles */}
-            <div className="absolute inset-0">
-              {Array.from({ length: 30 }, (_, i) => (
-                <div
-                  key={`particle-${i}`}
-                  className="absolute w-1 h-1 bg-white rounded-full opacity-20"
-                  style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    animation: `float ${10 + Math.random() * 20}s infinite linear`,
-                    animationDelay: `${Math.random() * 10}s`
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-          {/* Grid Background */}
-          {showGrid && (
-            <div data-test="grid" className="absolute inset-0 opacity-60">
-              <svg width="100%" height="100%" className="text-gray-300">
-                <defs>
-                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-                  </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#grid)" />
-              </svg>
-            </div>
-          )}
-
-          {/* Coordinate Labels */}
-          <div data-test="coords" className="absolute top-2 left-2 text-xs text-white font-mono bg-black bg-opacity-70 px-3 py-2 rounded-lg border border-gray-600 shadow-lg">
-            <div className="font-semibold text-blue-300">Coordinates:</div>
-            <div className="text-yellow-300">X: {Math.round(centerX - viewOffset.x / zoom)}</div>
-            <div className="text-green-300">Y: {Math.round(centerY - viewOffset.y / zoom)}</div>
-            <div className="text-purple-300">Z: {centerZ}</div>
-          </div>
-
-          {/* Systems Display */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative">
-              {/* Warcraft 3-Style Fog of War Overlay - positioned inside interactive area */}
-              <div
-                ref={(el) => el && EventHandlingSystem.setupFogOverlayEvents(el)}
-                className="fog-overlay absolute"
-                data-test="fog-overlay"
-                style={{
-                  width: `${400 / zoom}px`,
-                  height: `${300 / zoom}px`,
-                  left: `${200 + viewOffset.x}px`,
-                  top: `${150 + viewOffset.y}px`,
-                  transform: 'translate(-50%, -50%)',
-                  background: 'rgba(64,64,64,0.95)',
-                  pointerEvents: 'none'
-                }}
-              >
-                {/* Atmospheric fog texture overlay */}
-                <div
-                  className="absolute inset-0 opacity-30"
-                  style={{
-                    backgroundImage: `
-                      radial-gradient(circle at 20% 80%, rgba(64,64,64,0.3) 0%, transparent 50%),
-                      radial-gradient(circle at 80% 20%, rgba(96,96,96,0.2) 0%, transparent 50%),
-                      radial-gradient(circle at 40% 40%, rgba(32,32,32,0.4) 0%, transparent 50%)
-                    `,
-                    animation: 'fogDrift 30s ease-in-out infinite',
-                    pointerEvents: 'none'
-                  }}
-                />
-
-                {/* Create large, sharp fog holes for ALL explored systems */}
-                {systems
-                  .filter(system => system.explored)
-                  .map((system, index) => {
-                    const pos = getSystemPosition(system);
-                    // Position fog holes relative to the fog overlay's center (200, 150)
-                    const relativeX = pos.x + 200; // pos.x is already relative to center
-                    const relativeY = pos.y + 150; // pos.y is already relative to center
-
-                    return (
-                      <div
-                        key={`fog-${index}`}
-                        className="fog-hole absolute w-40 h-40 rounded-full"
-                        style={{
-                          left: `${relativeX}px`,
-                          top: `${relativeY}px`,
-                          transform: 'translate(-50%, -50%)',
-                          background: `
-                            radial-gradient(circle,
-                              transparent 0%,
-                              transparent 25%,
-                              rgba(64,64,64,0.8) 45%,
-                              rgba(96,96,96,0.9) 65%,
-                              rgba(128,128,128,0.95) 85%,
-                              rgba(160,160,160,0.98) 100%
-                            )
-                          `,
-                          boxShadow: '0 0 20px rgba(0,0,0,0.5)',
-                          filter: 'blur(1px)',
-                          pointerEvents: 'none'
-                        }}
-                      />
-                    );
-                  })}
-              </div>
-
-              {systems.map((system, index) => {
-                const pos = getSystemPosition(system);
-                const isVisible = Math.abs(pos.x) < 300 && Math.abs(pos.y) < 200;
-                const systemKey = `${system.x}:${system.y}:${system.z}`;
-
-                if (!isVisible) return null;
-
-                // Determine system ownership status
-                // system.planets is a number (count), not an array
-                const hasColonies = system.planets && system.planets > 0;
-                const isOwnedByUser = system.planets && system.planets > 0 && system.owner_id == user.id;
-                const isEnemyColony = hasColonies && !isOwnedByUser;
-
-                // Enhanced system marker with colony indicators
-                let markerClass = '';
-                let markerIcon = '';
-
-                if (system.explored) {
-                  if (isOwnedByUser) {
-                    markerClass = 'bg-green-600 border-green-400 hover:bg-green-500 text-white';
-                    markerIcon = '🏠';
-                  } else if (isEnemyColony) {
-                    markerClass = 'bg-red-600 border-red-400 hover:bg-red-500 text-white';
-                    markerIcon = '⚔️';
-                  } else {
-                    markerClass = 'bg-blue-600 border-blue-400 hover:bg-blue-500 text-white';
-                    markerIcon = '';
-                  }
-                } else {
-                  markerClass = 'bg-gray-600 border-gray-400 hover:bg-gray-500 text-gray-300';
-                  markerIcon = '';
-                }
-
-                return (
-                  <div
-                    key={index}
-                    ref={(el) => el && EventHandlingSystem.setupSystemMarkerEvents(el)}
-                    className={`system-marker absolute w-16 h-16 rounded-full border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-bold ${markerClass} ${!system.explored ? 'opacity-60' : ''}`}
-                    style={{
-                      left: `${pos.x + 200}px`,
-                      top: `${pos.y + 150}px`,
-                      transform: 'translate(-50%, -50%)',
-                      zIndex: system.explored ? 10 : 5
-                    }}
-                    onClick={() => handleExploreSystem(system)}
-                    title={`${system.x}:${system.y}:${system.z} - ${system.explored ? `${system.planets} planets` : 'Unexplored (Fog of War)'}${isOwnedByUser ? ' (Your Colony)' : isEnemyColony ? ' (Enemy Colony)' : ''}`}
-                  >
-                    <div className="text-center">
-                      <div>{system.x - centerX}:{system.y - centerY}</div>
-                      <div className="text-xs opacity-75">
-                        {system.explored ? `${system.planets}P` : '???'}
-                      </div>
-                      {hasColonies && (
-                        <div className="text-xs font-bold">
-                          {markerIcon}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Center Marker (Player Location) */}
-              <div
-                data-test="player-marker"
-                className="absolute w-4 h-4 bg-yellow-400 rounded-full border-2 border-yellow-200"
-                style={{
-                  left: `${200 + viewOffset.x}px`,
-                  top: `${150 + viewOffset.y}px`,
-                  transform: 'translate(-50%, -50%)',
-                  zIndex: 15
-                }}
-                title="Your home system"
-              />
-            </div>
-          </div>
-
-          {/* Enhanced Legend */}
-          <div className="absolute bottom-2 right-2 bg-gray-800 bg-opacity-90 p-3 rounded text-xs text-gray-300 max-w-xs">
-            <div className="font-bold text-white mb-2">Legend</div>
-            <div className="space-y-1">
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                <span>Home System</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-green-600 rounded-full"></div>
-                <span>Your Colonies</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-red-600 rounded-full"></div>
-                <span>Enemy Colonies</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
-                <span>Explored Systems</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
-                <span>Unexplored Systems</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* System Details Panel */}
-        {selectedSystem && (
-          <SystemDetails
-            system={selectedSystem}
-            onClose={() => setSelectedSystem(null)}
-            onColonize={handleColonizePlanet}
-            loading={loading}
+      {/* Systems */}
+      {systems && systems.map((sys, idx) => {
+        const pos = getSystemPosition(sys);
+        return (
+          <div
+            key={`sys-${idx}`}
+            onClick={() => handleExploreSystem(sys)}
+            className="sector-system-marker absolute bg-yellow-400 rounded-full cursor-pointer"
+            style={{
+              left: `${pos.x}px`,
+              top: `${pos.y}px`,
+              width: `${10 * zoom}px`,
+              height: `${10 * zoom}px`,
+              transform: "translate(-50%, -50%)",
+              zIndex: 5,
+            }}
           />
-        )}
-      </div>
-    </div>
-  );
-}
+        );
+      })}
 
-// Enhanced Planet Card Component
-function PlanetCard({ planet, onColonize, loading, centerX, centerY, centerZ }) {
-  // Generate mock traits for demonstration (in real implementation, this would come from API)
-  const mockTraits = planet.user_id ? [] : [
-    { name: 'Rich Metal', bonus: 25 },
-    { name: 'Crystal Rich', bonus: 15 }
-  ];
+      {/* Enhanced Fog overlay with sector-based styling */}
+      {sectors && sectors.map((s, idx) => {
+        const pos = getSectorPosition(s);
+        return (
+          <div
+            key={`fog-${idx}`}
+            className={`sector-fog ${s.explored ? 'explored' : 'unexplored'}`}
+            style={{
+              left: `${pos.x}px`,
+              top: `${pos.y}px`,
+              width: `${SECTOR_SIZE * zoom}px`,
+              height: `${SECTOR_SIZE * zoom}px`,
+              transform: "translate(-50%, -50%)",
+              zIndex: 4,
+            }}
+          />
+        );
+      })}
 
-  return (
-    <div className={`bg-gray-600 rounded-lg p-4 border-2 transition-all duration-200 ${
-      planet.user_id
-        ? 'border-blue-500 bg-gray-600'
-        : 'border-green-500 bg-gray-700 hover:bg-gray-650'
-    }`}>
-      {/* Planet Header */}
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex-1">
-          <h4 className="text-white font-bold text-lg flex items-center">
-            🪐 {planet.name}
-          </h4>
-          <div className="text-sm text-gray-300">
-            {planet.coordinates || `${planet.x}:${planet.y}:${planet.z}`}
-          </div>
-          <div className="text-xs text-gray-400 mt-1">
-            Distance: {Math.round(CoordinateUtils.calculateDistance(
-              centerX, centerY, centerZ, planet.x, planet.y, planet.z
-            ))} units
-          </div>
+      {/* Sector Progress Indicator */}
+      <div className="sector-progress">
+        <div className="progress-bar">
+          <div
+            className="progress-fill"
+            style={{ width: `${progressPercentage}%` }}
+          />
         </div>
-        <div className="text-right ml-4">
-          {planet.owner_name ? (
-            <span className="text-blue-400 text-sm font-medium px-2 py-1 bg-blue-900 rounded">
-              Owned by {planet.owner_name}
-            </span>
-          ) : (
-            <span className="text-green-400 text-sm font-medium px-2 py-1 bg-green-900 rounded">
-              Unowned
-            </span>
+        <div className="progress-text">
+          {exploredCount} / {TOTAL_SECTORS} sectors explored
+        </div>
+      </div>
+
+      {/* Sector Statistics Panel */}
+      <div className="sector-stats-panel">
+        <h3>🌌 Galaxy Statistics</h3>
+        <div className="stat-item">
+          <span>Explored Sectors:</span>
+          <span className="stat-value">{exploredCount}</span>
+        </div>
+        <div className="stat-item">
+          <span>Total Sectors:</span>
+          <span className="stat-value">{TOTAL_SECTORS}</span>
+        </div>
+        <div className="stat-item">
+          <span>Exploration Progress:</span>
+          <span className="stat-value">{progressPercentage.toFixed(1)}%</span>
+        </div>
+        <div className="stat-item">
+          <span>Systems Visible:</span>
+          <span className="stat-value">{systems ? systems.length : 0}</span>
+        </div>
+      </div>
+
+      {/* Sector Tooltip */}
+      {hoveredSector && (
+        <div
+          className="sector-tooltip"
+          style={{
+            left: `${tooltipPosition.x + 10}px`,
+            top: `${tooltipPosition.y - 10}px`,
+          }}
+        >
+          <h4>Sector {hoveredSector.x}:{hoveredSector.y}</h4>
+          <p>Status: {hoveredSector.explored ? 'Explored' : 'Unexplored'}</p>
+          <p>Coordinates: ({hoveredSector.x * SECTOR_SIZE}, {hoveredSector.y * SECTOR_SIZE})</p>
+          <p>Size: {SECTOR_SIZE}x{SECTOR_SIZE} units</p>
+          {hoveredSector.explored && (
+            <p>Click systems to explore further!</p>
           )}
         </div>
-      </div>
-
-      {/* Planet Traits */}
-      {mockTraits.length > 0 && (
-        <div className="mb-3">
-          <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
-            🎯 Planet Traits:
-          </h5>
-          <div className="flex flex-wrap gap-1">
-            {mockTraits.map((trait, index) => (
-              <span key={index} className="px-2 py-1 bg-purple-600 text-white text-xs rounded flex items-center">
-                {trait.name} (+{trait.bonus}%)
-              </span>
-            ))}
-          </div>
-        </div>
       )}
-
-      {/* Resources */}
-      <div className="mb-3">
-        <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
-          💎 Resources:
-        </h5>
-        <div className="grid grid-cols-3 gap-2 text-sm">
-          <div className="bg-gray-700 p-2 rounded text-center border border-yellow-600">
-            <div className="text-yellow-400 font-bold text-lg">
-              {planet.metal?.toLocaleString() || 0}
-            </div>
-            <div className="text-gray-400 text-xs">Metal</div>
-          </div>
-          <div className="bg-gray-700 p-2 rounded text-center border border-blue-600">
-            <div className="text-blue-400 font-bold text-lg">
-              {planet.crystal?.toLocaleString() || 0}
-            </div>
-            <div className="text-gray-400 text-xs">Crystal</div>
-          </div>
-          <div className="bg-gray-700 p-2 rounded text-center border border-green-600">
-            <div className="text-green-400 font-bold text-lg">
-              {planet.deuterium?.toLocaleString() || 0}
-            </div>
-            <div className="text-gray-400 text-xs">Deuterium</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Structures */}
-      {(planet.metal_mine > 0 || planet.crystal_mine > 0) && (
-        <div className="mb-3">
-          <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
-            🏭 Structures:
-          </h5>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
-              <span className="text-gray-400">Metal Mine:</span>
-              <span className="text-yellow-400 font-bold">Lv.{planet.metal_mine || 0}</span>
-            </div>
-            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
-              <span className="text-gray-400">Crystal Mine:</span>
-              <span className="text-blue-400 font-bold">Lv.{planet.crystal_mine || 0}</span>
-            </div>
-            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
-              <span className="text-gray-400">Deut. Synth:</span>
-              <span className="text-green-400 font-bold">Lv.{planet.deuterium_synthesizer || 0}</span>
-            </div>
-            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
-              <span className="text-gray-400">Solar Plant:</span>
-              <span className="text-orange-400 font-bold">Lv.{planet.solar_plant || 0}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="flex justify-end space-x-2 pt-2 border-t border-gray-500">
-        {!planet.user_id && (
-          <button
-            onClick={() => onColonize(planet)}
-            className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium transition-colors flex items-center"
-            disabled={loading}
-          >
-            🚀 {loading ? 'Colonizing...' : 'Colonize Planet'}
-          </button>
-        )}
-        {planet.user_id && planet.user_id !== 'current_user_id' && (
-          <button className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-medium transition-colors flex items-center">
-            ⚔️ Attack
-          </button>
-        )}
-        {planet.user_id && planet.user_id === 'current_user_id' && (
-          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-medium transition-colors flex items-center">
-            📊 View Details
-          </button>
-        )}
-      </div>
     </div>
   );
-}
-
-// System Statistics Component
-function SystemStatistics({ system, planets }) {
-  const totalPlanets = planets.length;
-  const ownedPlanets = planets.filter(p => p.user_id).length;
-  const unownedPlanets = totalPlanets - ownedPlanets;
-  const totalResources = planets.reduce((sum, p) =>
-    sum + (p.metal || 0) + (p.crystal || 0) + (p.deuterium || 0), 0
-  );
-
-  return (
-    <div className="bg-gray-700 rounded-lg p-4 mb-4 border border-gray-600">
-      <h4 className="text-white font-bold mb-3 flex items-center">
-        📊 System Statistics
-      </h4>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-        <div className="text-center bg-gray-800 p-3 rounded">
-          <div className="text-2xl font-bold text-blue-400">{totalPlanets}</div>
-          <div className="text-gray-400 text-xs">Total Planets</div>
-        </div>
-        <div className="text-center bg-gray-800 p-3 rounded">
-          <div className="text-2xl font-bold text-green-400">{ownedPlanets}</div>
-          <div className="text-gray-400 text-xs">Colonized</div>
-        </div>
-        <div className="text-center bg-gray-800 p-3 rounded">
-          <div className="text-2xl font-bold text-gray-400">{unownedPlanets}</div>
-          <div className="text-gray-400 text-xs">Available</div>
-        </div>
-        <div className="text-center bg-gray-800 p-3 rounded">
-          <div className="text-2xl font-bold text-yellow-400">{totalResources.toLocaleString()}</div>
-          <div className="text-gray-400 text-xs">Total Resources</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Enhanced System Details Component
-function SystemDetails({ system, onClose, onColonize, loading }) {
-  const [planets, setPlanets] = useState([]);
-
-  // Get user's home coordinates for distance calculation
-  const homePlanet = planets.find(p => p.user_id === 'current_user_id');
-  const centerX = homePlanet?.x || 100;
-  const centerY = homePlanet?.y || 200;
-  const centerZ = homePlanet?.z || 300;
-
-  useEffect(() => {
-    fetchSystemPlanets();
-  }, [system]);
-
-  const fetchSystemPlanets = async () => {
-    try {
-      console.log('🌌 Fetching system planets:', `http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`);
-
-      // Get JWT token from localStorage (following fleet test pattern)
-      const token = localStorage.getItem('token');
-      console.log('DEBUG: JWT token present for system planets API:', !!token);
-
-      const response = await fetch(`http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
-      });
-
-      console.log('DEBUG: System planets API response status:', response.status);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('✅ System planets fetched successfully:', data);
-      setPlanets(data);
-    } catch (error) {
-      console.error('❌ Error fetching system planets:', {
-        message: error.message,
-        status: error.status,
-        url: `http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`
-      });
-
-      // Add fallback data for testing
-      console.log('🔧 Using fallback empty planets data');
-      setPlanets([]);
-    }
-  };
-
-  return (
-    <div className="mt-6 bg-gray-800 rounded-lg p-6 max-h-96 overflow-y-auto border border-gray-600">
-      {/* System Header */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex-1">
-          <h3 className="text-2xl font-bold text-white flex items-center">
-            🌌 System {system.x}:{system.y}:{system.z}
-          </h3>
-          <div className="text-gray-400 mt-1 flex items-center">
-            <span className={`px-2 py-1 rounded text-xs font-medium ${
-              system.explored
-                ? 'bg-blue-900 text-blue-300'
-                : 'bg-gray-900 text-gray-300'
-            }`}>
-              {system.explored ? '✅ Explored' : '❓ Unexplored'}
-            </span>
-            <span className="ml-4">
-              Distance: {Math.round(CoordinateUtils.calculateDistance(
-                centerX, centerY, centerZ, system.x, system.y, system.z
-              ))} units from home
-            </span>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-white text-xl ml-4"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* System Statistics */}
-      <SystemStatistics system={system} planets={planets} />
-
-      {/* Planets List */}
-      <div>
-        <h4 className="text-white font-bold mb-4 flex items-center">
-          🪐 Planets ({planets.length})
-        </h4>
-
-        {planets.length === 0 ? (
-          <div className="text-gray-400 text-center py-8 bg-gray-700 rounded-lg">
-            <div className="text-4xl mb-2">🌌</div>
-            <div>No planets discovered yet</div>
-            <div className="text-sm mt-2">Send an exploration fleet to discover planets in this system</div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {planets.map(planet => (
-              <PlanetCard
-                key={planet.id}
-                planet={planet}
-                onColonize={onColonize}
-                loading={loading}
-                centerX={centerX}
-                centerY={centerY}
-                centerZ={centerZ}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+};
 
 export default GalaxyMap;

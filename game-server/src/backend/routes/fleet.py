@@ -14,6 +14,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet, Fleet, Research
+from backend.services.sector import SectorService
 from datetime import datetime, timedelta
 import math
 
@@ -263,6 +264,101 @@ def send_fleet():
             'arrival_time': fleet.arrival_time.isoformat(),
             'eta': fleet.eta
         }
+    })
+
+@fleet_mgmt_bp.route('/move', methods=['POST'])
+@jwt_required()
+def move_fleet_with_sector_reveal():
+    """
+    Enhanced fleet movement that reveals sectors along the travel path
+    Following Real-time Updates Pattern from systemPatterns.md
+    """
+    print("DEBUG: Enhanced fleet move endpoint called")
+    user_id = get_jwt_identity()
+    print(f"DEBUG: User ID from JWT: {user_id}")
+    data = request.get_json()
+    print(f"DEBUG: Request data: {data}")
+
+    if not data or 'fleet_id' not in data or 'target_x' not in data or 'target_y' not in data:
+        print("DEBUG: Missing required fields")
+        return jsonify({'error': 'Missing required fields (fleet_id, target_x, target_y)'}), 400
+
+    # Get fleet
+    fleet = Fleet.query.filter_by(id=data['fleet_id'], user_id=user_id).first()
+    if not fleet:
+        return jsonify({'error': 'Fleet not found'}), 404
+
+    if fleet.status != 'stationed':
+        return jsonify({'error': 'Fleet is not available for movement'}), 400
+
+    # Get start planet
+    start_planet = Planet.query.get(fleet.start_planet_id)
+    if not start_planet:
+        return jsonify({'error': 'Start planet not found'}), 404
+
+    # Create target planet for distance calculation
+    target_planet = Planet(
+        name='Movement Target',
+        x=data['target_x'],
+        y=data['target_y'],
+        z=data.get('target_z', start_planet.z),  # Use same Z if not specified
+        user_id=None
+    )
+
+    # Calculate movement path and reveal sectors
+    path = calculate_movement_path(start_planet, target_planet)
+    revealed_sectors = []
+
+    print(f"DEBUG: Calculating path with {len(path)} waypoints")
+
+    # Reveal sectors along the path
+    for point in path:
+        sector_coords = SectorService.system_to_sector(point['x'], point['y'])
+        newly_explored = SectorService.mark_sector_explored(
+            user_id,
+            sector_coords['sector_x'],
+            sector_coords['sector_y']
+        )
+        if newly_explored:
+            revealed_sectors.append({
+                'x': sector_coords['sector_x'],
+                'y': sector_coords['sector_y'],
+                'explored_at': datetime.utcnow().isoformat()
+            })
+            print(f"DEBUG: Revealed sector ({sector_coords['sector_x']}, {sector_coords['sector_y']})")
+
+    # Update fleet for movement
+    fleet.mission = data.get('mission', 'transport')
+    fleet.target_planet_id = 0  # Temporary target
+    fleet.status = 'traveling'
+
+    # Calculate distance and travel time
+    distance = calculate_distance(start_planet, target_planet)
+    fleet_speed = 5000  # Base fleet speed
+    travel_time_hours = distance / fleet_speed
+
+    fleet.departure_time = datetime.utcnow()
+    fleet.arrival_time = fleet.departure_time + timedelta(hours=travel_time_hours)
+    fleet.eta = int(travel_time_hours * 3600)
+
+    db.session.commit()
+
+    print(f"DEBUG: Fleet movement completed. Revealed {len(revealed_sectors)} sectors")
+
+    return jsonify({
+        'message': 'Fleet moved successfully with sector revelation',
+        'fleet': {
+            'id': fleet.id,
+            'mission': fleet.mission,
+            'status': fleet.status,
+            'departure_time': fleet.departure_time.isoformat(),
+            'arrival_time': fleet.arrival_time.isoformat(),
+            'eta': fleet.eta
+        },
+        'revealed_sectors': revealed_sectors,
+        'path': path,
+        'total_distance': distance,
+        'travel_time_hours': travel_time_hours
     })
 
 @fleet_mgmt_bp.route('/recall/<int:fleet_id>', methods=['POST'])

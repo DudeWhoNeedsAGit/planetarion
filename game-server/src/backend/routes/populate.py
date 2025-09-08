@@ -21,6 +21,11 @@ def populate_database():
     deterministic = request.args.get('deterministic', 'false').lower() == 'true'
     minimal = request.args.get('minimal', 'false').lower() == 'true'
 
+    # Also check environment variable for minimal mode
+    if not minimal:
+        import os
+        minimal = os.getenv('MINIMAL_POPULATE', 'false').lower() == 'true'
+
     try:
         # Clear existing data in reverse dependency order to avoid foreign key issues
         print("DEBUG: Clearing existing data...")
@@ -239,13 +244,31 @@ def populate_database():
 
         db.session.commit()
 
+        # Initialize sector exploration for test user planets
+        if minimal:
+            print("DEBUG: Initializing sector exploration for test user...")
+            from backend.services.sector import SectorService
+
+            test_user_planets = [p for p in planets if p.user_id == test_user.id]
+            explored_sectors = 0
+
+            for planet in test_user_planets:
+                # Explore the sector containing this planet
+                result = SectorService.explore_system(test_user.id, planet.x, planet.y)
+                if result['newly_explored']:
+                    explored_sectors += 1
+                    print(f"DEBUG: Explored sector {result['sector_x']}:{result['sector_y']} for planet {planet.name}")
+
+            print(f"DEBUG: Initialized {explored_sectors} explored sectors for test user")
+
         return jsonify({
             'message': 'Database populated successfully',
             'users': len(users),
             'planets': len(planets),
             'fleets': num_fleets,
             'alliances': len(alliances),
-            'tick_logs': num_tick_logs
+            'tick_logs': num_tick_logs,
+            'explored_sectors': explored_sectors if minimal else 0
         }), 200
 
     except Exception as e:

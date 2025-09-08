@@ -52,6 +52,26 @@ function FleetManagement({ user, planets }) {
     }
   };
 
+  const handleMoveFleetWithExploration = async (moveData) => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/fleet/move', moveData);
+
+      // Update the fleet in the list
+      setFleets(prev => prev.map(fleet =>
+        fleet.id === moveData.fleet_id ? response.data.fleet : fleet
+      ));
+
+      // Show success message with sector revelation info
+      const revealedCount = response.data.revealed_sectors?.length || 0;
+      showSuccess(`Fleet moved successfully! Revealed ${revealedCount} new sectors along the path.`);
+
+      setShowSendForm(false);
+      setSelectedFleet(null);
+    } catch (error) {
+      showError(error.response?.data?.error || 'Failed to move fleet');
+    }
+  };
+
   const handleRecallFleet = async (fleetId) => {
     try {
       const response = await axios.post(`/api/fleet/recall/${fleetId}`);
@@ -204,6 +224,7 @@ function FleetManagement({ user, planets }) {
           fleet={selectedFleet}
           planets={planets}
           onSend={handleSendFleet}
+          onEnhancedMove={handleMoveFleetWithExploration}
           onClose={() => {
             setShowSendForm(false);
             setSelectedFleet(null);
@@ -323,7 +344,7 @@ function CreateFleetModal({ planets, onCreate, onClose }) {
   );
 }
 
-function SendFleetModal({ fleet, planets, onSend, onClose }) {
+function SendFleetModal({ fleet, planets, onSend, onEnhancedMove, onClose }) {
   const [formData, setFormData] = useState({
     fleet_id: fleet.id,
     target_planet_id: '',
@@ -332,9 +353,17 @@ function SendFleetModal({ fleet, planets, onSend, onClose }) {
     target_z: '',
     mission: 'attack'
   });
+  const [useEnhancedMovement, setUseEnhancedMovement] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
+
+    // Use enhanced movement for exploration missions
+    if (useEnhancedMovement && formData.mission === 'explore' && onEnhancedMove) {
+      onEnhancedMove(formData);
+      return;
+    }
+
     onSend(formData);
   };
 

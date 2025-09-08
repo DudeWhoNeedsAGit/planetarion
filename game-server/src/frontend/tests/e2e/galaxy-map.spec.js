@@ -15,8 +15,8 @@ async function loginAsE2eTestUser(page) {
   // Wait for login to complete
   await page.waitForTimeout(2000);
 
-  // Verify login success - check for dashboard header
-  await expect(page.locator('h1:has-text("Planetarion")')).toBeVisible();
+  // Verify login success - check for dashboard header (includes emoji)
+  await expect(page.locator('h1').filter({ hasText: 'Planetarion' })).toBeVisible();
 }
 
 // Helper function to navigate to Galaxy Map
@@ -324,6 +324,9 @@ test.describe('Galaxy Map Navigation', () => {
     // Check atmospheric texture layer exists
     const textureLayer = page.locator('[data-test="fog-overlay"] .absolute.inset-0.opacity-30');
     await expect(textureLayer).toBeVisible();
+
+    // Verify fog overlay has correct pointer-events setting
+    await expect(fogOverlay).toHaveCSS('pointer-events', 'none');
   });
 
   test('fog holes exist for explored systems', async ({ page }) => {
@@ -513,8 +516,8 @@ test.describe('Galaxy Map Navigation', () => {
     await navigateToGalaxyMap(page);
     await page.waitForTimeout(2000); // Wait for systems
 
-    // Check system markers exist using new debug markers
-    const systemMarkers = page.locator('[data-test-marker="system-marker"]');
+    // Check system markers exist using correct data-test attribute
+    const systemMarkers = page.locator('[data-test="system-marker"]');
     await expect(systemMarkers.first()).toBeVisible();
 
     // Verify we have at least one system marker
@@ -573,7 +576,7 @@ test.describe('Galaxy Map Navigation', () => {
     await expect(page.locator('[data-test="fog-overlay"]')).toBeVisible(); // Fog
     await expect(page.locator('[data-test="coords"]')).toBeVisible(); // Coordinates
     await expect(page.locator('[data-test="grid"]')).toBeVisible(); // Grid
-    await expect(page.locator('[data-test-marker="system-marker"]').first()).toBeVisible(); // Systems
+    await expect(page.locator('[data-test="system-marker"]').first()).toBeVisible(); // Systems
   });
 
   test('fog of war animation is smooth', async ({ page }) => {
