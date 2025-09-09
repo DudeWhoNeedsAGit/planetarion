@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
@@ -16,15 +16,80 @@ function FleetManagement({ user, planets }) {
     fetchFleets();
   }, []);
 
-  const fetchFleets = async () => {
+  // Stable planet selection - prevent flicker during async updates
+  useEffect(() => {
+    if (userPlanets.length > 0 && !selectedPlanet) {
+      // Prefer home planet, fallback to first planet
+      const homePlanet = userPlanets.find(p => p.is_home_planet);
+      setSelectedPlanet(homePlanet || userPlanets[0]);
+    }
+  }, [userPlanets, selectedPlanet]);
+
+  const fetchFleets = useCallback(async () => {
     try {
       const response = await axios.get('/api/fleet');
+      console.log('DEBUG: Fleet API Response:', response.data); // API response validation
+
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid fleet data format from API');
+      }
+
       setFleets(response.data);
     } catch (error) {
       console.error('Error fetching fleets:', error);
+      showError('Failed to load fleets. Please refresh the page.');
     } finally {
       setLoading(false);
     }
+  }, [showError]);
+
+  // Data normalization functions
+  const normalizePlanet = useCallback((planet) => ({
+    ...planet,
+    coordinates: planet.coordinates || `${planet.x}:${planet.y}:${planet.z}`,
+    resources: {
+      metal: planet.metal || 0,
+      crystal: planet.crystal || 0,
+      deuterium: planet.deuterium || 0
+    },
+    ships: planet.ships || {}
+  }), []);
+
+  const normalizeFleet = useCallback((fleet) => ({
+    ...fleet,
+    ships: fleet.ships || {},
+    eta: fleet.eta || calculateETA(fleet.arrival_time) // Single source of truth for ETA
+  }), []);
+
+  // Memoized computations for performance
+  const userPlanets = useMemo(() =>
+    planets.filter(planet => planet.user_id === user?.id).map(normalizePlanet),
+    [planets, user?.id, normalizePlanet]
+  );
+
+  const normalizedFleets = useMemo(() =>
+    fleets.map(normalizeFleet),
+    [fleets, normalizeFleet]
+  );
+
+  const fleetsByPlanet = useMemo(() => {
+    return normalizedFleets.reduce((acc, fleet) => {
+      const planetId = fleet.start_planet_id;
+      if (!acc[planetId]) {
+        acc[planetId] = [];
+      }
+      acc[planetId].push(fleet);
+      return acc;
+    }, {});
+  }, [normalizedFleets]);
+
+  // Helper function for ETA calculation
+  const calculateETA = (arrivalTime) => {
+    if (!arrivalTime) return null;
+    const now = new Date();
+    const arrival = new Date(arrivalTime);
+    const diff = arrival - now;
+    return Math.max(0, Math.floor(diff / 1000)); // seconds remaining
   };
 
   const handleCreateFleet = async (fleetData) => {
@@ -38,20 +103,42 @@ function FleetManagement({ user, planets }) {
     }
   };
 
-  const handleSendFleet = async (sendData) => {
+  const handleSendFleet = useCallback(async (sendData) => {
+    // Optimistic update - immediately update UI
+    const optimisticFleet = {
+      ...selectedFleet,
+      status: 'traveling',
+      mission: sendData.mission,
+      target_planet_id: sendData.target_planet_id || null
+    };
+
+    setFleets(prev => prev.map(fleet =>
+      fleet.id === sendData.fleet_id ? optimisticFleet : fleet
+    ));
+
     try {
       const response = await axios.post('/api/fleet/send', sendData);
-      // Update the fleet in the list
+      console.log('DEBUG: Fleet send response:', response.data); // API response validation
+
+      // Server truth update - replace optimistic update with actual server response
       setFleets(prev => prev.map(fleet =>
         fleet.id === sendData.fleet_id ? response.data.fleet : fleet
       ));
+
       setShowSendForm(false);
       setSelectedFleet(null);
       showSuccess('Fleet sent successfully!');
     } catch (error) {
+      console.error('Fleet send error:', error);
+
+      // Revert optimistic update on error
+      setFleets(prev => prev.map(fleet =>
+        fleet.id === sendData.fleet_id ? selectedFleet : fleet
+      ));
+
       showError(error.response?.data?.error || 'Failed to send fleet');
     }
-  };
+  }, [selectedFleet, showError]);
 
   const handleRecallFleet = async (fleetId) => {
     try {
@@ -88,19 +175,6 @@ function FleetManagement({ user, planets }) {
       </div>
     );
   }
-
-  // Group fleets by planet
-  const fleetsByPlanet = fleets.reduce((acc, fleet) => {
-    const planetId = fleet.start_planet_id;
-    if (!acc[planetId]) {
-      acc[planetId] = [];
-    }
-    acc[planetId].push(fleet);
-    return acc;
-  }, {});
-
-  // Get user's planets
-  const userPlanets = planets.filter(planet => planet.user_id === user?.id);
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">
@@ -552,27 +626,31 @@ function PlanetOverviewCard({ planet, fleets, onCreateFleet }) {
 }
 
 function ShipAvailabilityDashboard({ planet, fleets }) {
-  // Calculate available ships (not in active fleets)
-  const availableShips = {
-    small_cargo: planet.small_cargo || 0,
-    large_cargo: planet.large_cargo || 0,
-    light_fighter: planet.light_fighter || 0,
-    heavy_fighter: planet.heavy_fighter || 0,
-    cruiser: planet.cruiser || 0,
-    battleship: planet.battleship || 0,
-    colony_ship: planet.colony_ship || 0,
-    recycler: planet.recycler || 0
-  };
+  // Calculate available ships (not in active fleets) - prevent negative values
+  const availableShips = useMemo(() => {
+    const available = {
+      small_cargo: planet.small_cargo || 0,
+      large_cargo: planet.large_cargo || 0,
+      light_fighter: planet.light_fighter || 0,
+      heavy_fighter: planet.heavy_fighter || 0,
+      cruiser: planet.cruiser || 0,
+      battleship: planet.battleship || 0,
+      colony_ship: planet.colony_ship || 0,
+      recycler: planet.recycler || 0
+    };
 
-  // Subtract ships in active fleets
-  fleets.forEach(fleet => {
-    if (fleet.status === 'traveling' || fleet.status === 'returning') {
-      const ships = fleet.ships || {};
-      Object.keys(availableShips).forEach(shipType => {
-        availableShips[shipType] -= ships[shipType] || 0;
-      });
-    }
-  });
+    // Subtract ships in active fleets with race condition protection
+    fleets.forEach(fleet => {
+      if (fleet.status === 'traveling' || fleet.status === 'returning') {
+        const ships = fleet.ships || {};
+        Object.keys(available).forEach(shipType => {
+          available[shipType] = Math.max(0, available[shipType] - (ships[shipType] || 0));
+        });
+      }
+    });
+
+    return available;
+  }, [planet, fleets]);
 
   const shipTypes = [
     { key: 'small_cargo', name: 'Small Cargo', icon: '📦' },
