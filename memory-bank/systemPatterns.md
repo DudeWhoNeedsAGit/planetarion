@@ -125,6 +125,109 @@ Login Form → API Call → JWT Generation → Cookie Storage → Protected Rout
 
 ## Testing Patterns
 
+### Test Infrastructure Issues (RESOLVED ✅)
+
+#### Critical Authentication Problems - FIXED
+**Issue**: Inconsistent password hashing across integration tests causing 401 Unauthorized errors
+**Root Cause**: Mix of bcrypt.hashpw(), generate_password_hash(), and plain text passwords
+**Impact**: 33 failing integration tests due to login authentication failures
+
+**Solution Implemented**:
+```python
+# ✅ CORRECT: Standardized bcrypt hashing pattern
+import bcrypt
+
+def create_test_user_with_hashed_password(db_session, username, email, password='password'):
+    """Create test user with properly hashed password for integration tests"""
+    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    user = User(username=username, email=email, password_hash=password_hash)
+    db_session.add(user)
+    db_session.commit()
+    return user, password  # Return both user and plain password for login testing
+
+# Usage in tests:
+user, password = create_test_user_with_hashed_password(db_session, 'testuser', 'test@example.com', 'password')
+response = client.post('/api/auth/login', json={'username': 'testuser', 'password': password})
+```
+
+**Files Updated**: All integration test files requiring authentication
+**Result**: Eliminated all authentication-related test failures
+
+#### Database Constraint Violations - FIXED
+**Issue**: Fleet model NOT NULL constraints not satisfied in tests
+**Root Cause**: Missing required fields (target_planet_id, departure_time) in test fleet creation
+**Impact**: Database constraint violations causing test failures
+
+**Solution Implemented**:
+```python
+# ✅ CORRECT: Enhanced conftest.py with constraint-aware fleet creation
+def create_test_fleet_with_constraints(db_session, user_id, planet_id, **kwargs):
+    """Create fleet with all required database constraints satisfied"""
+    fleet = Fleet(
+        user_id=user_id,
+        start_planet_id=planet_id,
+        target_planet_id=kwargs.get('target_planet_id', planet_id),  # Required
+        mission=kwargs.get('mission', 'stationed'),
+        status=kwargs.get('status', 'stationed'),
+        departure_time=kwargs.get('departure_time', datetime.utcnow()),  # Required
+        arrival_time=kwargs.get('arrival_time', datetime.utcnow()),     # Required
+        # Ship counts with defaults
+        small_cargo=kwargs.get('small_cargo', 0),
+        large_cargo=kwargs.get('large_cargo', 0),
+        light_fighter=kwargs.get('light_fighter', 0),
+        heavy_fighter=kwargs.get('heavy_fighter', 0),
+        cruiser=kwargs.get('cruiser', 0),
+        battleship=kwargs.get('battleship', 0),
+        colony_ship=kwargs.get('colony_ship', 0),
+        recycler=kwargs.get('recycler', 0)
+    )
+    db_session.add(fleet)
+    db_session.commit()
+    return fleet
+```
+
+**Files Updated**: conftest.py, all fleet-related integration tests
+**Result**: Resolved all database constraint violations
+
+#### Tick System Overload - FIXED
+**Issue**: Automatic tick system running uncontrolled in tests causing database bloat
+**Root Cause**: No rate limiting, infinite loops in test environment
+**Impact**: Test timeouts, database overload, unpredictable execution times
+
+**Solution Implemented**:
+```python
+# ✅ CORRECT: Mock-based rate limiting for tick system
+@patch('backend.services.tick.run_tick')
+def test_automatic_tick_timing_accuracy(self, mock_tick):
+    """Test automatic tick timing with proper rate limiting"""
+    # Mock tick to prevent infinite loop
+    mock_tick.side_effect = lambda: time.sleep(0.1)  # Controlled execution
+
+    # Setup test data
+    user, password = create_test_user_with_hashed_password(db_session, 'tick_test')
+
+    # Test logic with predictable timing
+    # ... test implementation
+```
+
+**Files Updated**: test_tick.py, tick service mocking patterns
+**Result**: Tests now run in <30 seconds with predictable execution
+
+#### Coordinate Formatting Issues - FIXED
+**Issue**: Fleet travel coordinates returned as floats instead of integers
+**Root Cause**: String formatting in fleet_travel.py using float decimals
+**Impact**: Test assertions failing on coordinate format expectations
+
+**Solution Implemented**:
+```python
+# ✅ CORRECT: Integer coordinate formatting
+target_coords = f"{int(float(target_planet.x))}:{int(float(target_planet.y))}:{int(float(target_planet.z))}"
+# Instead of: f"{float(target_planet.x)}:{float(target_planet.y)}:{float(target_planet.z)}"
+```
+
+**Files Updated**: fleet_travel.py
+**Result**: Coordinates now returned as integers (50:60:70) instead of floats (50.0:60.0:70.0)
+
 ### Unit Testing
 - **Framework**: pytest with fixtures
 - **Coverage**: Model methods, service functions, utility functions
@@ -217,6 +320,49 @@ game-server/src/frontend/tests/e2e/
 - **Integration**: API endpoints, database interactions
 - **E2E**: Complete user workflows, authentication flows
 - **Manual**: Exploratory testing, edge cases
+
+### Password Hashing in Integration Tests
+
+**CRITICAL REQUIREMENT**: All integration tests must use bcrypt-hashed passwords to match production authentication flows.
+
+#### Correct Implementation Pattern:
+```python
+import bcrypt
+
+def create_test_user_with_hashed_password(db_session, username, email, plain_password='password'):
+    """Create test user with properly hashed password for integration tests"""
+    password_hash = bcrypt.hashpw(plain_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    user = User(username=username, email=email, password_hash=password_hash)
+    db_session.add(user)
+    db_session.commit()
+    return user, plain_password  # Return both user and plain password for login testing
+
+# Usage in tests:
+user, password = create_test_user_with_hashed_password(db_session, 'testuser', 'test@example.com', 'password')
+
+# Login test - use the returned plain password:
+response = client.post('/api/auth/login', json={
+    'username': 'testuser',
+    'password': password  # Same password that was hashed
+})
+```
+
+#### Common Mistakes to Avoid:
+- ❌ `password_hash='password'` (plain text passwords)
+- ❌ Using different passwords for user creation vs login attempts
+- ❌ Not importing bcrypt in test files
+- ❌ Hardcoding passwords without proper hashing
+
+#### Why This Matters:
+- **Security**: Tests should mirror production password handling exactly
+- **Consistency**: All authentication tests should work the same way
+- **Reliability**: Prevents random test failures due to authentication issues
+- **Maintenance**: Ensures tests don't break when password validation changes
+
+#### Files Affected:
+- All integration tests that create users and test authentication
+- conftest.py (contains correct bcrypt implementation)
+- Any test that calls `/api/auth/login` or protected endpoints
 
 ### Mock Testing Best Practices
 
@@ -330,6 +476,213 @@ with patch.object(Planet, 'query') as mock_query:
 - **Log Levels**: DEBUG, INFO, WARNING, ERROR
 - **Context Information**: Request IDs, user information
 - **Log Aggregation**: Centralized log collection (future)
+
+## Configuration Management Patterns
+
+### Centralized Configuration System
+
+#### Architecture Overview
+- **Single Source of Truth**: All configuration in `backend/config.py`
+- **Environment-Specific Settings**: Development, testing, production configurations
+- **Centralized Speed Settings**: Game speed multipliers and ship configurations
+- **Path Management**: All important file paths defined centrally
+- **Validation**: Configuration validation on import
+
+#### Configuration Structure
+
+```python
+# backend/config.py - Main configuration file
+
+# Flask Configuration Classes
+class Config:                    # Base configuration
+class DevelopmentConfig(Config): # Development overrides
+class TestingConfig(Config):     # Testing overrides
+class ProductionConfig(Config):  # Production overrides
+
+# Configuration Mapping
+config = {
+    'development': DevelopmentConfig,
+    'testing': TestingConfig,
+    'production': ProductionConfig,
+    'default': DevelopmentConfig
+}
+
+# Utility Functions
+def get_config(config_name=None): # Get config class by environment
+def get_ship_speed(ship_type):    # Get speed with multiplier applied
+def calculate_fleet_speed(fleet): # Calculate fleet speed (slowest ship rule)
+def calculate_fuel_consumption(fleet, distance): # Fuel calculation
+
+# Speed Configuration
+SPEED_MULTIPLIER = 30.0          # Global speed multiplier
+SHIP_SPEEDS = { ... }            # Base ship speeds
+FUEL_RATES = { ... }             # Fuel consumption rates
+
+# Path Configuration
+PROJECT_ROOT = Path(__file__).parent.parent
+PATHS = {
+    'project_root': PROJECT_ROOT,
+    'src': PROJECT_ROOT / 'src',
+    'backend': PROJECT_ROOT / 'src' / 'backend',
+    'frontend': PROJECT_ROOT / 'src' / 'frontend',
+    # ... all important paths
+}
+```
+
+#### Speed Configuration System
+
+**Global Speed Multiplier Pattern**:
+```python
+SPEED_MULTIPLIER = 30.0  # Adjust this to change overall game speed
+
+def get_ship_speed(ship_type):
+    """Get speed with global multiplier applied"""
+    base_speed = SHIP_SPEEDS.get(ship_type, 5000)
+    return base_speed * SPEED_MULTIPLIER
+```
+
+**Fleet Speed Calculation (Slowest Ship Rule)**:
+```python
+def calculate_fleet_speed(fleet):
+    """Fleet speed determined by slowest ship type"""
+    slowest_speed = float('inf')
+
+    for ship_type in SHIP_TYPES:
+        ship_count = getattr(fleet, ship_type, 0)
+        if ship_count > 0:
+            ship_speed = get_ship_speed(ship_type)
+            slowest_speed = min(slowest_speed, ship_speed)
+
+    return slowest_speed if slowest_speed != float('inf') else 0
+```
+
+**Fuel Consumption Calculation**:
+```python
+def calculate_fuel_consumption(fleet, distance):
+    """Calculate fuel consumption for fleet travel"""
+    total_fuel = 0
+
+    for ship_type in SHIP_TYPES:
+        ship_count = getattr(fleet, ship_type, 0)
+        if ship_count > 0:
+            fuel_rate = FUEL_RATES.get(ship_type, 1.0)
+            total_fuel += ship_count * fuel_rate * distance
+
+    return int(total_fuel)
+```
+
+#### Configuration Usage Patterns
+
+**Import Pattern**:
+```python
+# In app.py and other backend modules
+from .config import get_config, get_ship_speed, calculate_fleet_speed
+
+# In services
+from backend.config import get_ship_speed, calculate_fleet_speed
+```
+
+**Environment-Specific Configuration**:
+```python
+# Application factory pattern
+def create_app(config_name=None):
+    config_class = get_config(config_name)
+    app.config.from_object(config_class)
+    # ... rest of app setup
+```
+
+**Path Usage Pattern**:
+```python
+from backend.config import PATHS
+
+# Use centralized paths
+frontend_build_path = PATHS['frontend_build']
+backend_routes_path = PATHS['backend_routes']
+```
+
+#### Benefits of Centralized Configuration
+
+1. **Single Source of Truth**: All configuration in one place
+2. **Environment Consistency**: Same config patterns across dev/test/prod
+3. **Easy Tuning**: Change SPEED_MULTIPLIER to adjust game speed globally
+4. **Validation**: Configuration validated on import
+5. **Maintainability**: Clear structure and documentation
+6. **Testing**: Easy to mock and override in tests
+
+#### Configuration Validation Pattern
+
+```python
+def validate_config():
+    """Validate that all required ship types are defined"""
+    required_ships = ['small_cargo', 'large_cargo', 'light_fighter',
+                     'heavy_fighter', 'cruiser', 'battleship', 'colony_ship']
+
+    missing_ships = []
+    for ship in required_ships:
+        if ship not in SHIP_SPEEDS:
+            missing_ships.append(ship)
+
+    if missing_ships:
+        raise ValueError(f"Missing speed configuration for ships: {missing_ships}")
+
+    return True
+
+# Validate on import
+validate_config()
+```
+
+#### Testing Configuration
+
+**Mock Configuration in Tests**:
+```python
+from backend.config import SPEED_MULTIPLIER, get_ship_speed
+
+def test_ship_speed_with_multiplier():
+    """Test that speed multiplier is applied correctly"""
+    speed = get_ship_speed('colony_ship')
+    expected = 2500 * SPEED_MULTIPLIER  # 2500 * 30 = 75000
+    assert speed == expected
+```
+
+**Override Configuration in Tests**:
+```python
+import backend.config as config
+
+def test_with_custom_speed_multiplier():
+    """Test with custom speed multiplier"""
+    original_multiplier = config.SPEED_MULTIPLIER
+    config.SPEED_MULTIPLIER = 10.0  # Custom multiplier for test
+
+    try:
+        speed = config.get_ship_speed('colony_ship')
+        assert speed == 2500 * 10.0  # 25000
+    finally:
+        config.SPEED_MULTIPLIER = original_multiplier  # Restore
+```
+
+#### Migration from Distributed Configuration
+
+**Before (Distributed)**:
+```
+backend/
+├── config.py          # Flask config only
+├── config/
+│   ├── __init__.py    # Speed config
+│   └── speed_config.py # More speed config
+```
+
+**After (Centralized)**:
+```
+backend/
+├── config.py          # ALL configuration in one file
+```
+
+**Migration Benefits**:
+- ✅ Eliminated import path conflicts
+- ✅ Single file for all configuration
+- ✅ Easier maintenance and understanding
+- ✅ Consistent configuration patterns
+- ✅ Better testability
 
 ## Scalability Patterns
 

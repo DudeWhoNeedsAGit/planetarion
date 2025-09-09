@@ -64,6 +64,7 @@ def create_app(config_name=None):
         from .routes.chat import chat_bp
         from .routes.research import research_bp
         from .routes.combat import combat_bp
+        from .routes.admin import admin_bp
 
         app.register_blueprint(auth_bp)
         print("✅ Auth blueprint registered")
@@ -97,6 +98,9 @@ def create_app(config_name=None):
 
         app.register_blueprint(combat_bp)
         print("✅ Combat blueprint registered")
+
+        app.register_blueprint(admin_bp)
+        print("✅ Admin blueprint registered")
 
         # Health check endpoint
         @app.route('/health')

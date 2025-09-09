@@ -152,9 +152,19 @@ function FleetManagement({ user, planets }) {
                 <div>
                   <div className="text-gray-400">Ships</div>
                   <div className="text-white">
-                    {fleet.ships.small_cargo + fleet.ships.large_cargo +
-                     fleet.ships.light_fighter + fleet.ships.heavy_fighter +
-                     fleet.ships.cruiser + fleet.ships.battleship} total
+                    {(() => {
+                      // Defensive: handle missing ships data after recall
+                      const ships = fleet.ships || {};
+                      const totalShips = (ships.small_cargo || 0) +
+                                        (ships.large_cargo || 0) +
+                                        (ships.light_fighter || 0) +
+                                        (ships.heavy_fighter || 0) +
+                                        (ships.cruiser || 0) +
+                                        (ships.battleship || 0) +
+                                        (ships.colony_ship || 0) +
+                                        (ships.recycler || 0);
+                      return totalShips + ' total';
+                    })()}
                   </div>
                 </div>
                 <div>
@@ -175,13 +185,17 @@ function FleetManagement({ user, planets }) {
               <div className="mt-3 pt-3 border-t border-gray-600">
                 <div className="text-xs text-gray-400 mb-2">Ship Composition:</div>
                 <div className="flex flex-wrap gap-2 text-xs">
-                  {Object.entries(fleet.ships).map(([shipType, count]) => (
-                    count > 0 && (
-                      <span key={shipType} className="bg-gray-600 px-2 py-1 rounded">
-                        {shipType.replace('_', ' ')}: {count}
-                      </span>
-                    )
-                  ))}
+                  {(() => {
+                    // Defensive: handle missing ships data after recall
+                    const ships = fleet.ships || {};
+                    return Object.entries(ships).map(([shipType, count]) => (
+                      count > 0 && (
+                        <span key={shipType} className="bg-gray-600 px-2 py-1 rounded">
+                          {shipType.replace('_', ' ')}: {count}
+                        </span>
+                      )
+                    ));
+                  })()}
                 </div>
               </div>
             </div>
@@ -203,6 +217,7 @@ function FleetManagement({ user, planets }) {
         <SendFleetModal
           fleet={selectedFleet}
           planets={planets}
+          user={user}
           onSend={handleSendFleet}
           onClose={() => {
             setShowSendForm(false);
@@ -323,7 +338,7 @@ function CreateFleetModal({ planets, onCreate, onClose }) {
   );
 }
 
-function SendFleetModal({ fleet, planets, onSend, onClose }) {
+function SendFleetModal({ fleet, planets, user, onSend, onClose }) {
   const [formData, setFormData] = useState({
     fleet_id: fleet.id,
     target_planet_id: '',
@@ -332,6 +347,45 @@ function SendFleetModal({ fleet, planets, onSend, onClose }) {
     target_z: '',
     mission: 'attack'
   });
+
+  // Get current user ID from user prop
+  const getCurrentUserId = () => {
+    return user?.id || 1; // Fallback to 1 if user not available
+  };
+
+  // Filter planets based on mission type
+  const getFilteredPlanets = () => {
+    const userId = getCurrentUserId();
+
+    switch (formData.mission) {
+      case 'attack':
+        // Show only enemy planets (owned by other users)
+        return planets.filter(planet =>
+          planet.id !== fleet.start_planet_id &&
+          planet.user_id !== null &&
+          planet.user_id !== userId
+        );
+
+      case 'colonize':
+        // Show only unowned planets
+        return planets.filter(planet =>
+          planet.id !== fleet.start_planet_id &&
+          planet.user_id === null
+        );
+
+      case 'transport':
+      case 'deploy':
+        // Show only own planets
+        return planets.filter(planet =>
+          planet.id !== fleet.start_planet_id &&
+          planet.user_id === userId
+        );
+
+      default:
+        // Default: show all planets except start planet
+        return planets.filter(planet => planet.id !== fleet.start_planet_id);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -353,12 +407,20 @@ function SendFleetModal({ fleet, planets, onSend, onClose }) {
               required
             >
               <option value="">Select target planet</option>
-              {planets.filter(p => p.id !== fleet.start_planet_id).map(planet => (
+              {getFilteredPlanets().map(planet => (
                 <option key={planet.id} value={planet.id}>
                   {planet.name} ({planet.coordinates})
+                  {planet.user_id === getCurrentUserId() ? ' 🏠' :
+                   planet.user_id === null ? ' 🌌' : ' ⚔️'}
                 </option>
               ))}
             </select>
+            <p className="text-xs text-gray-400 mt-1">
+              {formData.mission === 'attack' && 'Shows enemy planets only'}
+              {formData.mission === 'colonize' && 'Shows unowned planets only'}
+              {formData.mission === 'transport' && 'Shows your planets only'}
+              {formData.mission === 'deploy' && 'Shows your planets only'}
+            </p>
           </div>
 
           <div className="mb-4">

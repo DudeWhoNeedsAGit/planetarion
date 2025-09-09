@@ -17,12 +17,72 @@ from backend.models import User, Planet, Fleet
 
 shipyard_bp = Blueprint('shipyard', __name__, url_prefix='/api/shipyard')
 
-# Ship costs (simplified for demo)
+# Ship costs for all ship types
 SHIP_COSTS = {
+    'small_cargo': {
+        'metal': 2000,
+        'crystal': 2000,
+        'deuterium': 0
+    },
+    'large_cargo': {
+        'metal': 6000,
+        'crystal': 6000,
+        'deuterium': 0
+    },
+    'light_fighter': {
+        'metal': 3000,
+        'crystal': 1000,
+        'deuterium': 0
+    },
+    'heavy_fighter': {
+        'metal': 6000,
+        'crystal': 4000,
+        'deuterium': 0
+    },
+    'cruiser': {
+        'metal': 20000,
+        'crystal': 7000,
+        'deuterium': 2000
+    },
+    'battleship': {
+        'metal': 45000,
+        'crystal': 15000,
+        'deuterium': 0
+    },
     'colony_ship': {
         'metal': 10000,
         'crystal': 20000,
         'deuterium': 10000
+    },
+    'recycler': {
+        'metal': 10000,
+        'crystal': 6000,
+        'deuterium': 2000
+    },
+    'espionage_probe': {
+        'metal': 0,
+        'crystal': 1000,
+        'deuterium': 0
+    },
+    'bomber': {
+        'metal': 50000,
+        'crystal': 25000,
+        'deuterium': 15000
+    },
+    'destroyer': {
+        'metal': 60000,
+        'crystal': 50000,
+        'deuterium': 15000
+    },
+    'deathstar': {
+        'metal': 5000000,
+        'crystal': 4000000,
+        'deuterium': 1000000
+    },
+    'battlecruiser': {
+        'metal': 30000,
+        'crystal': 40000,
+        'deuterium': 15000
     }
 }
 
@@ -87,11 +147,24 @@ def build_ship():
         db.session.add(fleet)
         db.session.flush()
 
-    # Add ships to fleet
-    if ship_type == 'colony_ship':
-        fleet.colony_ship += quantity
+    # Add ships to fleet dynamically
+    if hasattr(fleet, ship_type):
+        current_count = getattr(fleet, ship_type) or 0
+        setattr(fleet, ship_type, current_count + quantity)
+    else:
+        return jsonify({'error': f'Fleet model does not support ship type: {ship_type}'}), 400
 
     db.session.commit()
+
+    # Build response with updated fleet info
+    fleet_info = {'id': fleet.id}
+    # Include all ship counts in response
+    ship_fields = ['small_cargo', 'large_cargo', 'light_fighter', 'heavy_fighter',
+                   'cruiser', 'battleship', 'colony_ship', 'recycler', 'espionage_probe',
+                   'bomber', 'destroyer', 'deathstar', 'battlecruiser']
+    for field in ship_fields:
+        if hasattr(fleet, field):
+            fleet_info[field] = getattr(fleet, field) or 0
 
     return jsonify({
         'message': f'Successfully built {quantity} {ship_type}(s)',
@@ -100,10 +173,7 @@ def build_ship():
             'crystal': planet.crystal,
             'deuterium': planet.deuterium
         },
-        'fleet': {
-            'id': fleet.id,
-            'colony_ship': fleet.colony_ship
-        }
+        'fleet': fleet_info
     }), 200
 
 @shipyard_bp.route('/costs', methods=['GET'])

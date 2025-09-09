@@ -1,3 +1,10 @@
+"""
+Planetarion Configuration
+
+Centralized configuration for the Planetarion game server.
+Contains Flask configuration classes, speed settings, and utility functions.
+"""
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -136,3 +143,125 @@ PATHS = {
     'dockerfiles': PROJECT_ROOT / 'src' / 'backend' / 'Dockerfile',
     'docker_compose': PROJECT_ROOT / 'docker-compose.yml',
 }
+
+
+# ============================================================================
+# SPEED CONFIGURATION - Centralized speed settings for the game
+# ============================================================================
+
+# Global speed multiplier - adjust this to change overall game speed
+SPEED_MULTIPLIER = 1.0
+
+# Base ship speeds (units per hour at normal speed)
+SHIP_SPEEDS = {
+    'small_cargo': 5000,
+    'large_cargo': 7500,
+    'light_fighter': 12500,
+    'heavy_fighter': 10000,
+    'cruiser': 15000,
+    'battleship': 10000,
+    'colony_ship': 10000,  # Intentionally slow for strategic gameplay
+    'recycler': 2000,
+    'espionage_probe': 100000,  # Very fast for scouting
+    'bomber': 4000,
+    'destroyer': 5000,
+    'deathstar': 100,
+    'battlecruiser': 10000
+}
+
+# Fuel consumption rates (deuterium per unit distance)
+FUEL_RATES = {
+    'small_cargo': 1.0,
+    'large_cargo': 1.5,
+    'light_fighter': 1.0,
+    'heavy_fighter': 2.0,
+    'cruiser': 2.0,
+    'battleship': 3.0,
+    'colony_ship': 3.0,
+    'recycler': 2.0,
+    'espionage_probe': 1.0,
+    'bomber': 3.0,
+    'destroyer': 4.0,
+    'deathstar': 5.0,
+    'battlecruiser': 3.0
+}
+
+def get_ship_speed(ship_type):
+    """Get the speed for a ship type with global multiplier applied"""
+    base_speed = SHIP_SPEEDS.get(ship_type, 5000)
+    return base_speed * SPEED_MULTIPLIER
+
+def get_ship_fuel_rate(ship_type):
+    """Get the fuel consumption rate for a ship type"""
+    return FUEL_RATES.get(ship_type, 1.0)
+
+def get_all_ship_speeds():
+    """Get all ship speeds with multiplier applied"""
+    return {ship_type: speed * SPEED_MULTIPLIER for ship_type, speed in SHIP_SPEEDS.items()}
+
+def calculate_fleet_speed(fleet):
+    """Calculate fleet speed (limited by slowest ship)"""
+    if not fleet:
+        return 0
+
+    ship_types = ['small_cargo', 'large_cargo', 'light_fighter', 'heavy_fighter',
+                 'cruiser', 'battleship', 'colony_ship', 'recycler', 'espionage_probe',
+                 'bomber', 'destroyer', 'deathstar', 'battlecruiser']
+
+    slowest_speed = float('inf')
+
+    for ship_type in ship_types:
+        if hasattr(fleet, ship_type):
+            ship_count = getattr(fleet, ship_type, 0)
+            if ship_count > 0:
+                ship_speed = get_ship_speed(ship_type)
+                slowest_speed = min(slowest_speed, ship_speed)
+
+    return slowest_speed if slowest_speed != float('inf') else get_ship_speed('small_cargo')
+
+def calculate_fuel_consumption(fleet, distance):
+    """Calculate total fuel consumption for a fleet traveling a distance"""
+    if not fleet or distance <= 0:
+        return 0
+
+    total_fuel = 0
+    ship_types = ['small_cargo', 'large_cargo', 'light_fighter', 'heavy_fighter',
+                 'cruiser', 'battleship', 'colony_ship', 'recycler', 'espionage_probe',
+                 'bomber', 'destroyer', 'deathstar', 'battlecruiser']
+
+    for ship_type in ship_types:
+        if hasattr(fleet, ship_type):
+            ship_count = getattr(fleet, ship_type, 0)
+            if ship_count > 0:
+                fuel_rate = get_ship_fuel_rate(ship_type)
+                total_fuel += ship_count * fuel_rate * distance
+
+    return int(total_fuel)
+
+# Speed categories for reference
+SPEED_CATEGORIES = {
+    'very_fast': ['espionage_probe'],
+    'fast': ['light_fighter', 'cruiser'],
+    'medium': ['small_cargo', 'large_cargo', 'heavy_fighter', 'battleship', 'battlecruiser'],
+    'slow': ['bomber', 'destroyer', 'recycler'],
+    'very_slow': ['colony_ship', 'deathstar']
+}
+
+# Configuration validation
+def validate_config():
+    """Validate that all required ship types are defined"""
+    required_ships = ['small_cargo', 'large_cargo', 'light_fighter', 'heavy_fighter',
+                     'cruiser', 'battleship', 'colony_ship', 'recycler']
+
+    missing_ships = []
+    for ship in required_ships:
+        if ship not in SHIP_SPEEDS:
+            missing_ships.append(ship)
+
+    if missing_ships:
+        raise ValueError(f"Missing speed configuration for ships: {missing_ships}")
+
+    return True
+
+# Validate configuration on import
+validate_config()

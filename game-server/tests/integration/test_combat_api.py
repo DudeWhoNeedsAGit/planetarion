@@ -15,39 +15,48 @@ from backend.models import User, Planet, Fleet, CombatReport, DebrisField
 
 def test_get_combat_reports_empty(client, db_session):
     """Test getting combat reports when user has none"""
-    # Create test user
-    user = User(username='testuser', email='test@example.com', password_hash='hash')
-    db_session.add(user)
-    db_session.commit()
+    from conftest import create_test_user_with_hashed_password
+
+    # Create test user with properly hashed password
+    user, password = create_test_user_with_hashed_password(db_session, 'testuser', 'test@example.com', 'password')
 
     # Login to get token
-    response = client.post('/api/auth/login', json={
+    login_response = client.post('/api/auth/login', json={
         'username': 'testuser',
-        'password': 'password123'
+        'password': password  # Use the correctly hashed password
     })
 
-    assert response.status_code == 401  # Should fail with wrong password
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
-    # For testing purposes, we'll mock the JWT requirement
-    with client.application.test_request_context():
-        with patch('flask_jwt_extended.get_jwt_identity', return_value=user.id):
-            response = client.get('/api/combat/reports')
+    # Get combat reports
+    response = client.get('/api/combat/reports', headers={
+        'Authorization': f'Bearer {token}'
+    })
 
-            assert response.status_code == 200
-            data = json.loads(response.data)
-            assert 'reports' in data
-            assert 'total' in data
-            assert data['total'] == 0
-            assert len(data['reports']) == 0
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert 'reports' in data
+    assert 'total' in data
+    assert data['total'] == 0
+    assert len(data['reports']) == 0
 
 
 def test_get_combat_reports_with_data(client, db_session):
     """Test getting combat reports when user has battle history"""
-    # Create test users
-    attacker = User(username='attacker', email='attacker@example.com', password_hash='hash')
-    defender = User(username='defender', email='defender@example.com', password_hash='hash')
-    db_session.add(attacker)
-    db_session.add(defender)
+    from conftest import create_test_user_with_hashed_password
+
+    # Create test users with properly hashed passwords
+    attacker, attacker_password = create_test_user_with_hashed_password(db_session, 'attacker', 'attacker@example.com', 'password')
+    defender, defender_password = create_test_user_with_hashed_password(db_session, 'defender', 'defender@example.com', 'password')
+
+    # Login as attacker to get token
+    login_response = client.post('/api/auth/login', json={
+        'username': 'attacker',
+        'password': attacker_password
+    })
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
     # Create planet
     planet = Planet(name='Battle Planet', x=100, y=200, z=300, user_id=defender.id)
@@ -90,11 +99,19 @@ def test_get_combat_reports_with_data(client, db_session):
 
 def test_get_combat_report_detail(client, db_session):
     """Test getting detailed combat report by ID"""
+    from conftest import create_test_user_with_hashed_password
+
     # Create test users and planet
-    attacker = User(username='attacker', email='attacker@example.com', password_hash='hash')
-    defender = User(username='defender', email='defender@example.com', password_hash='hash')
-    db_session.add(attacker)
-    db_session.add(defender)
+    attacker, attacker_password = create_test_user_with_hashed_password(db_session, 'attacker', 'attacker@example.com', 'password')
+    defender, defender_password = create_test_user_with_hashed_password(db_session, 'defender', 'defender@example.com', 'password')
+
+    # Login as attacker to get token
+    login_response = client.post('/api/auth/login', json={
+        'username': 'attacker',
+        'password': attacker_password
+    })
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
     planet = Planet(name='Battle Planet', x=100, y=200, z=300, user_id=defender.id)
     db_session.add(planet)
@@ -131,13 +148,20 @@ def test_get_combat_report_detail(client, db_session):
 
 def test_get_combat_report_unauthorized(client, db_session):
     """Test that users cannot access reports they're not involved in"""
+    from conftest import create_test_user_with_hashed_password
+
     # Create test users
-    attacker = User(username='attacker', email='attacker@example.com', password_hash='hash')
-    defender = User(username='defender', email='defender@example.com', password_hash='hash')
-    third_party = User(username='third', email='third@example.com', password_hash='hash')
-    db_session.add(attacker)
-    db_session.add(defender)
-    db_session.add(third_party)
+    attacker, attacker_password = create_test_user_with_hashed_password(db_session, 'attacker', 'attacker@example.com', 'password')
+    defender, defender_password = create_test_user_with_hashed_password(db_session, 'defender', 'defender@example.com', 'password')
+    third_party, third_password = create_test_user_with_hashed_password(db_session, 'third', 'third@example.com', 'password')
+
+    # Login as third party to get token
+    login_response = client.post('/api/auth/login', json={
+        'username': 'third',
+        'password': third_password
+    })
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
     # Create planet
     planet = Planet(name='Battle Planet', x=100, y=200, z=300, user_id=defender.id)
@@ -171,9 +195,18 @@ def test_get_combat_report_unauthorized(client, db_session):
 
 def test_get_debris_fields(client, db_session):
     """Test getting debris fields"""
+    from conftest import create_test_user_with_hashed_password
+
     # Create test user and planet
-    user = User(username='testuser', email='testuser@example.com', password_hash='hash')
-    db_session.add(user)
+    user, password = create_test_user_with_hashed_password(db_session, 'testuser', 'testuser@example.com', 'password')
+
+    # Login to get token
+    login_response = client.post('/api/auth/login', json={
+        'username': 'testuser',
+        'password': password
+    })
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
     planet = Planet(name='Debris Planet', x=100, y=200, z=300, user_id=user.id)
     db_session.add(planet)
@@ -208,9 +241,18 @@ def test_get_debris_fields(client, db_session):
 
 def test_get_planet_debris(client, db_session):
     """Test getting debris field for specific planet"""
+    from conftest import create_test_user_with_hashed_password
+
     # Create test user and planet
-    user = User(username='testuser', email='testuser@example.com', password_hash='hash')
-    db_session.add(user)
+    user, password = create_test_user_with_hashed_password(db_session, 'testuser', 'testuser@example.com', 'password')
+
+    # Login to get token
+    login_response = client.post('/api/auth/login', json={
+        'username': 'testuser',
+        'password': password
+    })
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
     planet = Planet(name='Debris Planet', x=100, y=200, z=300, user_id=user.id)
     db_session.add(planet)
@@ -241,9 +283,18 @@ def test_get_planet_debris(client, db_session):
 
 def test_get_planet_debris_not_found(client, db_session):
     """Test getting debris field for planet with no debris"""
+    from conftest import create_test_user_with_hashed_password
+
     # Create test user and planet
-    user = User(username='testuser', email='testuser@example.com', password_hash='hash')
-    db_session.add(user)
+    user, password = create_test_user_with_hashed_password(db_session, 'testuser', 'testuser@example.com', 'password')
+
+    # Login to get token
+    login_response = client.post('/api/auth/login', json={
+        'username': 'testuser',
+        'password': password
+    })
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
     planet = Planet(name='Clean Planet', x=100, y=200, z=300, user_id=user.id)
     db_session.add(planet)
@@ -261,10 +312,18 @@ def test_get_planet_debris_not_found(client, db_session):
 
 def test_get_combat_statistics(client, db_session):
     """Test getting combat statistics for user"""
+    from conftest import create_test_user_with_hashed_password
+
     # Create test user
-    user = User(username='testuser', email='testuser@example.com', password_hash='hash')
-    db_session.add(user)
-    db_session.commit()
+    user, password = create_test_user_with_hashed_password(db_session, 'testuser', 'testuser@example.com', 'password')
+
+    # Login to get token
+    login_response = client.post('/api/auth/login', json={
+        'username': 'testuser',
+        'password': password
+    })
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
     # Create some fleets with combat stats
     fleet1 = Fleet(
@@ -313,11 +372,19 @@ def test_get_combat_statistics(client, db_session):
 
 def test_combat_reports_pagination(client, db_session):
     """Test combat reports pagination"""
+    from conftest import create_test_user_with_hashed_password
+
     # Create test users
-    attacker = User(username='attacker', email='attacker@example.com', password_hash='hash')
-    defender = User(username='defender', email='defender@example.com', password_hash='hash')
-    db_session.add(attacker)
-    db_session.add(defender)
+    attacker, attacker_password = create_test_user_with_hashed_password(db_session, 'attacker', 'attacker@example.com', 'password')
+    defender, defender_password = create_test_user_with_hashed_password(db_session, 'defender', 'defender@example.com', 'password')
+
+    # Login as attacker to get token
+    login_response = client.post('/api/auth/login', json={
+        'username': 'attacker',
+        'password': attacker_password
+    })
+    assert login_response.status_code == 200
+    token = login_response.get_json()['token']
 
     # Create planet
     planet = Planet(name='Battle Planet', x=100, y=200, z=300, user_id=defender.id)

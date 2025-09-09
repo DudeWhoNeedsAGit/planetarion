@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import planetImage from './images/p4.png';
+import { useToast } from './ToastContext';
 
 // Enhanced Debug Infrastructure for E2E Testing
 const DEBUG_MODE = process.env.NODE_ENV === 'development' || process.env.REACT_APP_DEBUG_MODE === 'true';
@@ -97,6 +98,7 @@ const CoordinateUtils = {
 };
 
 function GalaxyMap({ user, planets, onClose }) {
+  const { showSuccess, showError, showInfo } = useToast();
   const [systems, setSystems] = useState([]);
   const [selectedSystem, setSelectedSystem] = useState(null);
   const [loading, setLoading] = useState(true); // Start with loading true
@@ -231,7 +233,7 @@ function GalaxyMap({ user, planets, onClose }) {
       const availableFleet = fleetData.find(f => f.status === 'stationed');
 
       if (!availableFleet) {
-        alert('No available fleets for exploration!');
+        showError('No available fleets for exploration! Build ships in the Shipyard first.');
         return;
       }
 
@@ -254,18 +256,54 @@ function GalaxyMap({ user, planets, onClose }) {
         throw new Error(`HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
       }
 
-      alert(`Exploration fleet sent to ${system.x}:${system.y}:${system.z}`);
+      showSuccess(`🚀 Exploration fleet sent to ${system.x}:${system.y}:${system.z}!`, 4000);
     } catch (error) {
       console.error('Error sending exploration fleet:', error);
-      alert('Failed to send exploration fleet');
+      showError('Failed to send exploration fleet. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Calculate colonization difficulty for a planet
+  const calculateColonizationDifficulty = (planet) => {
+    if (!planet) return 1;
+
+    // Calculate distance from origin (0,0,0)
+    const distanceFromOrigin = Math.sqrt(
+      Math.pow(planet.x || 0, 2) +
+      Math.pow(planet.y || 0, 2) +
+      Math.pow(planet.z || 0, 2)
+    ) / 3;
+
+    // Difficulty formula: min(5, max(1, floor(distance / 200)))
+    const difficulty = Math.min(5, Math.max(1, Math.floor(distanceFromOrigin / 200)));
+    return difficulty;
+  };
+
+  // Check if user can colonize a planet
+  const canColonizePlanet = (planet) => {
+    if (!planet || planet.user_id) return false;
+
+    const difficulty = calculateColonizationDifficulty(planet);
+    // Assume user has colonization tech level (in real implementation, this would come from user data)
+    const userColonizationLevel = 3; // Placeholder - should come from user research data
+
+    return userColonizationLevel >= difficulty;
+  };
+
   const handleColonizePlanet = async (planet) => {
     if (planet.user_id) {
-      alert('Planet is already colonized!');
+      showError('Planet is already colonized!');
+      return;
+    }
+
+    // Check colonization requirements
+    const difficulty = calculateColonizationDifficulty(planet);
+    const canColonize = canColonizePlanet(planet);
+
+    if (!canColonize) {
+      showError(`Colonization difficulty ${difficulty} requires research level ${difficulty}. Upgrade your colonization technology first!`);
       return;
     }
 
@@ -294,7 +332,7 @@ function GalaxyMap({ user, planets, onClose }) {
       );
 
       if (!colonyFleet) {
-        alert('No fleets with colony ships available! Build colony ships in the Shipyard first.');
+        showError('No fleets with colony ships available! Build colony ships in the Shipyard first.');
         return;
       }
 
@@ -324,14 +362,14 @@ function GalaxyMap({ user, planets, onClose }) {
       // Show success message with ETA
       const etaSeconds = result.fleet?.eta || 0;
       const etaMinutes = Math.ceil(etaSeconds / 60);
-      alert(`🚀 Colonization fleet sent to ${planet.name}!\n\nETA: ${etaMinutes} minutes\n\nThe planet will be colonized automatically when the fleet arrives.`);
+      showSuccess(`🚀 Colonization fleet sent to ${planet.name}! ETA: ${etaMinutes} minutes`, 5000);
 
       // Refresh galaxy data immediately to show the fleet is in transit
       await fetchNearbySystems();
 
     } catch (error) {
       console.error('❌ Error sending colonization fleet:', error);
-      alert(`Failed to send colonization fleet: ${error.message}`);
+      showError(`Failed to send colonization fleet: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -684,25 +722,70 @@ function GalaxyMap({ user, planets, onClose }) {
   );
 }
 
-// Enhanced Planet Card Component
+// Enhanced Planet Card Component with Colonization Indicators
 function PlanetCard({ planet, onColonize, loading, centerX, centerY, centerZ }) {
+  // Calculate colonization difficulty
+  const colonizationDifficulty = (() => {
+    if (!planet || planet.user_id) return null;
+
+    // Calculate distance from origin (0,0,0)
+    const distanceFromOrigin = Math.sqrt(
+      Math.pow(planet.x || 0, 2) +
+      Math.pow(planet.y || 0, 2) +
+      Math.pow(planet.z || 0, 2)
+    ) / 3;
+
+    // Difficulty formula: min(5, max(1, floor(distance / 200)))
+    const difficulty = Math.min(5, Math.max(1, Math.floor(distanceFromOrigin / 200)));
+    return difficulty;
+  })();
+
+  // Check if user can colonize (placeholder - should come from user research data)
+  const userColonizationLevel = 3; // Placeholder - should come from user research data
+  const canColonize = colonizationDifficulty && userColonizationLevel >= colonizationDifficulty;
+
   // Generate mock traits for demonstration (in real implementation, this would come from API)
   const mockTraits = planet.user_id ? [] : [
     { name: 'Rich Metal', bonus: 25 },
     { name: 'Crystal Rich', bonus: 15 }
   ];
 
+  // Get difficulty color and icon
+  const getDifficultyDisplay = (difficulty) => {
+    if (!difficulty) return null;
+
+    const colors = {
+      1: { bg: 'bg-green-600', text: 'text-green-300', icon: '⭐' },
+      2: { bg: 'bg-blue-600', text: 'text-blue-300', icon: '⭐⭐' },
+      3: { bg: 'bg-yellow-600', text: 'text-yellow-300', icon: '⭐⭐⭐' },
+      4: { bg: 'bg-orange-600', text: 'text-orange-300', icon: '⭐⭐⭐⭐' },
+      5: { bg: 'bg-red-600', text: 'text-red-300', icon: '⭐⭐⭐⭐⭐' }
+    };
+
+    const color = colors[difficulty] || colors[1];
+    return { ...color, difficulty };
+  };
+
+  const difficultyDisplay = getDifficultyDisplay(colonizationDifficulty);
+
   return (
     <div className={`bg-gray-600 rounded-lg p-4 border-2 transition-all duration-200 ${
       planet.user_id
         ? 'border-blue-500 bg-gray-600'
-        : 'border-green-500 bg-gray-700 hover:bg-gray-650'
+        : canColonize
+          ? 'border-green-500 bg-gray-700 hover:bg-gray-650'
+          : 'border-red-500 bg-gray-700 opacity-75'
     }`}>
       {/* Planet Header */}
       <div className="flex justify-between items-start mb-3">
         <div className="flex-1">
           <h4 className="text-white font-bold text-lg flex items-center">
             🪐 {planet.name}
+            {difficultyDisplay && (
+              <span className={`ml-2 px-2 py-1 text-xs rounded ${difficultyDisplay.bg} ${difficultyDisplay.text}`}>
+                {difficultyDisplay.icon} Difficulty {difficultyDisplay.difficulty}
+              </span>
+            )}
           </h4>
           <div className="text-sm text-gray-300">
             {planet.coordinates || `${planet.x}:${planet.y}:${planet.z}`}
@@ -725,6 +808,32 @@ function PlanetCard({ planet, onColonize, loading, centerX, centerY, centerZ }) 
           )}
         </div>
       </div>
+
+      {/* Colonization Requirements */}
+      {!planet.user_id && colonizationDifficulty && (
+        <div className="mb-3 p-3 bg-gray-800 rounded border">
+          <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
+            🚀 Colonization Requirements
+          </h5>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Difficulty:</span>
+              <span className={`font-bold ${canColonize ? 'text-green-400' : 'text-red-400'}`}>
+                {colonizationDifficulty}/5
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Your Level:</span>
+              <span className="text-blue-400 font-bold">{userColonizationLevel}</span>
+            </div>
+          </div>
+          {!canColonize && (
+            <div className="mt-2 text-xs text-red-400 bg-red-900 bg-opacity-50 p-2 rounded">
+              ⚠️ Requires colonization technology level {colonizationDifficulty}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Planet Traits */}
       {mockTraits.length > 0 && (

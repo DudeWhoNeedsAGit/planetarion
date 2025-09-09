@@ -19,8 +19,10 @@ class TestEnhancedFleetAPI:
 
     def test_get_fleets_includes_travel_info(self, client, db_session):
         """Test that fleet responses include travel information"""
-        # Create test user
-        user = User(username='testuser', email='test@example.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username='testuser', email='test@example.com', password_hash=password_hash)
         db_session.add(user)
         db_session.commit()
 
@@ -31,11 +33,13 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create traveling fleet
-        fleet = Fleet(
-            user_id=user.id,
-            mission='attack',
-            start_planet_id=start_planet.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            start_planet.id,
             target_planet_id=target_planet.id,
+            mission='attack',
             status='traveling',
             departure_time=datetime.utcnow() - timedelta(hours=1),
             arrival_time=datetime.utcnow() + timedelta(hours=1),
@@ -43,8 +47,6 @@ class TestEnhancedFleetAPI:
             small_cargo=5,
             light_fighter=10
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -86,8 +88,10 @@ class TestEnhancedFleetAPI:
 
     def test_get_fleets_stationed_no_travel_info(self, client, db_session):
         """Test that stationed fleets don't include travel info"""
-        # Create test user
-        user = User(username='testuser2', email='test2@example.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username='testuser2', email='test2@example.com', password_hash=password_hash)
         db_session.add(user)
         db_session.commit()
 
@@ -97,16 +101,15 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create stationed fleet
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            planet.id,
             mission='stationed',
-            start_planet_id=planet.id,
-            target_planet_id=planet.id,
             status='stationed',
             small_cargo=5
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -129,8 +132,10 @@ class TestEnhancedFleetAPI:
 
     def test_get_fleets_coordinate_based_mission(self, client, db_session):
         """Test fleet responses for coordinate-based missions"""
-        # Create test user
-        user = User(username='testuser3', email='test3@example.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username='testuser3', email='test3@example.com', password_hash=password_hash)
         db_session.add(user)
         db_session.commit()
 
@@ -140,11 +145,13 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create fleet with coordinate-based mission
-        fleet = Fleet(
-            user_id=user.id,
-            mission='colonize',
-            start_planet_id=start_planet.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            start_planet.id,
             target_planet_id=0,  # Coordinate-based
+            mission='colonize',
             status='colonizing:100:200:300',
             departure_time=datetime.utcnow() - timedelta(hours=1),
             arrival_time=datetime.utcnow() + timedelta(hours=1),
@@ -152,8 +159,6 @@ class TestEnhancedFleetAPI:
             colony_ship=1,
             small_cargo=5
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -182,8 +187,10 @@ class TestEnhancedFleetAPI:
 
     def test_send_fleet_colonization_with_planet_selection(self, client, db_session):
         """Test sending colonization fleet with planet selection"""
-        # Create test user
-        user = User(username='testuser4', email='test4@example.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username='testuser4', email='test4@example.com', password_hash=password_hash)
         db_session.add(user)
         db_session.commit()
 
@@ -194,17 +201,16 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create fleet with colony ship
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            start_planet.id,
             mission='stationed',
-            start_planet_id=start_planet.id,
-            target_planet_id=start_planet.id,
             status='stationed',
             colony_ship=1,
             small_cargo=5
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -229,8 +235,10 @@ class TestEnhancedFleetAPI:
 
     def test_send_fleet_colonization_with_coordinates(self, client, db_session):
         """Test sending colonization fleet with direct coordinates"""
-        # Create test user
-        user = User(username='testuser5', email='test5@example.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username='testuser5', email='test5@example.com', password_hash=password_hash)
         db_session.add(user)
         db_session.commit()
 
@@ -240,17 +248,16 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create fleet with colony ship
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            start_planet.id,
             mission='stationed',
-            start_planet_id=start_planet.id,
-            target_planet_id=start_planet.id,
             status='stationed',
             colony_ship=1,
             small_cargo=5
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -277,8 +284,10 @@ class TestEnhancedFleetAPI:
 
     def test_send_fleet_colonization_no_colony_ship(self, client, db_session):
         """Test sending colonization fleet without colony ships"""
-        # Create test user
-        user = User(username='testuser6', email='test6@example.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username='testuser6', email='test6@example.com', password_hash=password_hash)
         db_session.add(user)
         db_session.commit()
 
@@ -288,16 +297,15 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create fleet without colony ship
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            start_planet.id,
             mission='stationed',
-            start_planet_id=start_planet.id,
-            target_planet_id=start_planet.id,
             status='stationed',
             small_cargo=5  # No colony ship
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -323,8 +331,10 @@ class TestEnhancedFleetAPI:
 
     def test_send_fleet_colonization_occupied_coordinates(self, client, db_session):
         """Test sending colonization fleet to occupied coordinates"""
-        # Create test user
-        user = User(username='testuser7', email='test7@example.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username='testuser7', email='test7@example.com', password_hash=password_hash)
         db_session.add(user)
         db_session.commit()
 
@@ -335,16 +345,15 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create fleet with colony ship
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            start_planet.id,
             mission='stationed',
-            start_planet_id=start_planet.id,
-            target_planet_id=start_planet.id,
             status='stationed',
             colony_ship=1
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -392,8 +401,10 @@ class TestEnhancedFleetAPI:
 
     def test_fleet_response_includes_ship_counts(self, client, db_session):
         """Test that fleet responses include accurate ship counts"""
-        # Create test user
-        user = User(username='testuser8', email='test8@example.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username='testuser8', email='test8@example.com', password_hash=password_hash)
         db_session.add(user)
         db_session.commit()
 
@@ -403,11 +414,12 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create fleet with specific ship counts
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            planet.id,
             mission='stationed',
-            start_planet_id=planet.id,
-            target_planet_id=planet.id,
             status='stationed',
             small_cargo=3,
             large_cargo=2,
@@ -417,8 +429,6 @@ class TestEnhancedFleetAPI:
             battleship=1,
             colony_ship=1
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={

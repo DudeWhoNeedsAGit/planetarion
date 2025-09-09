@@ -14,6 +14,7 @@ Used by both backend API responses and frontend displays.
 from datetime import datetime
 import math
 from backend.models import Planet, Fleet
+from backend.config import get_ship_speed, calculate_fleet_speed
 
 
 class FleetTravelService:
@@ -35,6 +36,11 @@ class FleetTravelService:
         is_coordinate_based = fleet.status and (fleet.status.startswith('colonizing:') or fleet.status.startswith('exploring:'))
 
         if not fleet or (fleet.status not in valid_statuses and not is_coordinate_based):
+            return None
+
+        # For exploration fleets, ensure they have arrival times set
+        if is_coordinate_based and fleet.status.startswith('exploring:') and not fleet.arrival_time:
+            print(f"WARNING: Exploration fleet {fleet.id} has no arrival time set")
             return None
 
         # Get start and target planets
@@ -71,10 +77,10 @@ class FleetTravelService:
         # Calculate fleet speed (based on slowest ship)
         fleet_speed = FleetTravelService.calculate_fleet_speed(fleet)
 
-        # Calculate total duration
-        total_duration_hours = distance / fleet_speed if fleet_speed > 0 else 0
+        # Calculate theoretical duration (for display purposes)
+        theoretical_duration_hours = distance / fleet_speed if fleet_speed > 0 else 0
 
-        # Calculate current progress
+        # Use actual fleet travel time (which includes minimum travel time)
         if fleet.departure_time and fleet.arrival_time:
             total_duration = (fleet.arrival_time - fleet.departure_time).total_seconds() / 3600
             elapsed_time = (datetime.utcnow() - fleet.departure_time).total_seconds() / 3600
@@ -88,14 +94,16 @@ class FleetTravelService:
             else:
                 current_x, current_y, current_z = target_planet.x, target_planet.y, target_planet.z
         else:
+            # Fallback to theoretical calculation if times not set
+            total_duration = theoretical_duration_hours
             progress_percentage = 0
             current_x, current_y, current_z = start_planet.x, start_planet.y, start_planet.z
 
-        # Ensure coordinates are numeric before formatting
+        # Format coordinates as integers (no decimals)
         try:
-            current_pos = f"{float(current_x):.1f}:{float(current_y):.1f}:{float(current_z):.1f}"
-            start_coords = f"{float(start_planet.x)}:{float(start_planet.y)}:{float(start_planet.z)}"
-            target_coords = f"{float(target_planet.x)}:{float(target_planet.y)}:{float(target_planet.z)}"
+            current_pos = f"{int(float(current_x))}:{int(float(current_y))}:{int(float(current_z))}"
+            start_coords = f"{int(float(start_planet.x))}:{int(float(start_planet.y))}:{int(float(start_planet.z))}"
+            target_coords = f"{int(float(target_planet.x))}:{int(float(target_planet.y))}:{int(float(target_planet.z))}"
         except (TypeError, ValueError):
             # Fallback for cases where coordinates might not be numeric (e.g., test mocks)
             current_pos = f"{current_x}:{current_y}:{current_z}"
@@ -104,7 +112,7 @@ class FleetTravelService:
 
         return {
             'distance': round(distance, 2),
-            'total_duration_hours': round(total_duration_hours, 2),
+            'total_duration_hours': round(total_duration, 2),
             'progress_percentage': round(progress_percentage, 1),
             'current_position': current_pos,
             'fleet_speed': round(fleet_speed, 1),
@@ -140,7 +148,7 @@ class FleetTravelService:
     @staticmethod
     def calculate_fleet_speed(fleet):
         """
-        Calculate fleet speed based on ship composition
+        Calculate fleet speed based on ship composition using centralized configuration
         Speed is determined by the slowest ship in the fleet
 
         Args:
@@ -149,33 +157,7 @@ class FleetTravelService:
         Returns:
             float: Fleet speed in units per hour
         """
-        if not fleet:
-            return 0
-
-        # Ship speed hierarchy (slowest to fastest)
-        ship_speeds = {
-            'colony_ship': 2500,      # Slowest - colony ships are heavy
-            'battleship': 3000,       # Heavy combat ships
-            'cruiser': 3500,          # Medium combat ships
-            'heavy_fighter': 4000,    # Heavy fighters
-            'light_fighter': 4500,    # Light fighters
-            'large_cargo': 3500,      # Large cargo ships
-            'small_cargo': 5000       # Fastest - small cargo ships
-        }
-
-        slowest_speed = float('inf')
-
-        # Check each ship type in the fleet
-        for ship_type, speed in ship_speeds.items():
-            ship_count = getattr(fleet, ship_type, 0)
-            if ship_count > 0 and speed < slowest_speed:
-                slowest_speed = speed
-
-        # If no ships found, use default speed
-        if slowest_speed == float('inf'):
-            slowest_speed = 5000  # Default small cargo speed
-
-        return slowest_speed
+        return calculate_fleet_speed(fleet)
 
     @staticmethod
     def format_time_remaining(seconds):

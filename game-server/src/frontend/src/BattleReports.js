@@ -26,12 +26,16 @@ const BattleReports = ({ user }) => {
 
       if (response.ok) {
         const data = await response.json();
-        setReports(data);
+        // Defensive: ensure we have an array from the reports property
+        const reportsArray = Array.isArray(data.reports) ? data.reports : [];
+        setReports(reportsArray);
       } else {
         console.error('Failed to fetch battle reports');
+        setReports([]); // Set empty array on error
       }
     } catch (error) {
       console.error('Error fetching battle reports:', error);
+      setReports([]); // Set empty array on error
     } finally {
       setLoading(false);
     }

@@ -228,9 +228,9 @@ def populate_database():
                         y=y,
                         z=z,
                         user_id=user.id,
-                        metal=random.randint(1000, 1000000),
-                        crystal=random.randint(500, 500000),
-                        deuterium=random.randint(0, 200000),
+                        metal=2000000,  # Fixed abundant resources for E2E testing
+                        crystal=1500000,
+                        deuterium=1000000,
                         metal_mine=random.randint(1, 20),
                         crystal_mine=random.randint(1, 15),
                         deuterium_synthesizer=random.randint(0, 10),

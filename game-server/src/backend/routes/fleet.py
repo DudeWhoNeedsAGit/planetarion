@@ -14,6 +14,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet, Fleet, Research
+from backend.services.fleet_arrival import FleetArrivalService, COLONIZATION_ERRORS, MISSION_ERRORS
 from datetime import datetime, timedelta
 import math
 
@@ -237,25 +238,26 @@ def send_fleet():
         fleet.status = 'traveling'
 
     elif data['mission'] == 'colonize':
-        # Enhanced colonization validation - handle both planet selection and coordinate entry
+        # Enhanced colonization validation with comprehensive error handling
 
-        # Check if fleet has colony ships
+        # Validate colony ship presence
         if fleet.colony_ship <= 0:
-            return jsonify({'error': 'Fleet must contain at least one colony ship for colonization missions'}), 400
+            return jsonify({'error': COLONIZATION_ERRORS['no_colony_ship']}), 400
 
+        # Parse target coordinates
         target_x = data.get('target_x')
         target_y = data.get('target_y')
         target_z = data.get('target_z')
         target_planet_id = data.get('target_planet_id')
 
-        # Handle planet selection (coordinates will be auto-filled by frontend)
+        # Handle planet selection
         if target_planet_id and str(target_planet_id).isdigit():
             target_planet = Planet.query.get(int(target_planet_id))
             if not target_planet:
-                return jsonify({'error': 'Target planet not found'}), 404
+                return jsonify({'error': COLONIZATION_ERRORS['planet_not_found']}), 404
 
             if target_planet.user_id:
-                return jsonify({'error': 'Planet is already colonized'}), 409
+                return jsonify({'error': COLONIZATION_ERRORS['coordinates_occupied']}), 409
 
             # Use planet's coordinates
             target_x, target_y, target_z = target_planet.x, target_planet.y, target_planet.z
@@ -263,48 +265,66 @@ def send_fleet():
 
         # Handle direct coordinate entry
         elif target_x is not None and target_y is not None and target_z is not None:
-            target_x, target_y, target_z = int(target_x), int(target_y), int(target_z)
+            try:
+                target_x, target_y, target_z = int(target_x), int(target_y), int(target_z)
+            except ValueError:
+                return jsonify({'error': COLONIZATION_ERRORS['invalid_coordinates']}), 400
 
             # Check if coordinates are already occupied
             existing_planet = Planet.query.filter_by(x=target_x, y=target_y, z=target_z).first()
             if existing_planet:
-                return jsonify({'error': 'Coordinates already occupied'}), 409
+                return jsonify({'error': COLONIZATION_ERRORS['coordinates_occupied']}), 409
 
             fleet.target_planet_id = 0  # Will be updated when colony is created
 
         else:
-            return jsonify({'error': 'Either target coordinates or target planet required for colonization'}), 400
+            return jsonify({'error': COLONIZATION_ERRORS['invalid_coordinates']}), 400
 
-        # Check colonization limits
+        # Validate research requirements
         from backend.services.planet_traits import PlanetTraitService
         colonization_difficulty = PlanetTraitService.calculate_colonization_difficulty(target_x, target_y, target_z)
 
-        # Get user's research level
         user_research = Research.query.filter_by(user_id=user_id).first()
         user_research_level = user_research.colonization_tech if user_research else 0
 
         if colonization_difficulty > user_research_level:
             return jsonify({
-                'error': f'Colonization difficulty {colonization_difficulty} requires research level {colonization_difficulty}',
+                'error': COLONIZATION_ERRORS['insufficient_research'],
                 'required_level': colonization_difficulty,
                 'current_level': user_research_level
             }), 400
 
-        # Check colony limit
+        # Validate colony limits
         user_planets = Planet.query.filter_by(user_id=user_id).all()
-        current_colonies = len([p for p in user_planets if p.id != user_planets[0].id])  # Exclude home planet
+        current_colonies = len([p for p in user_planets if not getattr(p, 'is_home_planet', False)])
 
-        max_colonies = 5  # Base limit, will be enhanced with research later
+        max_colonies = 5  # Base limit
         if user_research:
-            # Add research bonuses to colony limit
             max_colonies += user_research.astrophysics * 2
 
         if current_colonies >= max_colonies:
             return jsonify({
-                'error': f'Colony limit reached ({current_colonies}/{max_colonies})',
+                'error': COLONIZATION_ERRORS['colony_limit_reached'],
                 'current_colonies': current_colonies,
                 'max_colonies': max_colonies
             }), 400
+
+        # Validate fuel requirements
+        start_planet = Planet.query.get(fleet.start_planet_id)
+        distance = calculate_distance(start_planet, Planet(
+            name='Target', x=target_x, y=target_y, z=target_z, user_id=None
+        ))
+
+        fuel_validation = FleetArrivalService.validate_colonization_fuel(fleet, distance)
+        if not fuel_validation['success']:
+            return jsonify({
+                'error': fuel_validation['error'],
+                'fuel_required': fuel_validation['fuel_required'],
+                'fuel_available': fuel_validation['fuel_available']
+            }), 400
+
+        # Deduct fuel from origin planet
+        start_planet.deuterium -= fuel_validation['fuel_required']
 
         # Create temporary planet for distance calculation
         target_planet = Planet(
@@ -336,13 +356,19 @@ def send_fleet():
     start_planet = Planet.query.get(fleet.start_planet_id)
     distance = calculate_distance(start_planet, target_planet)
 
-    # Simplified speed calculation (small cargo ship speed = 5000)
-    fleet_speed = 5000  # Would be calculated based on slowest ship in fleet
-    travel_time_hours = distance / fleet_speed
+    # Use FleetTravelService for consistent speed calculation (now 30x faster)
+    from backend.services.fleet_travel import FleetTravelService
+    fleet_speed = FleetTravelService.calculate_fleet_speed(fleet)
+    travel_time_hours = distance / fleet_speed if fleet_speed > 0 else 0
+
+    # Apply minimum travel time to prevent instant arrivals (30 seconds minimum)
+    MIN_TRAVEL_TIME_SECONDS = 30
+    travel_time_seconds = max(travel_time_hours * 3600, MIN_TRAVEL_TIME_SECONDS)
+    travel_time_hours = travel_time_seconds / 3600
 
     fleet.departure_time = datetime.utcnow()
-    fleet.arrival_time = fleet.departure_time + timedelta(hours=travel_time_hours)
-    fleet.eta = int(travel_time_hours * 3600)  # ETA in seconds
+    fleet.arrival_time = fleet.departure_time + timedelta(seconds=travel_time_seconds)
+    fleet.eta = int(travel_time_seconds)
 
     db.session.commit()
 
@@ -372,7 +398,7 @@ def recall_fleet(fleet_id):
         print("DEBUG: Fleet not found")
         return jsonify({'error': 'Fleet not found'}), 404
 
-    if fleet.status not in ['traveling', 'returning']:
+    if fleet.status not in ['traveling', 'returning'] and not fleet.status.startswith('exploring:') and not fleet.status.startswith('colonizing:'):
         return jsonify({'error': 'Fleet cannot be recalled'}), 400
 
     # Calculate return time (simplified - same speed back)
@@ -399,7 +425,17 @@ def recall_fleet(fleet_id):
             'status': fleet.status,
             'mission': fleet.mission,
             'arrival_time': fleet.arrival_time.isoformat(),
-            'eta': fleet.eta
+            'eta': fleet.eta,
+            'ships': {  # Include ships data to prevent frontend crashes
+                'small_cargo': fleet.small_cargo,
+                'large_cargo': fleet.large_cargo,
+                'light_fighter': fleet.light_fighter,
+                'heavy_fighter': fleet.heavy_fighter,
+                'cruiser': fleet.cruiser,
+                'battleship': fleet.battleship,
+                'colony_ship': fleet.colony_ship,
+                'recycler': fleet.recycler
+            }
         }
     })
 

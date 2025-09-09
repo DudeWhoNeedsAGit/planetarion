@@ -18,8 +18,14 @@ class TestColonyShipOperations:
 
     def test_send_colony_ship_to_nearby_planet(self, client, db_session):
         """Test sending a colony ship to establish a colony on a nearby planet"""
-        # Create test user
-        user = User(username='colonizer', email='colonizer@test.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username='colonizer',
+            email='colonizer@test.com',
+            password_hash=password_hash
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -44,22 +50,26 @@ class TestColonyShipOperations:
         db_session.add(target_planet)
         db_session.commit()
 
-        # Create fleet with colony ship
-        now = datetime.utcnow()
-        fleet = Fleet(
+        # Create research record to allow colonization
+        research = Research(
             user_id=user.id,
+            colonization_tech=1  # Basic level for nearby colonization
+        )
+        db_session.add(research)
+        db_session.commit()
+
+        # Create fleet with colony ship
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            home_planet.id,
             mission='stationed',
-            start_planet_id=home_planet.id,
-            target_planet_id=home_planet.id,
             status='stationed',
             colony_ship=1,  # Has colony ship
             small_cargo=5,
-            light_fighter=10,
-            departure_time=now,
-            arrival_time=now
+            light_fighter=10
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -91,8 +101,14 @@ class TestColonyShipOperations:
 
     def test_send_colony_ship_to_coordinates(self, client, db_session):
         """Test sending a colony ship to specific coordinates"""
-        # Create test user
-        user = User(username='coord_colonizer', email='coord@test.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username='coord_colonizer',
+            email='coord@test.com',
+            password_hash=password_hash
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -106,21 +122,25 @@ class TestColonyShipOperations:
         db_session.add(home_planet)
         db_session.commit()
 
-        # Create fleet with colony ship
-        now = datetime.utcnow()
-        fleet = Fleet(
+        # Create research record to allow colonization
+        research = Research(
             user_id=user.id,
+            colonization_tech=1  # Basic level for coordinate colonization
+        )
+        db_session.add(research)
+        db_session.commit()
+
+        # Create fleet with colony ship
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            home_planet.id,
             mission='stationed',
-            start_planet_id=home_planet.id,
-            target_planet_id=home_planet.id,
             status='stationed',
             colony_ship=1,
-            small_cargo=3,
-            departure_time=now,
-            arrival_time=now
+            small_cargo=3
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -148,8 +168,14 @@ class TestColonyShipOperations:
 
     def test_send_colony_ship_without_colony_ship_fails(self, client, db_session):
         """Test that sending colonization mission without colony ship fails"""
-        # Create test user
-        user = User(username='no_colony', email='no_colony@test.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username='no_colony',
+            email='no_colony@test.com',
+            password_hash=password_hash
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -163,20 +189,16 @@ class TestColonyShipOperations:
         db_session.commit()
 
         # Create fleet WITHOUT colony ship
-        now = datetime.utcnow()
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            home_planet.id,
             mission='stationed',
-            start_planet_id=home_planet.id,
-            target_planet_id=home_planet.id,
             status='stationed',
             small_cargo=10,  # No colony ship
-            light_fighter=5,
-            departure_time=now,
-            arrival_time=now
+            light_fighter=5
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -202,8 +224,14 @@ class TestColonyShipOperations:
 
     def test_send_colony_ship_to_occupied_coordinates_fails(self, client, db_session):
         """Test that sending colony ship to occupied coordinates fails"""
-        # Create test user
-        user = User(username='occupied_test', email='occupied@test.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username='occupied_test',
+            email='occupied@test.com',
+            password_hash=password_hash
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -226,19 +254,15 @@ class TestColonyShipOperations:
         db_session.commit()
 
         # Create fleet with colony ship
-        now = datetime.utcnow()
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            home_planet.id,
             mission='stationed',
-            start_planet_id=home_planet.id,
-            target_planet_id=home_planet.id,
             status='stationed',
-            colony_ship=1,
-            departure_time=now,
-            arrival_time=now
+            colony_ship=1
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -264,8 +288,14 @@ class TestColonyShipOperations:
 
     def test_send_colony_ship_to_occupied_planet_fails(self, client, db_session):
         """Test that sending colony ship to occupied planet fails"""
-        # Create test user
-        user = User(username='planet_occupied', email='planet_occupied@test.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username='planet_occupied',
+            email='planet_occupied@test.com',
+            password_hash=password_hash
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -288,19 +318,15 @@ class TestColonyShipOperations:
         db_session.commit()
 
         # Create fleet with colony ship
-        now = datetime.utcnow()
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            home_planet.id,
             mission='stationed',
-            start_planet_id=home_planet.id,
-            target_planet_id=home_planet.id,
             status='stationed',
-            colony_ship=1,
-            departure_time=now,
-            arrival_time=now
+            colony_ship=1
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -324,8 +350,14 @@ class TestColonyShipOperations:
 
     def test_colony_ship_requires_research_level(self, client, db_session):
         """Test that colonization requires appropriate research level"""
-        # Create test user
-        user = User(username='research_test', email='research@test.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username='research_test',
+            email='research@test.com',
+            password_hash=password_hash
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -338,28 +370,18 @@ class TestColonyShipOperations:
         db_session.add(home_planet)
         db_session.commit()
 
-        # Create research with low colonization level
-        research = Research(
-            user_id=user.id,
-            colonization_tech=1  # Low level
-        )
-        db_session.add(research)
-        db_session.commit()
+        # Don't create research record - user should have level 0 by default
 
         # Create fleet with colony ship
-        now = datetime.utcnow()
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            home_planet.id,
             mission='stationed',
-            start_planet_id=home_planet.id,
-            target_planet_id=home_planet.id,
             status='stationed',
-            colony_ship=1,
-            departure_time=now,
-            arrival_time=now
+            colony_ship=1
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -385,8 +407,14 @@ class TestColonyShipOperations:
 
     def test_colony_ship_respects_colony_limits(self, client, db_session):
         """Test that colony ship sending respects colony limits"""
-        # Create test user
-        user = User(username='colony_limit', email='limit@test.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username='colony_limit',
+            email='limit@test.com',
+            password_hash=password_hash
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -397,6 +425,14 @@ class TestColonyShipOperations:
             user_id=user.id
         )
         db_session.add(home_planet)
+        db_session.commit()
+
+        # Create research with sufficient level to allow colonization
+        research = Research(
+            user_id=user.id,
+            colonization_tech=5  # High level to allow all colonization
+        )
+        db_session.add(research)
         db_session.commit()
 
         # Create maximum allowed colonies (5)
@@ -410,19 +446,15 @@ class TestColonyShipOperations:
         db_session.commit()
 
         # Create fleet with colony ship
-        now = datetime.utcnow()
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            home_planet.id,
             mission='stationed',
-            start_planet_id=home_planet.id,
-            target_planet_id=home_planet.id,
             status='stationed',
-            colony_ship=1,
-            departure_time=now,
-            arrival_time=now
+            colony_ship=1
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={
@@ -448,8 +480,14 @@ class TestColonyShipOperations:
 
     def test_fleet_travel_info_includes_colony_data(self, client, db_session):
         """Test that fleet travel info includes colony-specific data"""
-        # Create test user
-        user = User(username='travel_info', email='travel@test.com', password_hash='hashed_password')
+        # Create test user with proper bcrypt password hash
+        import bcrypt
+        password_hash = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username='travel_info',
+            email='travel@test.com',
+            password_hash=password_hash
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -463,20 +501,19 @@ class TestColonyShipOperations:
         db_session.commit()
 
         # Create traveling colony fleet
-        fleet = Fleet(
-            user_id=user.id,
+        from tests.conftest import create_test_fleet_with_constraints
+        fleet = create_test_fleet_with_constraints(
+            db_session,
+            user.id,
+            home_planet.id,
             mission='colonize',
-            start_planet_id=home_planet.id,
-            target_planet_id=0,
             status='colonizing:50:60:70',
+            colony_ship=1,
+            small_cargo=2,
             departure_time=datetime.utcnow() - timedelta(hours=1),
             arrival_time=datetime.utcnow() + timedelta(hours=1),
-            eta=3600,
-            colony_ship=1,
-            small_cargo=2
+            eta=3600
         )
-        db_session.add(fleet)
-        db_session.commit()
 
         # Login user
         login_response = client.post('/api/auth/login', json={

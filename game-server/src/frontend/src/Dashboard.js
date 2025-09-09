@@ -240,23 +240,55 @@ function Dashboard({ user, onLogout }) {
     }
   };
 
-  const canAffordShip = (shipType, quantity) => {
-    if (!selectedPlanet) return false;
+  const [shipCosts, setShipCosts] = useState({});
 
-    const costs = {
-      'colony_ship': {
-        metal: 10000 * quantity,
-        crystal: 20000 * quantity,
-        deuterium: 10000 * quantity
+  // Fetch ship costs on component mount
+  useEffect(() => {
+    const fetchShipCosts = async () => {
+      try {
+        const response = await axios.get('/api/shipyard/costs');
+        setShipCosts(response.data);
+      } catch (error) {
+        console.error('Error fetching ship costs:', error);
       }
     };
+    fetchShipCosts();
+  }, []);
 
-    const cost = costs[shipType];
+  const canAffordShip = (shipType, quantity) => {
+    if (!selectedPlanet || !shipCosts[shipType]) return false;
+
+    const cost = shipCosts[shipType];
     return (
-      selectedPlanet.resources.metal >= cost.metal &&
-      selectedPlanet.resources.crystal >= cost.crystal &&
-      selectedPlanet.resources.deuterium >= cost.deuterium
+      selectedPlanet.resources.metal >= (cost.metal * quantity) &&
+      selectedPlanet.resources.crystal >= (cost.crystal * quantity) &&
+      selectedPlanet.resources.deuterium >= (cost.deuterium * quantity)
     );
+  };
+
+  const formatShipName = (shipType) => {
+    return shipType.split('_').map(word =>
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+  };
+
+  const getShipIcon = (shipType) => {
+    const icons = {
+      'small_cargo': '🚚',
+      'large_cargo': '🚛',
+      'light_fighter': '🚀',
+      'heavy_fighter': '✈️',
+      'cruiser': '🚢',
+      'battleship': '🛳️',
+      'colony_ship': '🚁',
+      'recycler': '♻️',
+      'espionage_probe': '🛰️',
+      'bomber': '💣',
+      'destroyer': '💥',
+      'deathstar': '⭐',
+      'battlecruiser': '⚔️'
+    };
+    return icons[shipType] || '🚀';
   };
 
   // Energy calculation functions
@@ -720,53 +752,99 @@ function Dashboard({ user, onLogout }) {
             </div>
 
             {/* Ship Construction */}
-            {selectedPlanet && (
+            {selectedPlanet && Object.keys(shipCosts).length > 0 && (
               <div className="bg-gray-800 rounded-lg p-6">
                 <h4 className="text-lg font-semibold mb-4 text-white">Build Ships</h4>
 
-                {/* Colony Ship */}
-                <div className="bg-gray-700 p-4 rounded mb-4">
-                  <div className="flex justify-between items-center mb-3">
-                    <div>
-                      <h5 className="text-white font-medium">🚁 Colony Ship</h5>
-                      <p className="text-gray-400 text-sm">Essential for establishing new colonies</p>
+                {/* Available Resources Display */}
+                <div className="mb-6 p-4 bg-gray-700 rounded-lg">
+                  <h5 className="text-white font-medium mb-2">Available Resources</h5>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="text-metal">
+                      <span className="text-gray-400">Metal:</span> {selectedPlanet.resources.metal.toLocaleString()}
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs text-gray-400">Cost per ship:</div>
-                      <div className="text-yellow-400 text-sm">
-                        10,000 Metal<br/>
-                        20,000 Crystal<br/>
-                        10,000 Deuterium
-                      </div>
+                    <div className="text-crystal">
+                      <span className="text-gray-400">Crystal:</span> {selectedPlanet.resources.crystal.toLocaleString()}
                     </div>
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <div className="text-sm text-gray-300">
-                      Available Resources: {selectedPlanet.resources.metal.toLocaleString()} Metal, {selectedPlanet.resources.crystal.toLocaleString()} Crystal, {selectedPlanet.resources.deuterium.toLocaleString()} Deuterium
+                    <div className="text-deuterium">
+                      <span className="text-gray-400">Deuterium:</span> {selectedPlanet.resources.deuterium.toLocaleString()}
                     </div>
-                    <button
-                      onClick={() => handleBuildShip('colony_ship', 1)}
-                      disabled={upgrading || !canAffordShip('colony_ship', 1)}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded"
-                    >
-                      {upgrading ? 'Building...' : 'Build 1 Colony Ship'}
-                    </button>
                   </div>
                 </div>
 
-                {/* Build Multiple */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {[5, 10, 25, 50].map(quantity => (
-                    <button
-                      key={quantity}
-                      onClick={() => handleBuildShip('colony_ship', quantity)}
-                      disabled={upgrading || !canAffordShip('colony_ship', quantity)}
-                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-sm rounded"
-                    >
-                      Build {quantity}
-                    </button>
-                  ))}
+                {/* Ship List */}
+                <div className="space-y-4">
+                  {Object.entries(shipCosts).map(([shipType, costs]) => {
+                    const canAfford = canAffordShip(shipType, 1);
+                    const shipName = formatShipName(shipType);
+                    const shipIcon = getShipIcon(shipType);
+
+                    return (
+                      <div key={shipType} className="bg-gray-700 p-4 rounded-lg">
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="flex-1">
+                            <h5 className="text-white font-medium flex items-center">
+                              <span className="mr-2">{shipIcon}</span>
+                              {shipName}
+                            </h5>
+                            <div className="text-xs text-gray-400 mt-1">
+                              Cost per ship:
+                            </div>
+                            <div className="text-yellow-400 text-sm">
+                              {costs.metal > 0 && `${costs.metal.toLocaleString()} Metal`}
+                              {costs.metal > 0 && costs.crystal > 0 && <br/>}
+                              {costs.crystal > 0 && `${costs.crystal.toLocaleString()} Crystal`}
+                              {(costs.metal > 0 || costs.crystal > 0) && costs.deuterium > 0 && <br/>}
+                              {costs.deuterium > 0 && `${costs.deuterium.toLocaleString()} Deuterium`}
+                            </div>
+                          </div>
+                          <div className="flex flex-col space-y-2">
+                            <button
+                              onClick={() => handleBuildShip(shipType, 1)}
+                              disabled={upgrading || !canAfford}
+                              className={`px-3 py-2 text-white text-sm rounded transition-colors ${
+                                canAfford
+                                  ? 'bg-green-600 hover:bg-green-700'
+                                  : 'bg-gray-600 cursor-not-allowed'
+                              }`}
+                            >
+                              {upgrading ? 'Building...' : 'Build 1'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Build Multiple Buttons */}
+                        <div className="grid grid-cols-4 gap-2">
+                          {[5, 10, 25, 50].map(quantity => {
+                            const canAffordMultiple = canAffordShip(shipType, quantity);
+                            return (
+                              <button
+                                key={quantity}
+                                onClick={() => handleBuildShip(shipType, quantity)}
+                                disabled={upgrading || !canAffordMultiple}
+                                className={`px-2 py-1 text-white text-xs rounded transition-colors ${
+                                  canAffordMultiple
+                                    ? 'bg-blue-600 hover:bg-blue-700'
+                                    : 'bg-gray-600 cursor-not-allowed'
+                                }`}
+                              >
+                                {quantity}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Loading state for ship costs */}
+            {selectedPlanet && Object.keys(shipCosts).length === 0 && (
+              <div className="bg-gray-800 rounded-lg p-6">
+                <div className="text-center text-gray-400 py-8">
+                  Loading shipyard data...
                 </div>
               </div>
             )}

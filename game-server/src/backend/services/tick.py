@@ -9,19 +9,23 @@ def run_tick():
     tick_number = get_next_tick_number()
     tick_start_time = datetime.utcnow()
 
-    # Execute tick operations
+    # RUN FLEET TRAVEL GUARD FIRST - Validate and correct fleet states
+    from .fleet_travel_guard import FleetTravelGuard
+    guard_corrections = FleetTravelGuard.validate_and_correct_fleet_states()
+
+    # Execute normal tick operations
     resource_changes = process_resource_generation()
     fleet_updates = process_fleet_movements(tick_start_time)
 
-    # Process arrived fleets using the new FleetArrivalService
+    # Process arrived fleets using the FleetArrivalService
     from .fleet_arrival import FleetArrivalService
     FleetArrivalService.process_arrived_fleets()
 
-    # Log tick completion
+    # Log tick completion with guard statistics
     tick_end_time = datetime.utcnow()
-    log_tick(tick_number, tick_start_time, resource_changes, fleet_updates)
+    log_tick(tick_number, tick_start_time, resource_changes, fleet_updates, guard_corrections)
 
-    print(f"Tick {tick_number} completed at {tick_end_time}")
+    print(f"Tick {tick_number} completed at {tick_end_time} (Guard: {guard_corrections} corrections)")
 
     return resource_changes  # Return changes for manual tick endpoint
 
@@ -196,53 +200,10 @@ def process_fleet_movements(current_time):
                 'description': f'Fleet arrived at planet {fleet.target_planet_id}'
             })
         elif fleet.status.startswith('exploring:'):
-            # Handle exploration
-            coords = fleet.status.split(':')[1:]  # Extract coordinates
-            x, y, z = map(int, coords)
-
-            # Generate planets in the explored system
-            discovered_planets = generate_exploration_planets(x, y, z, fleet.user_id)
-
-            # Update user's explored systems
-            from backend.models import User
-            user = User.query.get(fleet.user_id)
-            if user:
-                import json
-                explored_systems = []
-                if user.explored_systems:
-                    try:
-                        explored_systems = json.loads(user.explored_systems)
-                    except:
-                        explored_systems = []
-
-                # Add new system if not already explored
-                system_key = f"{x}:{y}:{z}"
-                if not any(s.get('coordinates') == system_key for s in explored_systems):
-                    explored_systems.append({
-                        'coordinates': system_key,
-                        'x': x, 'y': y, 'z': z,
-                        'planets': len(discovered_planets),
-                        'explored_at': current_time.isoformat()
-                    })
-
-                user.explored_systems = json.dumps(explored_systems)
-
-            # Store discovery information in fleet
-            fleet.explored_coordinates = json.dumps([{
-                'x': x, 'y': y, 'z': z,
-                'planets': len(discovered_planets)
-            }])
-
-            # Fleet returns to origin
-            fleet.status = 'returning'
-            fleet.mission = 'return'
-            fleet.arrival_time = current_time + (fleet.arrival_time - fleet.departure_time)  # Same travel time back
-
-            updates.append({
-                'fleet_id': fleet.id,
-                'event_type': 'exploration_complete',
-                'description': f'Exploration completed at {x}:{y}:{z}, discovered {len(discovered_planets)} planets'
-            })
+            # Handle exploration - delegate to FleetArrivalService for consistency
+            print(f"DEBUG: Exploration fleet {fleet.id} arrived, delegating to FleetArrivalService")
+            # Don't process here - let FleetArrivalService handle it
+            continue
 
         elif fleet.status == 'returning':
             # Fleet has returned to origin
@@ -259,7 +220,7 @@ def process_fleet_movements(current_time):
 
     return updates
 
-def log_tick(tick_number, timestamp, resource_changes, fleet_updates):
+def log_tick(tick_number, timestamp, resource_changes, fleet_updates, guard_corrections=0):
     """Log tick events to database"""
     # Log resource changes
     for change in resource_changes:
@@ -282,6 +243,16 @@ def log_tick(tick_number, timestamp, resource_changes, fleet_updates):
             fleet_id=update['fleet_id'],
             event_type=update['event_type'],
             event_description=update['description']
+        )
+        db.session.add(tick_log)
+
+    # Log guard corrections if any
+    if guard_corrections > 0:
+        tick_log = TickLog(
+            tick_number=tick_number,
+            timestamp=timestamp,
+            event_type='guard_corrections',
+            event_description=f'Fleet Travel Guard corrected {guard_corrections} fleet states'
         )
         db.session.add(tick_log)
 
@@ -421,3 +392,10 @@ def get_tick_statistics():
             })
 
     return stats
+
+def process_tick():
+    """Public wrapper for run_tick() - for test compatibility"""
+    return run_tick()
+
+# Export public functions
+__all__ = ['run_tick', 'process_tick', 'get_next_tick_number', 'get_tick_statistics']

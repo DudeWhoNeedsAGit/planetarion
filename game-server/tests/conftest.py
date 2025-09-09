@@ -2,6 +2,12 @@ import pytest
 import os
 from datetime import datetime, timedelta
 
+import sys
+import os
+
+# Add the src directory to the path so we can import backend modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
 from backend.app import create_app
 from backend.database import db
 from backend.models import User, Planet, Fleet, Alliance, TickLog
@@ -116,3 +122,50 @@ def auth_headers(sample_user):
 def test_user(sample_user):
     """Alias for sample_user to match test naming convention."""
     return sample_user
+
+
+def create_test_user_with_hashed_password(db_session, username, email, plain_password='password'):
+    """Create test user with properly hashed password for integration tests"""
+    import bcrypt
+    password_hash = bcrypt.hashpw(plain_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    user = User(username=username, email=email, password_hash=password_hash)
+    db_session.add(user)
+    db_session.commit()
+    return user, plain_password  # Return both user and plain password for login testing
+
+def create_test_fleet_with_constraints(db_session, user_id, start_planet_id, **kwargs):
+    """Create a fleet with all required NOT NULL constraints satisfied"""
+    from datetime import datetime
+
+    now = datetime.utcnow()
+
+    # Set defaults for required fields
+    fleet_data = {
+        'user_id': user_id,
+        'start_planet_id': start_planet_id,
+        'target_planet_id': kwargs.get('target_planet_id', start_planet_id),  # Required
+        'mission': kwargs.get('mission', 'stationed'),
+        'status': kwargs.get('status', 'stationed'),
+        'departure_time': kwargs.get('departure_time', now),  # Required
+        'arrival_time': kwargs.get('arrival_time', now),     # Required
+        'eta': kwargs.get('eta', 0),
+        **kwargs  # Allow ship counts and other fields
+    }
+
+    fleet = Fleet(**fleet_data)
+    db_session.add(fleet)
+    db_session.commit()
+    return fleet
+
+@pytest.fixture
+def sample_fleet_proper(db_session, sample_user, sample_planet):
+    """Create a properly constrained fleet for testing"""
+    return create_test_fleet_with_constraints(
+        db_session,
+        sample_user.id,
+        sample_planet.id,
+        small_cargo=10,
+        large_cargo=5,
+        light_fighter=20,
+        mission='attack'
+    )

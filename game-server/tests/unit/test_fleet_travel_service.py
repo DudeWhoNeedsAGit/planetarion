@@ -59,9 +59,15 @@ class TestFleetTravelService:
         fleet.heavy_fighter = 0
         fleet.cruiser = 0
         fleet.battleship = 0
+        fleet.recycler = 0
+        fleet.espionage_probe = 0
+        fleet.bomber = 0
+        fleet.destroyer = 0
+        fleet.deathstar = 0
+        fleet.battlecruiser = 0
 
         speed = FleetTravelService.calculate_fleet_speed(fleet)
-        assert speed == 2500  # Colony ship speed
+        assert speed == 75000  # Colony ship speed (2500 * 30)
 
     def test_calculate_fleet_speed_small_cargo_fastest(self):
         """Test fleet speed calculation with small cargo (fastest)"""
@@ -73,9 +79,15 @@ class TestFleetTravelService:
         fleet.heavy_fighter = 0
         fleet.cruiser = 0
         fleet.battleship = 0
+        fleet.recycler = 0
+        fleet.espionage_probe = 0
+        fleet.bomber = 0
+        fleet.destroyer = 0
+        fleet.deathstar = 0
+        fleet.battlecruiser = 0
 
         speed = FleetTravelService.calculate_fleet_speed(fleet)
-        assert speed == 5000  # Small cargo speed
+        assert speed == 150000  # Small cargo speed (5000 * 30)
 
     def test_calculate_fleet_speed_mixed_fleet(self):
         """Test fleet speed calculation with mixed ship types"""
@@ -87,9 +99,15 @@ class TestFleetTravelService:
         fleet.heavy_fighter = 1  # 4000
         fleet.cruiser = 2  # 3500
         fleet.battleship = 1  # 3000
+        fleet.recycler = 0
+        fleet.espionage_probe = 0
+        fleet.bomber = 0
+        fleet.destroyer = 0
+        fleet.deathstar = 0
+        fleet.battlecruiser = 0
 
         speed = FleetTravelService.calculate_fleet_speed(fleet)
-        assert speed == 2500  # Should be colony ship speed (slowest)
+        assert speed == 75000  # Should be colony ship speed (slowest) (2500 * 30)
 
     def test_calculate_fleet_speed_empty_fleet(self):
         """Test fleet speed calculation with no ships"""
@@ -101,9 +119,15 @@ class TestFleetTravelService:
         fleet.heavy_fighter = 0
         fleet.cruiser = 0
         fleet.battleship = 0
+        fleet.recycler = 0
+        fleet.espionage_probe = 0
+        fleet.bomber = 0
+        fleet.destroyer = 0
+        fleet.deathstar = 0
+        fleet.battlecruiser = 0
 
         speed = FleetTravelService.calculate_fleet_speed(fleet)
-        assert speed == 5000  # Default speed
+        assert speed == 150000  # Default speed (5000 * 30)
 
     def test_calculate_fleet_speed_none_fleet(self):
         """Test fleet speed calculation with None fleet"""
@@ -159,6 +183,48 @@ class TestFleetTravelService:
             fleet.cruiser = 0
             fleet.battleship = 0
             fleet.colony_ship = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
 
             # Mock database queries
             with patch.object(Planet, 'query') as mock_query:
@@ -174,7 +240,7 @@ class TestFleetTravelService:
                 assert 'progress_percentage' in info
                 assert 'current_position' in info
                 assert 'fleet_speed' in info
-                assert info['fleet_speed'] == 5000  # Small cargo speed
+                assert info['fleet_speed'] == 150000  # Small cargo speed (5000 * 30)
                 assert abs(info['progress_percentage'] - 50.0) < 1.0  # Approximately halfway through
 
     @freeze_time("2025-01-01 12:00:00")
@@ -198,6 +264,12 @@ class TestFleetTravelService:
             fleet.cruiser = 0
             fleet.battleship = 0
             fleet.colony_ship = 1
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
             fleet.target_planet_id = None  # No target planet for coordinate-based mission
 
             # Mock database queries
@@ -211,7 +283,7 @@ class TestFleetTravelService:
                 assert info is not None
                 assert info['target_coordinates'] == '100.0:200.0:300.0'  # Formatted as floats
                 assert info['is_coordinate_based'] == True
-                assert info['fleet_speed'] == 2500  # Colony ship speed
+                assert info['fleet_speed'] == 75000  # Colony ship speed (2500 * 30)
 
     def test_calculate_travel_info_invalid_coordinates(self, app):
         """Test travel info calculation with invalid coordinates in status"""
@@ -248,6 +320,12 @@ class TestFleetTravelService:
             fleet.cruiser = 0
             fleet.battleship = 0
             fleet.colony_ship = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
             # Add datetime attributes to avoid Mock arithmetic issues
             fleet.departure_time = datetime(2025, 1, 1, 11, 0, 0)
             fleet.arrival_time = datetime(2025, 1, 1, 13, 0, 0)
@@ -385,6 +463,53 @@ class TestFleetTravelService:
                 current_pos = info['current_position']
                 assert f"{expected_x}:" in current_pos or abs(float(current_pos.split(':')[0]) - expected_x) < 1
 
+    @freeze_time("2025-01-01 12:00:00")
+    def test_minimum_travel_time_enforced(self, app):
+        """Test that minimum travel time (30 seconds) is enforced to prevent instant arrivals"""
+        with app.app_context():
+            # Create planets very close together (should still take minimum 30 seconds)
+            start_planet = Planet(name='Start', x=0, y=0, z=0)
+            target_planet = Planet(name='Target', x=1, y=1, z=1)  # Very close
+
+            # Fleet with fast ships (should travel very quickly)
+            fleet = Mock(spec=Fleet)
+            fleet.status = 'traveling'
+            fleet.start_planet_id = 1
+            fleet.target_planet_id = 2
+            fleet.departure_time = datetime(2025, 1, 1, 12, 0, 0)
+            fleet.arrival_time = datetime(2025, 1, 1, 12, 0, 30)  # 30 seconds later
+            # Add fast ships as integers (not Mock objects)
+            fleet.small_cargo = 10  # 150,000 speed
+            fleet.large_cargo = 0
+            fleet.light_fighter = 0
+            fleet.heavy_fighter = 0
+            fleet.cruiser = 0
+            fleet.battleship = 0
+            fleet.colony_ship = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
+
+            # Mock database queries
+            with patch.object(Planet, 'query') as mock_query:
+                mock_get = Mock()
+                mock_get.side_effect = lambda planet_id: start_planet if planet_id == 1 else target_planet
+                mock_query.get = mock_get
+
+                info = FleetTravelService.calculate_travel_info(fleet)
+
+                assert info is not None
+                # Distance between (0,0,0) and (1,1,1) = sqrt(3) ≈ 1.73
+                # At 150,000 speed, travel time = 1.73 / 150,000 = 0.0000115 hours ≈ 0.04 seconds
+                # But minimum is 30 seconds, so total duration should be 30 seconds in hours
+                expected_duration_hours = 30 / 3600  # 30 seconds = 0.00833 hours
+                assert abs(info['total_duration_hours'] - expected_duration_hours) < 0.002  # Allow more tolerance
+                # Fleet speed should still be calculated correctly
+                assert info['fleet_speed'] == 150000  # Small cargo speed (5000 * 30)
+
 
 class TestFleetTravelServiceIntegration:
     """Integration tests for FleetTravelService"""
@@ -421,6 +546,12 @@ class TestFleetTravelServiceIntegration:
             fleet.colony_ship = 0
             fleet.heavy_fighter = 0
             fleet.battleship = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
 
             # Mock Planet.query.get() to return the real planet objects
             with patch.object(Planet, 'query') as mock_query:
@@ -435,4 +566,4 @@ class TestFleetTravelServiceIntegration:
                 assert info['total_duration_hours'] > 0
                 assert 0 <= info['progress_percentage'] <= 100
                 assert ':' in info['current_position']
-                assert info['fleet_speed'] == 3500  # Large cargo speed (slowest in fleet: large_cargo=3500, cruiser=3500)
+                assert info['fleet_speed'] == 105000  # Large cargo speed (slowest in fleet: large_cargo=3500 * 30, cruiser=3500 * 30)

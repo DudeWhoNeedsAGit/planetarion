@@ -159,7 +159,8 @@ def login():
     print("DEBUG: Login successful")
     return jsonify({
         'message': 'Login successful',
-        'access_token': access_token,
+        'token': access_token,        # Backward compatibility for old tests
+        'access_token': access_token, # New standard format
         'user': {
             'id': user.id,
             'username': user.username,
