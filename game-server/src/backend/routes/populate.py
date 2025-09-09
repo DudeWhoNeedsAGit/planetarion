@@ -96,6 +96,100 @@ def generate_planet_position(existing_planets, cluster_center=None, is_core_plan
     z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
     return x, y, z
 
+def create_enemy_planets_around_player(player_planets, num_enemies=5):
+    """Create enemy planets with defensive fleets around player planets"""
+    enemy_data = []
+    used_emails = set()  # Track used emails to prevent duplicates
+
+    for player_planet in player_planets:
+        for i in range(num_enemies):
+            # Create enemy user with unique identifiers
+            enemy_username = f"enemy_player_{player_planet.id}_{i}"
+            enemy_email = f"enemy_{player_planet.id}_{i}@example.com"
+
+            # Ensure email uniqueness across all enemy users
+            base_email = enemy_email
+            counter = 0
+            while enemy_email in used_emails:
+                counter += 1
+                enemy_email = f"enemy_{player_planet.id}_{i}_{counter}@example.com"
+
+            used_emails.add(enemy_email)
+
+            # Check if enemy user already exists
+            existing_enemy = User.query.filter_by(username=enemy_username).first()
+            if existing_enemy:
+                enemy_user = existing_enemy
+            else:
+                # Create new enemy user with hashed password
+                enemy_password_hash = bcrypt.hashpw('enemypassword123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                enemy_user = User(
+                    username=enemy_username,
+                    email=enemy_email,
+                    password_hash=enemy_password_hash,
+                    created_at=fake.date_time_this_year()
+                )
+                db.session.add(enemy_user)
+                db.session.flush()  # Get user ID
+
+            # Generate position around player planet
+            distance = random.randint(500, 1000)  # 500-1000 units away
+            angle = random.uniform(0, 2 * math.pi)
+            height_offset = random.randint(-200, 200)  # Some vertical variation
+
+            enemy_x = int(player_planet.x + distance * math.cos(angle))
+            enemy_y = int(player_planet.y + distance * math.sin(angle))
+            enemy_z = int(player_planet.z + height_offset)
+
+            # Ensure coordinates are within universe bounds
+            enemy_x = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], enemy_x))
+            enemy_y = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], enemy_y))
+            enemy_z = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], enemy_z))
+
+            # Create enemy planet
+            enemy_planet_name = f"Enemy Base {i+1} near {player_planet.name}"
+            enemy_planet = Planet(
+                name=enemy_planet_name,
+                x=enemy_x,
+                y=enemy_y,
+                z=enemy_z,
+                user_id=enemy_user.id,
+                metal=random.randint(50000, 200000),    # Moderate resources
+                crystal=random.randint(30000, 150000),
+                deuterium=random.randint(10000, 50000),
+                metal_mine=random.randint(5, 15),        # Decent infrastructure
+                crystal_mine=random.randint(3, 10),
+                deuterium_synthesizer=random.randint(1, 5),
+                solar_plant=random.randint(10, 20),
+                fusion_reactor=random.randint(0, 3),
+                created_at=fake.date_time_this_year()
+            )
+
+            # Create defensive fleet
+            defensive_fleet = Fleet(
+                user_id=enemy_user.id,
+                mission='defend',
+                start_planet_id=enemy_planet.id,  # Will be set after planet creation
+                target_planet_id=enemy_planet.id, # Stationed at planet
+                status='stationed',
+                departure_time=datetime.utcnow(),
+                arrival_time=datetime.utcnow(),
+                eta=0,
+                # Balanced defensive fleet composition
+                small_cargo=random.randint(10, 50),
+                large_cargo=random.randint(5, 25),
+                light_fighter=random.randint(20, 100),
+                heavy_fighter=random.randint(10, 50),
+                cruiser=random.randint(5, 20),
+                battleship=random.randint(1, 10),
+                colony_ship=random.randint(0, 2),
+                recycler=random.randint(0, 5)
+            )
+
+            enemy_data.append((enemy_planet, defensive_fleet))
+
+    return enemy_data
+
 @populate_bp.route('/populate', methods=['POST'])
 def populate_database():
     """Populate the database with realistic test data"""
@@ -372,6 +466,25 @@ def populate_database():
                 deuterium_change=random.randint(-200, 1000)
             )
             db.session.add(tick_log)
+
+        # Create enemy planets with defensive fleets around test user for combat testing
+        if not minimal:
+            test_user = User.query.filter_by(username='e2etestuser').first()
+            if test_user:
+                test_user_planets = [p for p in planets if p.user_id == test_user.id]
+                enemy_data = create_enemy_planets_around_player(test_user_planets, num_enemies=3)
+
+                for enemy_planet, enemy_fleet in enemy_data:
+                    planets.append(enemy_planet)
+                    db.session.add(enemy_planet)
+                    db.session.flush()  # Get planet ID before creating fleet
+
+                    # Update fleet with planet ID
+                    enemy_fleet.start_planet_id = enemy_planet.id
+                    enemy_fleet.target_planet_id = enemy_planet.id
+                    db.session.add(enemy_fleet)
+
+                    print(f"DEBUG: Created enemy planet with fleet at ({enemy_planet.x}, {enemy_planet.y}, {enemy_planet.z})")
 
         db.session.commit()
 

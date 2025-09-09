@@ -94,6 +94,11 @@ class Fleet(db.Model):
     battleship = db.Column(db.Integer, default=0)
     colony_ship = db.Column(db.Integer, default=0)
     recycler = db.Column(db.Integer, default=0)
+    espionage_probe = db.Column(db.Integer, default=0)
+    bomber = db.Column(db.Integer, default=0)
+    destroyer = db.Column(db.Integer, default=0)
+    deathstar = db.Column(db.Integer, default=0)
+    battlecruiser = db.Column(db.Integer, default=0)
 
     # Fleet status
     status = db.Column(db.String(20), default='stationed')

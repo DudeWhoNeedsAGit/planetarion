@@ -9,6 +9,7 @@ function FleetManagement({ user, planets }) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showSendForm, setShowSendForm] = useState(false);
   const [selectedFleet, setSelectedFleet] = useState(null);
+  const [selectedPlanet, setSelectedPlanet] = useState(null);
   const { showSuccess, showError } = useToast();
 
   useEffect(() => {
@@ -88,6 +89,19 @@ function FleetManagement({ user, planets }) {
     );
   }
 
+  // Group fleets by planet
+  const fleetsByPlanet = fleets.reduce((acc, fleet) => {
+    const planetId = fleet.start_planet_id;
+    if (!acc[planetId]) {
+      acc[planetId] = [];
+    }
+    acc[planetId].push(fleet);
+    return acc;
+  }, {});
+
+  // Get user's planets
+  const userPlanets = planets.filter(planet => planet.user_id === user?.id);
+
   return (
     <div className="bg-gray-800 rounded-lg p-6">
       <div className="flex justify-between items-center mb-6">
@@ -100,113 +114,87 @@ function FleetManagement({ user, planets }) {
         </button>
       </div>
 
-      {/* Fleets List */}
-      <div className="space-y-4 mb-6">
-        {fleets.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
-            No fleets available. Create your first fleet!
-          </div>
-        ) : (
-          fleets.map(fleet => (
-            <div key={fleet.id} className="bg-gray-700 p-4 rounded">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <div className="text-white font-medium">
-                    Fleet #{fleet.id} - {fleet.mission}
-                  </div>
-                  <div className="text-sm text-gray-400">
-                    Status: <span className={`font-medium ${
-                      fleet.status === 'stationed' ? 'text-green-400' :
-                      fleet.status === 'traveling' ? 'text-yellow-400' :
-                      fleet.status === 'returning' ? 'text-blue-400' : 'text-gray-400'
-                    }`}>
-                      {fleet.status}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  {fleet.status === 'stationed' && (
-                    <button
-                      onClick={() => {
-                        setSelectedFleet(fleet);
-                        setShowSendForm(true);
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
-                    >
-                      Send
-                    </button>
-                  )}
-                  {(fleet.status === 'traveling' || fleet.status === 'returning') && (
-                    <button
-                      onClick={() => handleRecallFleet(fleet.id)}
-                      className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm"
-                    >
-                      Recall
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Fleet Details */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <div className="text-gray-400">Ships</div>
-                  <div className="text-white">
-                    {(() => {
-                      // Defensive: handle missing ships data after recall
-                      const ships = fleet.ships || {};
-                      const totalShips = (ships.small_cargo || 0) +
-                                        (ships.large_cargo || 0) +
-                                        (ships.light_fighter || 0) +
-                                        (ships.heavy_fighter || 0) +
-                                        (ships.cruiser || 0) +
-                                        (ships.battleship || 0) +
-                                        (ships.colony_ship || 0) +
-                                        (ships.recycler || 0);
-                      return totalShips + ' total';
-                    })()}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-gray-400">From</div>
-                  <div className="text-white">{planets.find(p => p.id === fleet.start_planet_id)?.name || 'Unknown'}</div>
-                </div>
-                <div>
-                  <div className="text-gray-400">To</div>
-                  <div className="text-white">{planets.find(p => p.id === fleet.target_planet_id)?.name || 'N/A'}</div>
-                </div>
-                <div>
-                  <div className="text-gray-400">ETA</div>
-                  <div className="text-white">{formatTimeRemaining(fleet.arrival_time)}</div>
-                </div>
-              </div>
-
-              {/* Ship Breakdown */}
-              <div className="mt-3 pt-3 border-t border-gray-600">
-                <div className="text-xs text-gray-400 mb-2">Ship Composition:</div>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {(() => {
-                    // Defensive: handle missing ships data after recall
-                    const ships = fleet.ships || {};
-                    return Object.entries(ships).map(([shipType, count]) => (
-                      count > 0 && (
-                        <span key={shipType} className="bg-gray-600 px-2 py-1 rounded">
-                          {shipType.replace('_', ' ')}: {count}
-                        </span>
-                      )
-                    ));
-                  })()}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
+      {/* Planet Selection Header */}
+      <div className="mb-6">
+        <h4 className="text-white font-medium mb-3">Select Planet:</h4>
+        <div className="flex flex-wrap gap-2">
+          {userPlanets.map(planet => (
+            <button
+              key={planet.id}
+              onClick={() => setSelectedPlanet(planet)}
+              className={`px-4 py-2 rounded whitespace-nowrap ${
+                selectedPlanet?.id === planet.id
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              {planet.is_home_planet ? '🏠' : '🌍'} {planet.name} ({planet.x}:{planet.y}:{planet.z})
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Planet Overview Cards */}
+      {selectedPlanet && (
+        <div className="mb-6">
+          <PlanetOverviewCard
+            planet={selectedPlanet}
+            fleets={fleetsByPlanet[selectedPlanet.id] || []}
+            onCreateFleet={() => setShowCreateForm(true)}
+          />
+        </div>
+      )}
+
+      {/* Ship Availability Dashboard */}
+      {selectedPlanet && (
+        <div className="mb-6">
+          <ShipAvailabilityDashboard
+            planet={selectedPlanet}
+            fleets={fleetsByPlanet[selectedPlanet.id] || []}
+          />
+        </div>
+      )}
+
+      {/* Fleet Management Tiles */}
+      {selectedPlanet && (
+        <div className="mb-6">
+          <h4 className="text-white font-medium mb-3">Fleets at {selectedPlanet.name}:</h4>
+          <div className="space-y-4">
+            {(fleetsByPlanet[selectedPlanet.id] || []).length === 0 ? (
+              <div className="text-center text-gray-400 py-8 bg-gray-700 rounded">
+                No fleets at this planet. Create your first fleet!
+              </div>
+            ) : (
+              (fleetsByPlanet[selectedPlanet.id] || []).map(fleet => (
+                <FleetTile
+                  key={fleet.id}
+                  fleet={fleet}
+                  planets={planets}
+                  onSend={(fleet) => {
+                    setSelectedFleet(fleet);
+                    setShowSendForm(true);
+                  }}
+                  onRecall={handleRecallFleet}
+                  formatTimeRemaining={formatTimeRemaining}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Fallback: Show all fleets if no planet selected */}
+      {!selectedPlanet && (
+        <div className="text-center text-gray-400 py-8">
+          Select a planet above to view and manage your fleets
+        </div>
+      )}
 
       {/* Create Fleet Modal */}
       {showCreateForm && (
         <CreateFleetModal
-          planets={planets}
+          planets={userPlanets}
+          selectedPlanet={selectedPlanet}
           onCreate={handleCreateFleet}
           onClose={() => setShowCreateForm(false)}
         />
@@ -489,6 +477,220 @@ function SendFleetModal({ fleet, planets, user, onSend, onClose }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function PlanetOverviewCard({ planet, fleets, onCreateFleet }) {
+  const totalShips = fleets.reduce((total, fleet) => {
+    const ships = fleet.ships || {};
+    return total + (ships.small_cargo || 0) + (ships.large_cargo || 0) +
+           (ships.light_fighter || 0) + (ships.heavy_fighter || 0) +
+           (ships.cruiser || 0) + (ships.battleship || 0) +
+           (ships.colony_ship || 0) + (ships.recycler || 0);
+  }, 0);
+
+  const activeFleets = fleets.filter(fleet =>
+    fleet.status === 'traveling' || fleet.status === 'returning'
+  ).length;
+
+  const stationedFleets = fleets.filter(fleet =>
+    fleet.status === 'stationed'
+  ).length;
+
+  return (
+    <div className="bg-gray-700 p-4 rounded">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h4 className="text-white font-medium text-lg">
+            {planet.is_home_planet ? '🏠' : '🌍'} {planet.name}
+          </h4>
+          <p className="text-gray-400 text-sm">
+            Coordinates: {planet.x}:{planet.y}:{planet.z}
+          </p>
+        </div>
+        <button
+          onClick={onCreateFleet}
+          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
+        >
+          + Create Fleet
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="text-center">
+          <div className="text-2xl font-bold text-blue-400">{planet.metal || 0}</div>
+          <div className="text-xs text-gray-400">Metal</div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-green-400">{planet.crystal || 0}</div>
+          <div className="text-xs text-gray-400">Crystal</div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-purple-400">{planet.deuterium || 0}</div>
+          <div className="text-xs text-gray-400">Deuterium</div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-yellow-400">{totalShips}</div>
+          <div className="text-xs text-gray-400">Total Ships</div>
+        </div>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-gray-600">
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-400">Active Fleets:</span>
+          <span className="text-orange-400">{activeFleets}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-400">Stationed Fleets:</span>
+          <span className="text-green-400">{stationedFleets}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShipAvailabilityDashboard({ planet, fleets }) {
+  // Calculate available ships (not in active fleets)
+  const availableShips = {
+    small_cargo: planet.small_cargo || 0,
+    large_cargo: planet.large_cargo || 0,
+    light_fighter: planet.light_fighter || 0,
+    heavy_fighter: planet.heavy_fighter || 0,
+    cruiser: planet.cruiser || 0,
+    battleship: planet.battleship || 0,
+    colony_ship: planet.colony_ship || 0,
+    recycler: planet.recycler || 0
+  };
+
+  // Subtract ships in active fleets
+  fleets.forEach(fleet => {
+    if (fleet.status === 'traveling' || fleet.status === 'returning') {
+      const ships = fleet.ships || {};
+      Object.keys(availableShips).forEach(shipType => {
+        availableShips[shipType] -= ships[shipType] || 0;
+      });
+    }
+  });
+
+  const shipTypes = [
+    { key: 'small_cargo', name: 'Small Cargo', icon: '📦' },
+    { key: 'large_cargo', name: 'Large Cargo', icon: '🚛' },
+    { key: 'light_fighter', name: 'Light Fighter', icon: '🚀' },
+    { key: 'heavy_fighter', name: 'Heavy Fighter', icon: '✈️' },
+    { key: 'cruiser', name: 'Cruiser', icon: '🛳️' },
+    { key: 'battleship', name: 'Battleship', icon: '🚢' },
+    { key: 'colony_ship', name: 'Colony Ship', icon: '🏘️' },
+    { key: 'recycler', name: 'Recycler', icon: '♻️' }
+  ];
+
+  return (
+    <div className="bg-gray-700 p-4 rounded">
+      <h4 className="text-white font-medium mb-4">Available Ships at {planet.name}</h4>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {shipTypes.map(shipType => (
+          <div key={shipType.key} className="bg-gray-600 p-3 rounded text-center">
+            <div className="text-2xl mb-1">{shipType.icon}</div>
+            <div className="text-white font-medium text-sm">{shipType.name}</div>
+            <div className={`text-lg font-bold ${
+              availableShips[shipType.key] > 0 ? 'text-green-400' : 'text-gray-500'
+            }`}>
+              {availableShips[shipType.key]}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FleetTile({ fleet, planets, onSend, onRecall, formatTimeRemaining }) {
+  return (
+    <div className="bg-gray-700 p-4 rounded">
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <div className="text-white font-medium">
+            Fleet #{fleet.id} - {fleet.mission}
+          </div>
+          <div className="text-sm text-gray-400">
+            Status: <span className={`font-medium ${
+              fleet.status === 'stationed' ? 'text-green-400' :
+              fleet.status === 'traveling' ? 'text-yellow-400' :
+              fleet.status === 'returning' ? 'text-blue-400' : 'text-gray-400'
+            }`}>
+              {fleet.status}
+            </span>
+          </div>
+        </div>
+        <div className="flex space-x-2">
+          {fleet.status === 'stationed' && (
+            <button
+              onClick={() => onSend(fleet)}
+              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
+            >
+              Send
+            </button>
+          )}
+          {(fleet.status === 'traveling' || fleet.status === 'returning') && (
+            <button
+              onClick={() => onRecall(fleet.id)}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm"
+            >
+              Recall
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Fleet Details */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+        <div>
+          <div className="text-gray-400">Ships</div>
+          <div className="text-white">
+            {(() => {
+              const ships = fleet.ships || {};
+              const totalShips = (ships.small_cargo || 0) +
+                                (ships.large_cargo || 0) +
+                                (ships.light_fighter || 0) +
+                                (ships.heavy_fighter || 0) +
+                                (ships.cruiser || 0) +
+                                (ships.battleship || 0) +
+                                (ships.colony_ship || 0) +
+                                (ships.recycler || 0);
+              return totalShips + ' total';
+            })()}
+          </div>
+        </div>
+        <div>
+          <div className="text-gray-400">From</div>
+          <div className="text-white">{planets.find(p => p.id === fleet.start_planet_id)?.name || 'Unknown'}</div>
+        </div>
+        <div>
+          <div className="text-gray-400">To</div>
+          <div className="text-white">{planets.find(p => p.id === fleet.target_planet_id)?.name || 'N/A'}</div>
+        </div>
+        <div>
+          <div className="text-gray-400">ETA</div>
+          <div className="text-white">{formatTimeRemaining(fleet.arrival_time)}</div>
+        </div>
+      </div>
+
+      {/* Ship Breakdown */}
+      <div className="pt-3 border-t border-gray-600">
+        <div className="text-xs text-gray-400 mb-2">Ship Composition:</div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          {(() => {
+            const ships = fleet.ships || {};
+            return Object.entries(ships).map(([shipType, count]) => (
+              count > 0 && (
+                <span key={shipType} className="bg-gray-600 px-2 py-1 rounded">
+                  {shipType.replace('_', ' ')}: {count}
+                </span>
+              )
+            ));
+          })()}
+        </div>
       </div>
     </div>
   );

@@ -186,6 +186,131 @@ FUEL_RATES = {
     'battlecruiser': 3.0
 }
 
+# ============================================================================
+# COMPREHENSIVE SHIP STATISTICS - Combat, capacity, and role information
+# ============================================================================
+
+# Ship combat and capacity statistics
+SHIP_STATS = {
+    'small_cargo': {
+        'firepower': 5,
+        'defense': 10,
+        'shield': 10,
+        'cargo': 5000,
+        'fuel': 10,
+        'role': 'cargo',
+        'description': 'Basic cargo ship for transporting resources'
+    },
+    'large_cargo': {
+        'firepower': 5,
+        'defense': 25,
+        'shield': 25,
+        'cargo': 25000,
+        'fuel': 50,
+        'role': 'cargo',
+        'description': 'Advanced cargo ship with better capacity and defense'
+    },
+    'light_fighter': {
+        'firepower': 50,
+        'defense': 10,
+        'shield': 10,
+        'cargo': 50,
+        'fuel': 20,
+        'role': 'fighter',
+        'description': 'Fast, cheap fighter for basic combat'
+    },
+    'heavy_fighter': {
+        'firepower': 150,
+        'defense': 25,
+        'shield': 25,
+        'cargo': 100,
+        'fuel': 75,
+        'role': 'fighter',
+        'description': 'Heavy fighter with superior firepower'
+    },
+    'cruiser': {
+        'firepower': 400,
+        'defense': 50,
+        'shield': 50,
+        'cargo': 800,
+        'fuel': 300,
+        'role': 'capital',
+        'description': 'Balanced capital ship for fleet operations'
+    },
+    'battleship': {
+        'firepower': 1000,
+        'defense': 200,
+        'shield': 200,
+        'cargo': 1500,
+        'fuel': 500,
+        'role': 'capital',
+        'description': 'Heavy battleship with massive firepower'
+    },
+    'colony_ship': {
+        'firepower': 50,
+        'defense': 100,
+        'shield': 100,
+        'cargo': 7500,
+        'fuel': 1000,
+        'role': 'special',
+        'description': 'Specialized ship for establishing new colonies'
+    },
+    'recycler': {
+        'firepower': 1,
+        'defense': 10,
+        'shield': 10,
+        'cargo': 20000,
+        'fuel': 300,
+        'role': 'special',
+        'description': 'Ship designed to collect debris from battlefields'
+    },
+    'espionage_probe': {
+        'firepower': 0,
+        'defense': 1,
+        'shield': 1,
+        'cargo': 5,
+        'fuel': 1,
+        'role': 'special',
+        'description': 'Fast reconnaissance ship for gathering intelligence'
+    },
+    'bomber': {
+        'firepower': 1000,
+        'defense': 75,
+        'shield': 50,
+        'cargo': 500,
+        'fuel': 700,
+        'role': 'bomber',
+        'description': 'Heavy bomber specialized in destroying planetary defenses'
+    },
+    'destroyer': {
+        'firepower': 1100,
+        'defense': 110,
+        'shield': 50,
+        'cargo': 2000,
+        'fuel': 1000,
+        'role': 'capital',
+        'description': 'Advanced destroyer with rapid fire capabilities'
+    },
+    'deathstar': {
+        'firepower': 200000,
+        'defense': 50000,
+        'shield': 50000,
+        'cargo': 1000000,
+        'fuel': 1000,
+        'role': 'ultimate',
+        'description': 'Ultimate weapon capable of destroying entire planets'
+    },
+    'battlecruiser': {
+        'firepower': 700,
+        'defense': 400,
+        'shield': 400,
+        'cargo': 750,
+        'fuel': 250,
+        'role': 'capital',
+        'description': 'Elite capital ship with exceptional combat capabilities'
+    }
+}
+
 def get_ship_speed(ship_type):
     """Get the speed for a ship type with global multiplier applied"""
     base_speed = SHIP_SPEEDS.get(ship_type, 5000)
@@ -194,6 +319,25 @@ def get_ship_speed(ship_type):
 def get_ship_fuel_rate(ship_type):
     """Get the fuel consumption rate for a ship type"""
     return FUEL_RATES.get(ship_type, 1.0)
+
+def get_ship_stats(ship_type):
+    """Get comprehensive statistics for a ship type"""
+    return SHIP_STATS.get(ship_type, {})
+
+def get_all_ship_stats():
+    """Get statistics for all ship types"""
+    return SHIP_STATS
+
+def get_ships_by_role(role):
+    """Get all ships of a specific role (cargo, fighter, capital, special, etc.)"""
+    return {ship_type: stats for ship_type, stats in SHIP_STATS.items() if stats.get('role') == role}
+
+def get_ship_roles():
+    """Get all available ship roles"""
+    roles = set()
+    for stats in SHIP_STATS.values():
+        roles.add(stats.get('role', 'unknown'))
+    return sorted(list(roles))
 
 def get_all_ship_speeds():
     """Get all ship speeds with multiplier applied"""

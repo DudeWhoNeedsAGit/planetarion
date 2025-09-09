@@ -14,6 +14,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet, Fleet
+from backend.config import get_all_ship_stats, get_ship_stats, get_ships_by_role, get_ship_roles
 
 shipyard_bp = Blueprint('shipyard', __name__, url_prefix='/api/shipyard')
 
@@ -180,3 +181,32 @@ def build_ship():
 def get_ship_costs():
     """Get costs for all ship types"""
     return jsonify(SHIP_COSTS), 200
+
+@shipyard_bp.route('/stats', methods=['GET'])
+def get_ship_stats():
+    """Get comprehensive ship statistics for all ship types"""
+    return jsonify(get_all_ship_stats()), 200
+
+@shipyard_bp.route('/stats/<ship_type>', methods=['GET'])
+def get_ship_stats_single(ship_type):
+    """Get statistics for a specific ship type"""
+    stats = get_ship_stats(ship_type)
+    if not stats:
+        return jsonify({'error': f'Ship type {ship_type} not found'}), 404
+    return jsonify(stats), 200
+
+@shipyard_bp.route('/roles', methods=['GET'])
+def get_ship_roles():
+    """Get all available ship roles"""
+    return jsonify({
+        'roles': get_ship_roles(),
+        'ships_by_role': {role: get_ships_by_role(role) for role in get_ship_roles()}
+    }), 200
+
+@shipyard_bp.route('/roles/<role>', methods=['GET'])
+def get_ships_by_role_endpoint(role):
+    """Get all ships of a specific role"""
+    ships = get_ships_by_role(role)
+    if not ships:
+        return jsonify({'error': f'No ships found for role {role}'}), 404
+    return jsonify(ships), 200

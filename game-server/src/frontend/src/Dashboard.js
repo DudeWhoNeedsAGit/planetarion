@@ -7,6 +7,7 @@ import LuckyWheel from './LuckyWheel';
 import GalaxyMap from './GalaxyMap';
 import CombatDashboard from './CombatDashboard';
 import ChatPanel from './ChatPanel';
+import ShipStats from './ShipStats';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
 
@@ -241,18 +242,30 @@ function Dashboard({ user, onLogout }) {
   };
 
   const [shipCosts, setShipCosts] = useState({});
+  const [shipStats, setShipStats] = useState({});
+  const [shipRoles, setShipRoles] = useState([]);
+  const [selectedShipRole, setSelectedShipRole] = useState('all');
 
-  // Fetch ship costs on component mount
+  // Fetch ship data on component mount
   useEffect(() => {
-    const fetchShipCosts = async () => {
+    const fetchShipData = async () => {
       try {
-        const response = await axios.get('/api/shipyard/costs');
-        setShipCosts(response.data);
+        // Fetch ship costs
+        const costsResponse = await axios.get('/api/shipyard/costs');
+        setShipCosts(costsResponse.data);
+
+        // Fetch ship statistics
+        const statsResponse = await axios.get('/api/shipyard/stats');
+        setShipStats(statsResponse.data);
+
+        // Fetch ship roles
+        const rolesResponse = await axios.get('/api/shipyard/roles');
+        setShipRoles(rolesResponse.data.roles || []);
       } catch (error) {
-        console.error('Error fetching ship costs:', error);
+        console.error('Error fetching ship data:', error);
       }
     };
-    fetchShipCosts();
+    fetchShipData();
   }, []);
 
   const canAffordShip = (shipType, quantity) => {
@@ -723,6 +736,13 @@ function Dashboard({ user, onLogout }) {
           </div>
         );
       case 'shipyard':
+        // Filter ships based on selected role
+        const filteredShips = selectedShipRole === 'all'
+          ? Object.keys(shipCosts)
+          : Object.entries(shipStats)
+              .filter(([_, stats]) => stats.role === selectedShipRole)
+              .map(([shipType, _]) => shipType);
+
         return (
           <div className="space-y-6">
             {/* Shipyard Header */}
@@ -752,57 +772,120 @@ function Dashboard({ user, onLogout }) {
             </div>
 
             {/* Ship Construction */}
-            {selectedPlanet && Object.keys(shipCosts).length > 0 && (
-              <div className="bg-gray-800 rounded-lg p-6">
-                <h4 className="text-lg font-semibold mb-4 text-white">Build Ships</h4>
-
+            {selectedPlanet && Object.keys(shipCosts).length > 0 && Object.keys(shipStats).length > 0 && (
+              <div className="space-y-6">
                 {/* Available Resources Display */}
-                <div className="mb-6 p-4 bg-gray-700 rounded-lg">
-                  <h5 className="text-white font-medium mb-2">Available Resources</h5>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div className="text-metal">
-                      <span className="text-gray-400">Metal:</span> {selectedPlanet.resources.metal.toLocaleString()}
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <h4 className="text-lg font-semibold mb-4 text-white">Available Resources</h4>
+                  <div className="grid grid-cols-3 gap-6">
+                    <div className="text-center">
+                      <div className="text-metal text-2xl font-bold">
+                        {selectedPlanet.resources.metal.toLocaleString()}
+                      </div>
+                      <div className="text-metal text-sm">Metal</div>
                     </div>
-                    <div className="text-crystal">
-                      <span className="text-gray-400">Crystal:</span> {selectedPlanet.resources.crystal.toLocaleString()}
+                    <div className="text-center">
+                      <div className="text-crystal text-2xl font-bold">
+                        {selectedPlanet.resources.crystal.toLocaleString()}
+                      </div>
+                      <div className="text-crystal text-sm">Crystal</div>
                     </div>
-                    <div className="text-deuterium">
-                      <span className="text-gray-400">Deuterium:</span> {selectedPlanet.resources.deuterium.toLocaleString()}
+                    <div className="text-center">
+                      <div className="text-deuterium text-2xl font-bold">
+                        {selectedPlanet.resources.deuterium.toLocaleString()}
+                      </div>
+                      <div className="text-deuterium text-sm">Deuterium</div>
                     </div>
                   </div>
                 </div>
 
+                {/* Ship Role Filter */}
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <h4 className="text-lg font-semibold mb-4 text-white">Filter by Ship Type</h4>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedShipRole('all')}
+                      className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                        selectedShipRole === 'all'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      All Ships ({Object.keys(shipCosts).length})
+                    </button>
+                    {shipRoles.map(role => {
+                      const roleShips = Object.values(shipStats).filter(stats => stats.role === role).length;
+                      return (
+                        <button
+                          key={role}
+                          onClick={() => setSelectedShipRole(role)}
+                          className={`px-4 py-2 rounded text-sm font-medium transition-colors capitalize ${
+                            selectedShipRole === role
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          }`}
+                        >
+                          {role} ({roleShips})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Ship List */}
-                <div className="space-y-4">
-                  {Object.entries(shipCosts).map(([shipType, costs]) => {
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {filteredShips.map(shipType => {
+                    const costs = shipCosts[shipType];
+                    const stats = shipStats[shipType];
                     const canAfford = canAffordShip(shipType, 1);
                     const shipName = formatShipName(shipType);
                     const shipIcon = getShipIcon(shipType);
 
                     return (
-                      <div key={shipType} className="bg-gray-700 p-4 rounded-lg">
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="flex-1">
-                            <h5 className="text-white font-medium flex items-center">
-                              <span className="mr-2">{shipIcon}</span>
-                              {shipName}
-                            </h5>
-                            <div className="text-xs text-gray-400 mt-1">
-                              Cost per ship:
-                            </div>
-                            <div className="text-yellow-400 text-sm">
-                              {costs.metal > 0 && `${costs.metal.toLocaleString()} Metal`}
-                              {costs.metal > 0 && costs.crystal > 0 && <br/>}
-                              {costs.crystal > 0 && `${costs.crystal.toLocaleString()} Crystal`}
-                              {(costs.metal > 0 || costs.crystal > 0) && costs.deuterium > 0 && <br/>}
-                              {costs.deuterium > 0 && `${costs.deuterium.toLocaleString()} Deuterium`}
+                      <div key={shipType} className="bg-gray-800 rounded-lg p-6 group relative">
+                        {/* Ship Header */}
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center space-x-3">
+                            <span className="text-3xl">{shipIcon}</span>
+                            <div>
+                              <h5 className="text-white font-bold text-lg">{shipName}</h5>
+                              <div className={`text-sm font-medium capitalize ${
+                                stats?.role === 'cargo' ? 'text-blue-400' :
+                                stats?.role === 'fighter' ? 'text-red-400' :
+                                stats?.role === 'capital' ? 'text-purple-400' :
+                                stats?.role === 'special' ? 'text-green-400' :
+                                stats?.role === 'bomber' ? 'text-orange-400' :
+                                stats?.role === 'ultimate' ? 'text-yellow-400' :
+                                'text-gray-400'
+                              }`}>
+                                {stats?.role || 'unknown'} Ship
+                              </div>
                             </div>
                           </div>
-                          <div className="flex flex-col space-y-2">
+                          <div className="text-right">
+                            <div className="text-xs text-gray-400 mb-1">Cost per ship</div>
+                            <div className="text-yellow-400 font-medium">
+                              {costs?.metal > 0 && `${costs.metal.toLocaleString()}M`}
+                              {costs?.crystal > 0 && ` ${costs.crystal.toLocaleString()}C`}
+                              {costs?.deuterium > 0 && ` ${costs.deuterium.toLocaleString()}D`}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Ship Stats - Compact View */}
+                        {stats && (
+                          <div className="mb-4">
+                            <ShipStats shipType={shipType} stats={stats} compact={true} />
+                          </div>
+                        )}
+
+                        {/* Build Buttons */}
+                        <div className="flex flex-col space-y-3">
+                          <div className="flex justify-between items-center">
                             <button
                               onClick={() => handleBuildShip(shipType, 1)}
                               disabled={upgrading || !canAfford}
-                              className={`px-3 py-2 text-white text-sm rounded transition-colors ${
+                              className={`px-4 py-2 text-white font-medium rounded transition-colors ${
                                 canAfford
                                   ? 'bg-green-600 hover:bg-green-700'
                                   : 'bg-gray-600 cursor-not-allowed'
@@ -810,41 +893,67 @@ function Dashboard({ user, onLogout }) {
                             >
                               {upgrading ? 'Building...' : 'Build 1'}
                             </button>
+                            <span className="text-xs text-gray-400">
+                              {canAfford ? '✅ Can afford' : '❌ Insufficient resources'}
+                            </span>
+                          </div>
+
+                          {/* Build Multiple Buttons */}
+                          <div className="grid grid-cols-4 gap-2">
+                            {[5, 10, 25, 50].map(quantity => {
+                              const canAffordMultiple = canAffordShip(shipType, quantity);
+                              return (
+                                <button
+                                  key={quantity}
+                                  onClick={() => handleBuildShip(shipType, quantity)}
+                                  disabled={upgrading || !canAffordMultiple}
+                                  className={`px-3 py-2 text-white text-sm rounded transition-colors ${
+                                    canAffordMultiple
+                                      ? 'bg-blue-600 hover:bg-blue-700'
+                                      : 'bg-gray-600 cursor-not-allowed'
+                                  }`}
+                                  title={`Build ${quantity} ships`}
+                                >
+                                  {quantity}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
-                        {/* Build Multiple Buttons */}
-                        <div className="grid grid-cols-4 gap-2">
-                          {[5, 10, 25, 50].map(quantity => {
-                            const canAffordMultiple = canAffordShip(shipType, quantity);
-                            return (
-                              <button
-                                key={quantity}
-                                onClick={() => handleBuildShip(shipType, quantity)}
-                                disabled={upgrading || !canAffordMultiple}
-                                className={`px-2 py-1 text-white text-xs rounded transition-colors ${
-                                  canAffordMultiple
-                                    ? 'bg-blue-600 hover:bg-blue-700'
-                                    : 'bg-gray-600 cursor-not-allowed'
-                                }`}
-                              >
-                                {quantity}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        {/* Detailed Stats Tooltip */}
+                        {stats && (
+                          <div className="absolute left-full ml-4 top-0 w-96 bg-gray-900 border border-gray-600 rounded-lg p-4 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 shadow-xl">
+                            <div className="text-white font-bold text-lg mb-3 flex items-center">
+                              <span className="mr-2">{shipIcon}</span>
+                              {shipName}
+                            </div>
+                            <ShipStats shipType={shipType} stats={stats} compact={false} />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
+
+                {/* No ships found message */}
+                {filteredShips.length === 0 && (
+                  <div className="bg-gray-800 rounded-lg p-8 text-center">
+                    <div className="text-gray-400 text-lg mb-2">No ships found</div>
+                    <div className="text-gray-500 text-sm">
+                      Try selecting a different ship role or check if ship data is loading.
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Loading state for ship costs */}
-            {selectedPlanet && Object.keys(shipCosts).length === 0 && (
-              <div className="bg-gray-800 rounded-lg p-6">
-                <div className="text-center text-gray-400 py-8">
-                  Loading shipyard data...
+            {/* Loading state */}
+            {selectedPlanet && (Object.keys(shipCosts).length === 0 || Object.keys(shipStats).length === 0) && (
+              <div className="bg-gray-800 rounded-lg p-8 text-center">
+                <div className="text-gray-400 text-lg mb-2">Loading shipyard data...</div>
+                <div className="text-gray-500 text-sm">
+                  Fetching ship costs and statistics from the server.
                 </div>
               </div>
             )}

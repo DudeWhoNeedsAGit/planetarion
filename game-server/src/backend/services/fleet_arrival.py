@@ -279,50 +279,57 @@ class FleetArrivalService:
 
     @staticmethod
     def _process_exploration(fleet):
-        """Handle exploration fleet arrival"""
+        """Handle exploration fleet arrival with comprehensive debug logging"""
         print(f"DEBUG: Processing exploration for fleet {fleet.id}")
+        print(f"DEBUG: Fleet status: {fleet.status}")
+        print(f"DEBUG: Fleet mission: {fleet.mission}")
+        print(f"DEBUG: Fleet target_coordinates: {getattr(fleet, 'target_coordinates', 'None')}")
 
         try:
-            # Parse target coordinates
-            if ':' in fleet.status and fleet.status.startswith('exploring:'):
-                # Extract coordinates from status (format: exploring:x:y:z)
-                coords_part = fleet.status.split(':')[1:]
-                try:
-                    target_x, target_y, target_z = map(int, coords_part)
-                except ValueError:
-                    print(f"ERROR: Invalid coordinates in status for exploration fleet {fleet.id}: {fleet.status}")
-                    FleetArrivalService._return_fleet_to_stationed(fleet)
-                    return
-            elif hasattr(fleet, 'target_coordinates') and fleet.target_coordinates:
-                # Extract coordinates from target_coordinates field
-                try:
-                    target_x, target_y, target_z = map(int, fleet.target_coordinates.split(':'))
-                except ValueError:
-                    print(f"ERROR: Invalid target_coordinates for exploration fleet {fleet.id}: {fleet.target_coordinates}")
-                    FleetArrivalService._return_fleet_to_stationed(fleet)
-                    return
-            else:
-                print(f"ERROR: No coordinates found for exploration fleet {fleet.id}")
+            # Parse target coordinates with detailed logging
+            coords_result = FleetArrivalService._parse_target_coordinates(fleet)
+            print(f"DEBUG: Coordinate parsing result: {coords_result}")
+
+            if not coords_result['success']:
+                print(f"ERROR: {coords_result['error']}")
                 FleetArrivalService._return_fleet_to_stationed(fleet)
                 return
 
+            target_x, target_y, target_z = coords_result['coordinates']
+            print(f"DEBUG: Successfully parsed coordinates: {target_x}:{target_y}:{target_z}")
+
             # Generate planets in the explored system
+            print(f"DEBUG: Calling generate_exploration_planets for coordinates {target_x}:{target_y}:{target_z}")
             from backend.services.tick import generate_exploration_planets
-            discovered_planets = generate_exploration_planets(target_x, target_y, target_z, fleet.user_id)
+
+            try:
+                discovered_planets = generate_exploration_planets(target_x, target_y, target_z, fleet.user_id)
+                print(f"DEBUG: generate_exploration_planets returned {len(discovered_planets)} planets")
+            except Exception as gen_error:
+                print(f"ERROR: generate_exploration_planets failed: {str(gen_error)}")
+                print(f"DEBUG: Attempting fallback planet creation")
+                # Fallback: create planets directly
+                discovered_planets = FleetArrivalService._create_exploration_planets_fallback(target_x, target_y, target_z, fleet.user_id)
+                print(f"DEBUG: Fallback created {len(discovered_planets)} planets")
 
             # Mark system as explored for the user
             user = fleet.user
             username = getattr(user, 'username', f'user_{fleet.user_id}')
+            print(f"DEBUG: Processing exploration data for user {username}")
 
             # Only update explored systems if user has the attribute (not a mock)
             if hasattr(user, 'explored_systems'):
+                print(f"DEBUG: User has explored_systems attribute")
                 if user.explored_systems:
                     try:
                         explored = json.loads(user.explored_systems)
+                        print(f"DEBUG: Loaded existing explored systems: {len(explored)} systems")
                     except:
                         explored = []
+                        print(f"DEBUG: Failed to parse explored_systems, starting fresh")
                 else:
                     explored = []
+                    print(f"DEBUG: No existing explored systems")
 
                 system_key = f"{target_x}:{target_y}:{target_z}"
                 if system_key not in explored:
@@ -333,6 +340,11 @@ class FleetArrivalService:
                         'planets_discovered': len(discovered_planets)
                     })
                     user.explored_systems = json.dumps(explored)
+                    print(f"DEBUG: Added system {system_key} to explored systems")
+                else:
+                    print(f"DEBUG: System {system_key} already explored")
+            else:
+                print(f"DEBUG: User does not have explored_systems attribute (likely test mock)")
 
             # Create tick log entry
             tick_log = TickLog(
@@ -340,9 +352,11 @@ class FleetArrivalService:
                 event_description=f'System {target_x}:{target_y}:{target_z} explored by {username}, discovered {len(discovered_planets)} planets'
             )
             db.session.add(tick_log)
+            print(f"DEBUG: Created tick log entry for exploration")
 
             # Commit all changes to database
             db.session.commit()
+            print(f"DEBUG: Committed exploration changes to database")
 
             # Set fleet to return to origin
             fleet.status = 'returning'
@@ -352,16 +366,20 @@ class FleetArrivalService:
                 travel_time = fleet.arrival_time - fleet.departure_time
                 fleet.arrival_time = datetime.utcnow() + travel_time
                 fleet.eta = int(travel_time.total_seconds())
+                print(f"DEBUG: Set fleet return time: {travel_time} (ETA: {fleet.eta}s)")
             else:
                 # Fallback: assume 1 hour return time
                 fleet.arrival_time = datetime.utcnow() + timedelta(hours=1)
                 fleet.eta = 3600
+                print(f"DEBUG: Used fallback return time: 1 hour")
 
             db.session.commit()
             print(f"SUCCESS: System {target_x}:{target_y}:{target_z} explored, fleet returning")
 
         except Exception as e:
             print(f"ERROR: Failed to process exploration for fleet {fleet.id}: {str(e)}")
+            import traceback
+            print(f"DEBUG: Full traceback: {traceback.format_exc()}")
             db.session.rollback()
             # Ensure fleet is returned to stationed even on error
             FleetArrivalService._return_fleet_to_stationed(fleet)
@@ -471,6 +489,82 @@ class FleetArrivalService:
             print(f"ERROR: Failed to process recycle for fleet {fleet.id}: {str(e)}")
             db.session.rollback()
             FleetArrivalService._return_fleet_to_stationed(fleet)
+
+    @staticmethod
+    def _create_exploration_planets_fallback(target_x, target_y, target_z, user_id):
+        """Fallback planet creation when generate_exploration_planets fails"""
+        print(f"DEBUG: Using fallback planet creation for system {target_x}:{target_y}:{target_z}")
+
+        import random
+
+        discovered_planets = []
+
+        # Check if system already has planets
+        existing_planets = Planet.query.filter_by(x=target_x, y=target_y, z=target_z).all()
+        if existing_planets:
+            print(f"DEBUG: System already has {len(existing_planets)} planets")
+            return existing_planets
+
+        # Generate 1-3 planets per system
+        num_planets = random.randint(1, 3)
+        print(f"DEBUG: Creating {num_planets} planets in system")
+
+        for i in range(num_planets):
+            # Offset coordinates slightly for multiple planets in same system
+            planet_x = target_x + random.randint(-5, 5)
+            planet_y = target_y + random.randint(-5, 5)
+            planet_z = target_z + random.randint(-5, 5)
+
+            # Ensure coordinates are unique
+            while Planet.query.filter_by(x=planet_x, y=planet_y, z=planet_z).first():
+                planet_x = target_x + random.randint(-5, 5)
+                planet_y = target_y + random.randint(-5, 5)
+                planet_z = target_z + random.randint(-5, 5)
+
+            # Generate planet properties
+            planet_names = [
+                "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
+                "Iota", "Kappa", "Lambda", "Mu", "Nu", "Xi", "Omicron", "Pi", "Rho",
+                "Sigma", "Tau", "Upsilon", "Phi", "Chi", "Psi", "Omega"
+            ]
+
+            planet_name = f"{random.choice(planet_names)} {target_x}:{target_y}:{target_z}"
+
+            # Create planet with random starting resources
+            planet = Planet(
+                name=planet_name,
+                x=planet_x,
+                y=planet_y,
+                z=planet_z,
+                user_id=None,  # Unowned
+                metal=random.randint(100, 1000),
+                crystal=random.randint(50, 500),
+                deuterium=random.randint(0, 200),
+                metal_mine=0,      # No structures initially
+                crystal_mine=0,
+                deuterium_synthesizer=0,
+                solar_plant=0,
+                fusion_reactor=0
+            )
+
+            db.session.add(planet)
+            db.session.flush()  # Get planet ID for trait generation
+
+            # Generate planet traits
+            try:
+                from backend.services.planet_traits import PlanetTraitService
+                traits = PlanetTraitService.generate_planet_traits(planet)
+                db.session.add_all(traits)
+                print(f"DEBUG: Generated {len(traits)} traits for planet {planet.id}")
+            except Exception as trait_error:
+                print(f"WARNING: Failed to generate traits for planet {planet.id}: {str(trait_error)}")
+
+            discovered_planets.append(planet)
+            print(f"DEBUG: Created planet {planet.id} at {planet_x}:{planet_y}:{planet_z}")
+
+        db.session.commit()
+        print(f"DEBUG: Committed {len(discovered_planets)} planets to database")
+        return discovered_planets
 
     @staticmethod
     def _return_fleet_to_stationed(fleet):

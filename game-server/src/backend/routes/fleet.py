@@ -53,7 +53,12 @@ def get_user_fleets():
             'cruiser': fleet.cruiser,
             'battleship': fleet.battleship,
             'colony_ship': fleet.colony_ship,
-            'recycler': fleet.recycler
+            'recycler': fleet.recycler,
+            'espionage_probe': fleet.espionage_probe,
+            'bomber': fleet.bomber,
+            'destroyer': fleet.destroyer,
+            'deathstar': fleet.deathstar,
+            'battlecruiser': fleet.battlecruiser
         },
         'departure_time': fleet.departure_time.isoformat() if fleet.departure_time else None,
         'arrival_time': fleet.arrival_time.isoformat() if fleet.arrival_time else None,
@@ -112,6 +117,11 @@ def create_fleet():
         battleship=ships.get('battleship', 0),
         colony_ship=ships.get('colony_ship', 0),
         recycler=ships.get('recycler', 0),
+        espionage_probe=ships.get('espionage_probe', 0),
+        bomber=ships.get('bomber', 0),
+        destroyer=ships.get('destroyer', 0),
+        deathstar=ships.get('deathstar', 0),
+        battlecruiser=ships.get('battlecruiser', 0),
         departure_time=datetime.utcnow(),
         arrival_time=datetime.utcnow()  # Will be updated when sent
     )
@@ -135,7 +145,12 @@ def create_fleet():
                 'cruiser': fleet.cruiser,
                 'battleship': fleet.battleship,
                 'colony_ship': fleet.colony_ship,
-                'recycler': fleet.recycler
+                'recycler': fleet.recycler,
+                'espionage_probe': fleet.espionage_probe,
+                'bomber': fleet.bomber,
+                'destroyer': fleet.destroyer,
+                'deathstar': fleet.deathstar,
+                'battlecruiser': fleet.battlecruiser
             }
         }
     }), 201
@@ -434,7 +449,12 @@ def recall_fleet(fleet_id):
                 'cruiser': fleet.cruiser,
                 'battleship': fleet.battleship,
                 'colony_ship': fleet.colony_ship,
-                'recycler': fleet.recycler
+                'recycler': fleet.recycler,
+                'espionage_probe': fleet.espionage_probe,
+                'bomber': fleet.bomber,
+                'destroyer': fleet.destroyer,
+                'deathstar': fleet.deathstar,
+                'battlecruiser': fleet.battlecruiser
             }
         }
     })
