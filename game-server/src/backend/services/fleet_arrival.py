@@ -789,12 +789,70 @@ class FleetArrivalService:
                 return
 
             # Calculate recycler capacity
-            recycler_capacity = fleet.recycler * 1000  # Assume 1000 cargo capacity per recycler
+            recycler_capacity = int(getattr(fleet, "recycler", 0) or 0) * 1000  # Assume 1000 cargo capacity per recycler
 
-            # Collect resources
-            collected_metal = min(debris_field.metal, recycler_capacity // 2)
-            collected_crystal = min(debris_field.crystal, recycler_capacity // 2)
-            collected_deuterium = min(debris_field.deuterium, recycler_capacity // 2)
+            # Determine recycling focus (stored as target_coordinates = "recycle:<focus>")
+            focus = None
+            raw_focus = getattr(fleet, "target_coordinates", None)
+            if isinstance(raw_focus, str) and raw_focus.startswith("recycle:"):
+                focus = raw_focus.split(":", 1)[1].strip().lower() or None
+            if focus not in (None, "proportional", "metal", "crystal", "deuterium"):
+                focus = None
+
+            available_metal = int(debris_field.metal or 0)
+            available_crystal = int(debris_field.crystal or 0)
+            available_deuterium = int(debris_field.deuterium or 0)
+
+            collected_metal = 0
+            collected_crystal = 0
+            collected_deuterium = 0
+
+            if recycler_capacity <= 0:
+                raise RuntimeError("Fleet has no recycler capacity")
+
+            if focus in ("metal", "crystal", "deuterium"):
+                if focus == "metal":
+                    collected_metal = min(available_metal, recycler_capacity)
+                elif focus == "crystal":
+                    collected_crystal = min(available_crystal, recycler_capacity)
+                else:
+                    collected_deuterium = min(available_deuterium, recycler_capacity)
+            else:
+                # Proportional split across resources present (capacity-constrained).
+                total_available = available_metal + available_crystal + available_deuterium
+                if total_available <= 0:
+                    collected_metal = collected_crystal = collected_deuterium = 0
+                else:
+                    # First-pass proportional allocation with flooring.
+                    def alloc(amount):
+                        return int((recycler_capacity * amount) // total_available) if amount > 0 else 0
+
+                    collected_metal = min(available_metal, alloc(available_metal))
+                    collected_crystal = min(available_crystal, alloc(available_crystal))
+                    collected_deuterium = min(available_deuterium, alloc(available_deuterium))
+
+                    used = collected_metal + collected_crystal + collected_deuterium
+                    remaining = max(0, recycler_capacity - used)
+
+                    # Distribute remaining capacity to resources that still have debris left.
+                    for key in ("metal", "crystal", "deuterium"):
+                        if remaining <= 0:
+                            break
+                        if key == "metal":
+                            room = max(0, available_metal - collected_metal)
+                            add = min(room, remaining)
+                            collected_metal += add
+                            remaining -= add
+                        elif key == "crystal":
+                            room = max(0, available_crystal - collected_crystal)
+                            add = min(room, remaining)
+                            collected_crystal += add
+                            remaining -= add
+                        else:
+                            room = max(0, available_deuterium - collected_deuterium)
+                            add = min(room, remaining)
+                            collected_deuterium += add
+                            remaining -= add
 
             # Update debris field
             debris_field.metal -= collected_metal

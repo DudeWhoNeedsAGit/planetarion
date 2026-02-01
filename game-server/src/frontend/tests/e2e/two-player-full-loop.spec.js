@@ -79,6 +79,10 @@ test.describe('Two-Player Full Gameplay Loop (Table C)', () => {
     await expect(debrisCard).toBeVisible({ timeout: 60000 });
     await debrisCard.getByTestId('combat-send-recyclers').evaluate((el) => el.click());
 
+    const recycleCfg = page.getByTestId('combat-recycle-config-modal');
+    await expect(recycleCfg).toBeVisible({ timeout: 60000 });
+    await recycleCfg.getByTestId('combat-recycle-continue').click();
+
     await expect(page.getByTestId('fleet-send-modal')).toBeVisible({ timeout: 60000 });
     await expect(page.getByTestId('fleet-mission-select')).toHaveValue('recycle');
     await expect(page.getByTestId('fleet-target-planet-select')).toHaveValue(String(targetPlanetId));
@@ -128,4 +132,3 @@ test.describe('Two-Player Full Gameplay Loop (Table C)', () => {
     });
   });
 });
-

@@ -264,9 +264,16 @@ function FleetManagement({ user, planets = [] }) {
         return (f?.ships?.recycler || 0) > 0;
       });
 
-    const preferredPlanetId = selectedPlanetId ?? null;
+    const preferredPlanetId = sendPreset?.start_planet_id ?? selectedPlanetId ?? null;
 
     const run = async () => {
+      if (preferredPlanetId != null) {
+        try {
+          setSelectedPlanetId(preferredPlanetId);
+        } catch (e) {
+          // ignore
+        }
+      }
       // For recycle presets: if the player only built recyclers but hasn't created a recycler fleet,
       // auto-create a recycler-only fleet from the inventory fleet so the one-click UX works.
       if (sendPreset.mission === 'recycle') {
@@ -861,7 +868,8 @@ function SendFleetModal({ fleet, planets, user, preset, onSend, onClose }) {
     target_x: preset?.target_x != null ? String(preset.target_x) : '',
     target_y: preset?.target_y != null ? String(preset.target_y) : '',
     target_z: preset?.target_z != null ? String(preset.target_z) : '',
-    mission: preset?.mission || 'attack'
+    mission: preset?.mission || 'attack',
+    recycle_focus: preset?.recycle_focus || 'proportional',
   }));
   const [debrisTargets, setDebrisTargets] = useState([]);
   const [debrisLoading, setDebrisLoading] = useState(false);
@@ -885,6 +893,7 @@ function SendFleetModal({ fleet, planets, user, preset, onSend, onClose }) {
       target_x: preset.target_x != null ? String(preset.target_x) : prev.target_x,
       target_y: preset.target_y != null ? String(preset.target_y) : prev.target_y,
       target_z: preset.target_z != null ? String(preset.target_z) : prev.target_z,
+      recycle_focus: preset.recycle_focus || prev.recycle_focus,
     }));
   }, [preset]);
 
@@ -1007,6 +1016,26 @@ function SendFleetModal({ fleet, planets, user, preset, onSend, onClose }) {
               <option value="colonize">Colonize</option>
             </select>
           </div>
+
+          {formData.mission === 'recycle' && (
+            <div className="mb-4">
+              <label className="block text-gray-300 mb-2">Recycling focus</label>
+              <select
+                value={formData.recycle_focus || 'proportional'}
+                onChange={(e) => setFormData((prev) => ({ ...prev, recycle_focus: e.target.value }))}
+                data-testid="fleet-recycle-focus"
+                className="w-full p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="proportional">Proportional (recommended)</option>
+                <option value="metal">Metal only</option>
+                <option value="crystal">Crystal only</option>
+                <option value="deuterium">Deuterium only</option>
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Proportional splits recycler capacity across available debris. “Only” focuses all capacity into one resource.
+              </p>
+            </div>
+          )}
 
           {/* Coordinates for colonization */}
           {formData.mission === 'colonize' && (

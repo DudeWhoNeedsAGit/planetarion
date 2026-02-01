@@ -37,6 +37,8 @@ def _planet_to_dict(planet):
         'id': planet.id,
         'user_id': planet.user_id,
         'name': planet.name,
+        'is_home_planet': bool(getattr(planet, 'is_home_planet', False)),
+        'colonized_at': planet.colonized_at.isoformat() if getattr(planet, 'colonized_at', None) else None,
         'x': planet.x,
         'y': planet.y,
         'z': planet.z,

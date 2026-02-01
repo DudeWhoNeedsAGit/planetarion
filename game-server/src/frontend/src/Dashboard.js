@@ -280,6 +280,7 @@ function Dashboard({ user, onLogout }) {
   const [shipStats, setShipStats] = useState({});
   const [shipRoles, setShipRoles] = useState([]);
   const [selectedShipRole, setSelectedShipRole] = useState('all');
+  const [shipBuildQuantities, setShipBuildQuantities] = useState({});
 
   // Fetch ship data on component mount
   useEffect(() => {
@@ -312,6 +313,22 @@ function Dashboard({ user, onLogout }) {
       selectedPlanet.resources.crystal >= (cost.crystal * quantity) &&
       selectedPlanet.resources.deuterium >= (cost.deuterium * quantity)
     );
+  };
+
+  const getMaxBuildableShipCount = (shipType) => {
+    if (!selectedPlanet || !shipCosts[shipType]) return 0;
+    const cost = shipCosts[shipType];
+    const resources = selectedPlanet.resources || { metal: 0, crystal: 0, deuterium: 0 };
+
+    const limits = [];
+    if ((cost.metal || 0) > 0) limits.push(Math.floor((resources.metal || 0) / cost.metal));
+    if ((cost.crystal || 0) > 0) limits.push(Math.floor((resources.crystal || 0) / cost.crystal));
+    if ((cost.deuterium || 0) > 0) limits.push(Math.floor((resources.deuterium || 0) / cost.deuterium));
+
+    if (limits.length === 0) return 0;
+    const raw = Math.max(0, Math.min(...limits));
+    // Guard against absurd sizes in UI; backend can still accept large numbers if desired.
+    return Math.min(raw, 10_000_000);
   };
 
   const formatShipName = (shipType) => {
@@ -795,7 +812,7 @@ function Dashboard({ user, onLogout }) {
       case 'combat':
         return (
           <div data-testid="section-combat">
-            <CombatDashboard user={user} onNavigateSection={setActiveSection} />
+            <CombatDashboard user={user} planets={planets} onNavigateSection={setActiveSection} />
           </div>
         );
       case 'wheel':
@@ -991,12 +1008,67 @@ function Dashboard({ user, onLogout }) {
                           </div>
                         )}
 
-                        {/* Build Buttons */}
-                        <div className="flex flex-col space-y-3">
-                          <div className="flex justify-between items-center">
-                            <button
-                              onClick={() => handleBuildShip(shipType, 1)}
-                              disabled={upgrading || !canAfford}
+	                        {/* Build Buttons */}
+	                        <div className="flex flex-col space-y-3">
+	                          {/* Custom quantity input (scales to late game) */}
+	                          <div className="bg-gray-900/30 border border-gray-700 rounded p-3">
+	                            <div className="flex items-center justify-between mb-2">
+	                              <div className="text-sm text-gray-200 font-medium">Custom amount</div>
+	                              <button
+	                                type="button"
+	                                className="text-xs px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white"
+	                                onClick={() => {
+	                                  const max = getMaxBuildableShipCount(shipType);
+	                                  setShipBuildQuantities((prev) => ({ ...prev, [shipType]: String(max) }));
+	                                }}
+	                                data-testid={`shipyard-max-${shipType}`}
+	                              >
+	                                Max
+	                              </button>
+	                            </div>
+	                            <div className="flex items-center gap-2">
+	                              <input
+	                                type="number"
+	                                min="0"
+	                                inputMode="numeric"
+	                                className="flex-1 p-2 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+	                                value={shipBuildQuantities?.[shipType] ?? ''}
+	                                onChange={(e) => {
+	                                  const next = e.target.value;
+	                                  setShipBuildQuantities((prev) => ({ ...prev, [shipType]: next }));
+	                                }}
+	                                placeholder="e.g. 1000"
+	                                data-testid={`shipyard-qty-${shipType}`}
+	                              />
+	                              <button
+	                                type="button"
+	                                className="px-4 py-2 rounded text-white font-medium transition-colors bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+	                                disabled={upgrading || !(() => {
+	                                  const q = parseInt(shipBuildQuantities?.[shipType] || '0', 10);
+	                                  return Number.isFinite(q) && q > 0 && canAffordShip(shipType, q);
+	                                })()}
+	                                onClick={() => {
+	                                  const q = parseInt(shipBuildQuantities?.[shipType] || '0', 10);
+	                                  if (!Number.isFinite(q) || q <= 0) {
+	                                    showError('Enter a valid ship quantity');
+	                                    return;
+	                                  }
+	                                  handleBuildShip(shipType, q);
+	                                }}
+	                                data-testid={`shipyard-build-${shipType}`}
+	                              >
+	                                Build
+	                              </button>
+	                            </div>
+	                            <div className="mt-2 text-xs text-gray-400">
+	                              Max buildable: {getMaxBuildableShipCount(shipType).toLocaleString()}
+	                            </div>
+	                          </div>
+
+	                          <div className="flex justify-between items-center">
+	                            <button
+	                              onClick={() => handleBuildShip(shipType, 1)}
+	                              disabled={upgrading || !canAfford}
                               className={`px-4 py-2 text-white font-medium rounded transition-colors ${
                                 canAfford
                                   ? 'bg-green-600 hover:bg-green-700'

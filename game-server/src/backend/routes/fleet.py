@@ -416,9 +416,16 @@ def send_fleet():
         if fleet.recycler <= 0:
             return jsonify({'error': 'Fleet must contain recycler ships for recycle mission'}), 400
 
+        recycle_focus = (data.get('recycle_focus') or data.get('recycle_resource') or 'proportional')
+        recycle_focus = str(recycle_focus).strip().lower()
+        if recycle_focus not in ('proportional', 'metal', 'crystal', 'deuterium'):
+            return jsonify({'error': 'Invalid recycle_focus'}), 400
+
         fleet.mission = 'recycle'
         fleet.target_planet_id = target_planet_id
         fleet.status = 'traveling'
+        # Store recycler focus without altering schema. (This field is otherwise used for colonization/exploration coords.)
+        fleet.target_coordinates = f"recycle:{recycle_focus}"
 
     elif data['mission'] in ('transport', 'deploy'):
         if target_planet_id is None:
