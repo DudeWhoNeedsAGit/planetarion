@@ -58,7 +58,24 @@ function FleetManagement({ user, planets = [] }) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showSendForm, setShowSendForm] = useState(false);
   const [selectedFleet, setSelectedFleet] = useState(null);
-  const [selectedPlanet, setSelectedPlanet] = useState(null);
+  const selectedPlanetStorageKey = useMemo(() => {
+    const userId = user?.id ?? 'anon';
+    return `planetarion:fleet:selectedPlanetId:${userId}`;
+  }, [user?.id]);
+
+  const [selectedPlanetId, setSelectedPlanetId] = useState(() => {
+    try {
+      // Prefer user-scoped key, fallback to a legacy global key.
+      const userId = user?.id ?? 'anon';
+      const scopedKey = `planetarion:fleet:selectedPlanetId:${userId}`;
+      const raw = localStorage.getItem(scopedKey) || localStorage.getItem('planetarion:fleet:selectedPlanetId');
+      if (!raw) return null;
+      const parsed = parseInt(raw, 10);
+      return Number.isFinite(parsed) ? parsed : null;
+    } catch (e) {
+      return null;
+    }
+  });
   const [allPlanets, setAllPlanets] = useState([]);
   const [sendPreset, setSendPreset] = useState(null);
   const [activeSendPreset, setActiveSendPreset] = useState(null);
@@ -170,6 +187,11 @@ function FleetManagement({ user, planets = [] }) {
     [planets, user?.id, normalizePlanet]
   );
 
+  const selectedPlanet = useMemo(() => {
+    if (selectedPlanetId == null) return null;
+    return userPlanets.find((p) => p.id === selectedPlanetId) || null;
+  }, [userPlanets, selectedPlanetId]);
+
   const normalizedFleets = useMemo(() =>
     fleets.map(normalizeFleet),
     [fleets, normalizeFleet]
@@ -242,7 +264,7 @@ function FleetManagement({ user, planets = [] }) {
         return (f?.ships?.recycler || 0) > 0;
       });
 
-    const preferredPlanetId = selectedPlanet?.id ?? null;
+    const preferredPlanetId = selectedPlanetId ?? null;
 
     const run = async () => {
       // For recycle presets: if the player only built recyclers but hasn't created a recycler fleet,
@@ -302,7 +324,7 @@ function FleetManagement({ user, planets = [] }) {
 
     run();
     // Keep sendPreset for the modal to consume; clear after opening.
-  }, [sendPreset, loading, normalizedFleets, selectedPlanet?.id, showError, fetchFleets]);
+  }, [sendPreset, loading, normalizedFleets, selectedPlanetId, showError, fetchFleets]);
 
   // Fleet send modal needs enemy/unowned planets, which are not included in /api/planet.
   useEffect(() => {
@@ -326,12 +348,27 @@ function FleetManagement({ user, planets = [] }) {
 
   // Stable planet selection - prevent flicker during async updates
   useEffect(() => {
-    if (userPlanets.length > 0 && !selectedPlanet) {
-      // Prefer home planet, fallback to first planet
-      const homePlanet = userPlanets.find(p => p.is_home_planet);
-      setSelectedPlanet(homePlanet || userPlanets[0]);
+    if (userPlanets.length === 0) return;
+
+    // If there is no selection (or it no longer exists), pick a deterministic default.
+    const stillValid = selectedPlanetId != null && userPlanets.some((p) => p.id === selectedPlanetId);
+    if (!stillValid) {
+      const homePlanet = userPlanets.find((p) => p.is_home_planet);
+      setSelectedPlanetId(homePlanet?.id ?? userPlanets[0].id);
     }
-  }, [userPlanets, selectedPlanet]);
+  }, [userPlanets, selectedPlanetId]);
+
+  // Persist selection across remounts / tab toggles.
+  useEffect(() => {
+    try {
+      if (selectedPlanetId == null) return;
+      localStorage.setItem(selectedPlanetStorageKey, String(selectedPlanetId));
+      // Back-compat key for earlier builds/tests.
+      localStorage.setItem('planetarion:fleet:selectedPlanetId', String(selectedPlanetId));
+    } catch (e) {
+      // ignore
+    }
+  }, [selectedPlanetId, selectedPlanetStorageKey]);
 
   // Refresh fleet state when the dashboard triggers a tick.
   useEffect(() => {
@@ -522,7 +559,7 @@ function FleetManagement({ user, planets = [] }) {
           {userPlanets.map(planet => (
             <button
               key={planet.id}
-              onClick={() => setSelectedPlanet(planet)}
+              onClick={() => setSelectedPlanetId(planet.id)}
               data-testid="fleet-planet-button"
               className={`px-4 py-2 rounded whitespace-nowrap ${
                 selectedPlanet?.id === planet.id
