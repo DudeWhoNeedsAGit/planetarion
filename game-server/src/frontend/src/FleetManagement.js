@@ -656,6 +656,7 @@ function FleetManagement({ user, planets = [] }) {
                 const icon =
                   type === 'combat' ? '⚔️' :
                   type === 'planet_capture' ? '🏴‍☠️' :
+                  type === 'planet_rename' ? '✏️' :
                   type === 'colonization' ? '🌍' :
                   type === 'recycle' ? '♻️' :
                   type === 'fleet_sent' ? '🚀' :
@@ -724,7 +725,7 @@ function FleetManagement({ user, planets = [] }) {
   );
 }
 
-function CreateFleetModal({ planets, selectedPlanet, availableShipsByPlanetId, onCreate, onClose }) {
+  function CreateFleetModal({ planets, selectedPlanet, availableShipsByPlanetId, onCreate, onClose }) {
   const { showError } = useToast();
   const [formData, setFormData] = useState({
     start_planet_id: selectedPlanet?.id ? String(selectedPlanet.id) : '',
@@ -738,6 +739,20 @@ function CreateFleetModal({ planets, selectedPlanet, availableShipsByPlanetId, o
         ...prev.ships,
         [shipType]: parseInt(value) || 0
       }
+    }));
+  };
+
+  const setShipToMax = (shipType) => {
+    if (!available) {
+      showError('Select a starting planet first');
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      ships: {
+        ...prev.ships,
+        [shipType]: available[shipType] || 0,
+      },
     }));
   };
 
@@ -821,10 +836,22 @@ function CreateFleetModal({ planets, selectedPlanet, availableShipsByPlanetId, o
             <div className="grid grid-cols-2 gap-2">
               {FLEET_SHIP_KEYS.map((shipType) => (
                 <div key={shipType}>
-                  <label className="block text-xs text-gray-400 mb-1">
-                    {shipType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    {available ? ` (max ${available[shipType] || 0})` : ''}
-                  </label>
+                  <div className="flex items-center justify-between mb-1 gap-2">
+                    <label className="block text-xs text-gray-400">
+                      {shipType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      {available ? ` (max ${available[shipType] || 0})` : ''}
+                    </label>
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!available}
+                      onClick={() => setShipToMax(shipType)}
+                      data-testid={`fleet-ship-max-${shipType}`}
+                      title="Set to max available"
+                    >
+                      max
+                    </button>
+                  </div>
                   <input
                     type="number"
                     min="0"

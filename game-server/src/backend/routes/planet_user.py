@@ -13,7 +13,8 @@ Building upgrades include resource cost calculations and production rate updates
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
-from backend.models import User, Planet
+from backend.models import User, Planet, PlanetRenameLog, TickLog
+from datetime import datetime
 from backend.config import get_planet_storage_caps
 
 planet_mgmt_bp = Blueprint('planet_mgmt', __name__, url_prefix='/api/planet')
@@ -192,6 +193,60 @@ def update_buildings():
             },
         }
     )
+
+
+@planet_mgmt_bp.route('/rename', methods=['PUT'])
+@jwt_required()
+def rename_planet():
+    """Rename a planet exactly once (per planet)."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+
+    planet_id = data.get('planet_id')
+    new_name = (data.get('new_name') or '').strip()
+
+    try:
+        planet_id = int(planet_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid planet_id'}), 400
+
+    if not new_name:
+        return jsonify({'error': 'New name is required'}), 400
+    if len(new_name) > 32:
+        return jsonify({'error': 'Name too long (max 32 chars)'}), 400
+    if any(ch in new_name for ch in ['\n', '\r', '\t']):
+        return jsonify({'error': 'Invalid name'}), 400
+
+    planet = Planet.query.filter_by(id=planet_id, user_id=user_id).first_or_404()
+
+    already = PlanetRenameLog.query.filter_by(planet_id=planet.id).first()
+    if already:
+        return jsonify({'error': 'This planet has already been renamed once'}), 400
+
+    old_name = planet.name
+    planet.name = new_name
+
+    db.session.add(PlanetRenameLog(
+        planet_id=planet.id,
+        user_id=user_id,
+        old_name=old_name,
+        new_name=new_name,
+    ))
+
+    db.session.add(TickLog(
+        tick_number=0,
+        planet_id=planet.id,
+        event_type='planet_rename',
+        event_description=f'Planet renamed: "{old_name}" → "{new_name}"',
+        timestamp=datetime.utcnow(),
+    ))
+
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Planet renamed',
+        'planet': _planet_to_dict(planet),
+    }), 200
 
 def calculate_production_rates(planet):
     """Calculate resource production rates based on buildings"""

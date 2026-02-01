@@ -20,6 +20,9 @@ function Dashboard({ user, onLogout }) {
   const [ticking, setTicking] = useState(false);
   const [pollingInterval, setPollingInterval] = useState(null);
   const [chatMinimized, setChatMinimized] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
   const { showSuccess, showError } = useToast();
   const showTickButton = process.env.REACT_APP_SHOW_TICK_BUTTON === 'true';
 
@@ -451,14 +454,29 @@ function Dashboard({ user, onLogout }) {
             <Overview user={user} planets={planets} />
           </div>
         );
-      case 'planets':
-        return (
-          <div className="space-y-6" data-testid="section-planets">
-            {/* Planet Selection */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
-                🪐 Your Planets ({planets.length})
-              </h2>
+	      case 'planets':
+	        return (
+	          <div className="space-y-6" data-testid="section-planets">
+	            {/* Planet Selection */}
+	            <div className="mb-6">
+	              <div className="flex items-center justify-between gap-4 mb-4">
+	                <h2 className="text-2xl font-bold text-white flex items-center">
+	                  🪐 Your Planets ({planets.length})
+	                </h2>
+	                <button
+	                  type="button"
+	                  className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+	                  disabled={!selectedPlanet || renaming}
+	                  onClick={() => {
+	                    if (!selectedPlanet) return;
+	                    setRenameValue(selectedPlanet.name || '');
+	                    setShowRenameModal(true);
+	                  }}
+	                  data-testid="planet-rename-open"
+	                >
+	                  Rename
+	                </button>
+	              </div>
               {planets.length > 6 ? (
                 <div className="bg-gray-800 rounded-lg p-4">
                   <label className="block text-sm text-gray-300 mb-2">Select planet</label>
@@ -1222,14 +1240,85 @@ function Dashboard({ user, onLogout }) {
 
       <Navigation activeSection={activeSection} onSectionChange={setActiveSection} />
 
-      <main className="container mx-auto p-6">
-        {renderSection()}
-      </main>
+	      <main className="container mx-auto p-6">
+	        {renderSection()}
+	      </main>
 
-	      {/* Galaxy Map Modal */}
-	      {activeSection === 'galaxy' && (
-	        <GalaxyMap
-	          user={user}
+	      {showRenameModal && selectedPlanet && (
+	        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" data-testid="planet-rename-modal">
+	          <div className="bg-gray-800 p-6 rounded-lg w-full max-w-md border border-gray-700">
+	            <div className="flex items-center justify-between mb-4">
+	              <h3 className="text-xl font-bold text-white">Rename Planet</h3>
+	              <button
+	                type="button"
+	                className="text-gray-400 hover:text-white"
+	                onClick={() => setShowRenameModal(false)}
+	                aria-label="Close"
+	              >
+	                ✕
+	              </button>
+	            </div>
+
+	            <div className="text-sm text-gray-300 mb-3">
+	              Planet: <span className="text-white font-medium">{selectedPlanet.name}</span>
+	            </div>
+
+	            <label className="block text-gray-300 mb-2">New name (one-time)</label>
+	            <input
+	              className="w-full p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+	              value={renameValue}
+	              maxLength={32}
+	              onChange={(e) => setRenameValue(e.target.value)}
+	              data-testid="planet-rename-input"
+	              placeholder="e.g. New Terra"
+	            />
+	            <div className="mt-2 text-xs text-gray-400">Max 32 characters. Renaming is allowed once per planet.</div>
+
+	            <div className="flex gap-3 mt-5">
+	              <button
+	                type="button"
+	                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+	                disabled={renaming || !renameValue.trim()}
+	                data-testid="planet-rename-submit"
+	                onClick={async () => {
+	                  const newName = renameValue.trim();
+	                  if (!newName) return;
+	                  setRenaming(true);
+	                  try {
+	                    const res = await axios.put('/api/planet/rename', { planet_id: selectedPlanet.id, new_name: newName });
+	                    const updated = res.data?.planet;
+	                    if (updated?.id) {
+	                      setPlanets((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+	                      setSelectedPlanet((prev) => (prev?.id === updated.id ? updated : prev));
+	                    }
+	                    showSuccess('Planet renamed');
+	                    setShowRenameModal(false);
+	                  } catch (e) {
+	                    showError(e.response?.data?.error || 'Rename failed');
+	                  } finally {
+	                    setRenaming(false);
+	                  }
+	                }}
+	              >
+	                {renaming ? 'Renaming…' : 'Rename'}
+	              </button>
+	              <button
+	                type="button"
+	                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+	                data-testid="planet-rename-cancel"
+	                onClick={() => setShowRenameModal(false)}
+	              >
+	                Cancel
+	              </button>
+	            </div>
+	          </div>
+	        </div>
+	      )}
+	
+		      {/* Galaxy Map Modal */}
+		      {activeSection === 'galaxy' && (
+		        <GalaxyMap
+		          user={user}
 	          planets={planets}
 	          onNavigateSection={setActiveSection}
 	          onClose={() => setActiveSection('overview')}

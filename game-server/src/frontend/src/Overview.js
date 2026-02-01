@@ -49,6 +49,7 @@ function Overview({ user, planets }) {
       let icon = '📝';
       if (type.includes('combat')) icon = '⚔️';
       else if (type.includes('planet_capture') || type.includes('colon')) icon = '🪐';
+      else if (type.includes('rename')) icon = '✏️';
       else if (type.includes('recycle')) icon = '♻️';
       else if (type.includes('pirate')) icon = '🏴‍☠️';
       else if (type.includes('espion')) icon = '🕵️';

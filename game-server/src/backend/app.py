@@ -1,7 +1,10 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
-from flasgger import Swagger
+try:
+    from flasgger import Swagger
+except Exception:  # pragma: no cover
+    Swagger = None
 import json
 from .config import get_config
 from .database import db, migrate
@@ -52,28 +55,34 @@ def create_app(config_name=None):
         jwt = JWTManager(app)
         print("✅ JWT initialized")
 
-        # Initialize Swagger documentation
-        print("📚 Initializing Swagger...")
-        swagger_config = {
-            "headers": [],
-            "specs": [
-                {
-                    "endpoint": 'apispec',
-                    "route": '/apispec.json',
-                    "rule_filter": lambda rule: True,
-                    "model_filter": lambda tag: True,
-                }
-            ],
-            "static_url_path": "/flasgger_static",
-            "swagger_ui": True,
-            "specs_route": "/apidocs/"
-        }
-        swagger = Swagger(app, config=swagger_config)
-        print("✅ Swagger initialized")
+        # Initialize Swagger documentation (optional in minimal test environments)
+        if Swagger is not None:
+            print("📚 Initializing Swagger...")
+            swagger_config = {
+                "headers": [],
+                "specs": [
+                    {
+                        "endpoint": 'apispec',
+                        "route": '/apispec.json',
+                        "rule_filter": lambda rule: True,
+                        "model_filter": lambda tag: True,
+                    }
+                ],
+                "static_url_path": "/flasgger_static",
+                "swagger_ui": True,
+                "specs_route": "/apidocs/"
+            }
+            swagger = Swagger(app, config=swagger_config)
+            print("✅ Swagger initialized")
+        else:
+            swagger = None
+            print("⚠️ Swagger not available (flasgger not installed)")
 
         # OpenAPI export endpoint
         @app.route("/export_openapi")
         def export_openapi():
+            if swagger is None:
+                return jsonify({"error": "Swagger not available"}), 501
             return json.dumps(swagger.get_apispecs())
 
         # Initialize scheduler
@@ -165,12 +174,13 @@ def create_app(config_name=None):
         @jwt_required()
         def get_tick_logs():
             """Return recent TickLog entries relevant to the authenticated user."""
-            from sqlalchemy import or_
+            from sqlalchemy import or_, and_
             from .models import Planet, Fleet, TickLog
 
             user_id = int(get_jwt_identity())
             limit = request.args.get('limit', 50, type=int)
             offset = request.args.get('offset', 0, type=int)
+            include_resource = request.args.get('include_resource', '0').lower() in ('1', 'true', 'yes')
 
             planet_ids = [pid for (pid,) in Planet.query.filter_by(user_id=user_id).with_entities(Planet.id).all()]
             fleet_ids = [fid for (fid,) in Fleet.query.filter_by(user_id=user_id).with_entities(Fleet.id).all()]
@@ -184,8 +194,19 @@ def create_app(config_name=None):
             if not conditions:
                 return jsonify({'logs': [], 'total': 0, 'limit': limit, 'offset': offset})
 
+            query = TickLog.query.filter(or_(*conditions))
+            if not include_resource:
+                # Default: hide per-tick resource production rows (which have no event_type/description and pollute the UI).
+                # UI can explicitly request them with `include_resource=1`.
+                query = query.filter(
+                    or_(
+                        and_(TickLog.event_type.isnot(None), TickLog.event_type != ''),
+                        and_(TickLog.event_description.isnot(None), TickLog.event_description != ''),
+                    )
+                )
+
             logs = (
-                TickLog.query.filter(or_(*conditions))
+                query
                 .order_by(TickLog.timestamp.desc(), TickLog.id.desc())
                 .limit(limit)
                 .offset(offset)

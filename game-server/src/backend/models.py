@@ -85,6 +85,23 @@ class Planet(db.Model):
         return f'<Planet {self.name} ({self.x}:{self.y}:{self.z})>'
 
 
+class PlanetRenameLog(db.Model):
+    __tablename__ = 'planet_rename_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False, unique=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    renamed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    old_name = db.Column(db.String(100), nullable=False)
+    new_name = db.Column(db.String(100), nullable=False)
+
+    planet = db.relationship('Planet', backref=db.backref('rename_log', uselist=False))
+    user = db.relationship('User', backref='planet_rename_logs')
+
+    def __repr__(self):
+        return f'<PlanetRenameLog planet:{self.planet_id} user:{self.user_id}>'
+
+
 class Fleet(db.Model):
     __tablename__ = 'fleets'
 

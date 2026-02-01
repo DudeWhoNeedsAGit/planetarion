@@ -5,7 +5,13 @@ from backend.models import User, Planet
 import bcrypt
 import re
 import random
-from flasgger import swag_from
+try:
+    from flasgger import swag_from
+except Exception:  # pragma: no cover
+    def swag_from(*args, **kwargs):
+        def decorator(fn):
+            return fn
+        return decorator
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
