@@ -282,6 +282,43 @@ class TestShipyardIntegration:
         assert data['fleet']['id'] is not None
         assert data['fleet']['colony_ship'] == 1
 
+    def test_build_recycler_then_create_fleet_with_recycler(self, client, sample_user, sample_planet, db_session):
+        """RCA regression: shipyard-built recyclers must be allocatable into a new fleet from the fleet screen."""
+        headers = make_auth_headers(sample_user.id)
+
+        # Ensure enough resources for 2 recyclers.
+        sample_planet.metal = 100000
+        sample_planet.crystal = 100000
+        sample_planet.deuterium = 100000
+        db_session.commit()
+
+        # Build recyclers (should land in a stationed "inventory" fleet at the planet).
+        build = client.post(
+            '/api/shipyard/build',
+            json={'planet_id': sample_planet.id, 'ship_type': 'recycler', 'quantity': 2},
+            headers=headers,
+        )
+        assert build.status_code == 200
+
+        inventory = Fleet.query.filter_by(user_id=sample_user.id, start_planet_id=sample_planet.id, status='stationed').first()
+        assert inventory is not None
+        assert (inventory.recycler or 0) >= 2
+
+        # Create a new fleet that contains 1 recycler (splitting from inventory).
+        create = client.post(
+            '/api/fleet',
+            json={'start_planet_id': sample_planet.id, 'ships': {'recycler': 1}},
+            headers=headers,
+        )
+        assert create.status_code == 201, create.get_data(as_text=True)
+        new_fleet_id = create.get_json()['fleet']['id']
+        new_fleet = Fleet.query.get(new_fleet_id)
+        assert new_fleet is not None
+        assert new_fleet.recycler == 1
+
+        inventory = Fleet.query.get(inventory.id)
+        assert (inventory.recycler or 0) >= 1  # 2 built - 1 allocated
+
     def test_ship_building_updates_existing_fleet(self, client, sample_user, sample_planet, sample_fleet, db_session):
         """Test that building ships updates existing fleet"""
         headers = make_auth_headers(sample_user.id)

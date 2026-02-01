@@ -11,6 +11,39 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def get_min_travel_time_seconds():
+    """Minimum fleet travel time in seconds.
+
+    In testing (Playwright/pytest), we default to 0 so E2E flows don't depend on real-time waiting.
+    Override with PLANETARION_MIN_TRAVEL_TIME_SECONDS when needed.
+    """
+    override = os.getenv('PLANETARION_MIN_TRAVEL_TIME_SECONDS')
+    if override is not None and str(override).strip() != '':
+        try:
+            return max(0, int(override))
+        except (TypeError, ValueError):
+            pass
+
+    if os.getenv('FLASK_ENV') == 'testing' or os.getenv('PYTEST_CURRENT_TEST'):
+        return 0
+
+    return 30
+
+
+def get_forced_travel_time_seconds():
+    """Optional forced travel time override (seconds).
+
+    This is intended for E2E/CI runs where we want deterministic, fast fleet processing
+    without waiting for real-time travel.
+    """
+    raw = os.getenv("PLANETARION_FORCED_TRAVEL_TIME_SECONDS")
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return None
+
 class Config:
     """Base configuration class"""
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -34,6 +67,16 @@ class Config:
 
     # Scheduler configuration
     SCHEDULER_TIMEZONE = "UTC"
+    # Automatic tick processing (server-side scheduler)
+    #
+    # Default behavior:
+    # - development: scheduler starts automatically (see backend/app.py)
+    # - testing: scheduler is OFF unless explicitly enabled via env var (keeps tests deterministic)
+    TICK_SCHEDULER_ENABLED = os.getenv("PLANETARION_TICK_SCHEDULER_ENABLED", "").lower() in ("1", "true", "yes", "on")
+    try:
+        TICK_SCHEDULER_INTERVAL_SECONDS = max(0, int(os.getenv("PLANETARION_TICK_INTERVAL_SECONDS", "5")))
+    except (TypeError, ValueError):
+        TICK_SCHEDULER_INTERVAL_SECONDS = 5
 
 
 class DevelopmentConfig(Config):
@@ -51,6 +94,7 @@ class TestingConfig(Config):
     """Testing configuration"""
     TESTING = True
     DEBUG = True
+    FLASK_ENV = 'testing'
 
     # Use environment variable for database (allows central control)
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db')
@@ -63,6 +107,11 @@ class TestingConfig(Config):
 
     # Test database
     PRESERVE_CONTEXT_ON_EXCEPTION = False
+
+    # Keep the scheduler off by default in tests unless explicitly enabled
+    # (prevents background tick side-effects during pytest runs).
+    if not os.getenv("PLANETARION_TICK_SCHEDULER_ENABLED"):
+        TICK_SCHEDULER_ENABLED = False
 
 
 class ProductionConfig(Config):
@@ -150,7 +199,39 @@ PATHS = {
 # ============================================================================
 
 # Global speed multiplier - adjust this to change overall game speed
-SPEED_MULTIPLIER = 1.0
+SPEED_MULTIPLIER = 30.0
+
+# ============================================================================
+# ECONOMY / STORAGE
+# ============================================================================
+
+# Storage caps are intentionally high because the test dataset starts with large resources.
+BASE_STORAGE_CAPACITY = 10_000_000
+STORAGE_GROWTH = 1.5
+
+
+def calculate_storage_capacity(level: int) -> int:
+    """Compute storage capacity for a given storage building level."""
+    if level is None:
+        level = 0
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        level = 0
+    level = max(level, 0)
+    return int(BASE_STORAGE_CAPACITY * (STORAGE_GROWTH ** level))
+
+
+def get_planet_storage_caps(planet) -> dict:
+    """Return per-resource storage caps for a planet."""
+    metal_level = getattr(planet, "metal_storage", 0) or 0
+    crystal_level = getattr(planet, "crystal_storage", 0) or 0
+    deut_level = getattr(planet, "deuterium_tank", 0) or 0
+    return {
+        "metal": calculate_storage_capacity(metal_level),
+        "crystal": calculate_storage_capacity(crystal_level),
+        "deuterium": calculate_storage_capacity(deut_level),
+    }
 
 # Base ship speeds (units per hour at normal speed)
 SHIP_SPEEDS = {
@@ -160,7 +241,7 @@ SHIP_SPEEDS = {
     'heavy_fighter': 10000,
     'cruiser': 15000,
     'battleship': 10000,
-    'colony_ship': 10000,  # Intentionally slow for strategic gameplay
+    'colony_ship': 2500,  # Slow for strategic gameplay
     'recycler': 2000,
     'espionage_probe': 100000,  # Very fast for scouting
     'bomber': 4000,
@@ -311,6 +392,23 @@ SHIP_STATS = {
     }
 }
 
+# ============================================================================
+# COMBAT SHIP STATS - Used by CombatEngine (single source of truth)
+# ============================================================================
+
+# Note: This is intentionally separate from SHIP_STATS above; SHIP_STATS is a broader
+# "game design" view (firepower/defense/shield/cargo/etc). CombatEngine uses a
+# hull/shield/weapon model.
+COMBAT_SHIP_STATS = {
+    'small_cargo': {'hull': 4000, 'shield': 10, 'weapon': 5, 'speed': 5000, 'cargo': 5000, 'fuel': 10},
+    'large_cargo': {'hull': 12000, 'shield': 25, 'weapon': 5, 'speed': 7500, 'cargo': 25000, 'fuel': 50},
+    'light_fighter': {'hull': 4000, 'shield': 10, 'weapon': 50, 'speed': 12500, 'cargo': 50, 'fuel': 20},
+    'heavy_fighter': {'hull': 10000, 'shield': 25, 'weapon': 150, 'speed': 10000, 'cargo': 100, 'fuel': 75},
+    'cruiser': {'hull': 27000, 'shield': 50, 'weapon': 400, 'speed': 15000, 'cargo': 800, 'fuel': 300},
+    'battleship': {'hull': 60000, 'shield': 200, 'weapon': 1000, 'speed': 10000, 'cargo': 1500, 'fuel': 500},
+    'colony_ship': {'hull': 30000, 'shield': 100, 'weapon': 50, 'speed': 2500, 'cargo': 7500, 'fuel': 1000},
+}
+
 def get_ship_speed(ship_type):
     """Get the speed for a ship type with global multiplier applied"""
     base_speed = SHIP_SPEEDS.get(ship_type, 5000)
@@ -357,11 +455,15 @@ def calculate_fleet_speed(fleet):
     for ship_type in ship_types:
         if hasattr(fleet, ship_type):
             ship_count = getattr(fleet, ship_type, 0)
+            try:
+                ship_count = int(ship_count)
+            except (TypeError, ValueError):
+                ship_count = 0
             if ship_count > 0:
                 ship_speed = get_ship_speed(ship_type)
                 slowest_speed = min(slowest_speed, ship_speed)
 
-    return slowest_speed if slowest_speed != float('inf') else get_ship_speed('small_cargo')
+    return slowest_speed if slowest_speed != float('inf') else 0
 
 def calculate_fuel_consumption(fleet, distance):
     """Calculate total fuel consumption for a fleet traveling a distance"""
@@ -376,6 +478,10 @@ def calculate_fuel_consumption(fleet, distance):
     for ship_type in ship_types:
         if hasattr(fleet, ship_type):
             ship_count = getattr(fleet, ship_type, 0)
+            try:
+                ship_count = int(ship_count)
+            except (TypeError, ValueError):
+                ship_count = 0
             if ship_count > 0:
                 fuel_rate = get_ship_fuel_rate(ship_type)
                 total_fuel += ship_count * fuel_rate * distance

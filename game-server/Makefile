@@ -1,7 +1,23 @@
 # Planetarion Development Makefile
 # Single entry point for all development tasks
 
-.PHONY: help unit integration e2e frontend all clean dev-up dev-down test-up test-down tdd tdd-stop
+.PHONY: help unit integration e2e frontend supertest all clean dev-up dev-down test-up test-down tdd tdd-stop
+
+# Optional vars:
+# - TICK=1 enables server-side auto-ticks for local manual play (test-env/test).
+TICK ?= 0
+ifeq ($(TICK),1)
+TICK_ENV := PLANETARION_TICK_SCHEDULER_ENABLED=true PLANETARION_TICK_INTERVAL_SECONDS=2
+else
+TICK_ENV :=
+endif
+
+# Local admin token for fast DB snapshot/restore endpoints (dev/test only).
+DEV_ADMIN_TOKEN ?= planetarion-dev
+
+# Optional vars:
+# - FRESH=1 forces full teardown + repopulate (slow, but useful when schema changes)
+FRESH ?= 0
 
 # Default target - Show help
 help: # Show all available commands
@@ -15,8 +31,20 @@ help: # Show all available commands
 	@echo "  make e2e               - Run end-to-end tests (Docker + PostgreSQL)"
 	@echo "  make e2e-ui            - Run E2E tests with local UI (no Docker)"
 	@echo "  make e2e-ui TEST_FILE=tests/e2e/dashboard.spec.js - Run specific E2E test file"
+	@echo "  make e2e-ui-tick       - Same as e2e-ui TICK=1"
+	@echo "  make e2e-c             - Run Table C full loop Playwright spec (local UI)"
+	@echo "  make test-env          - Start backend + frontend for manual testing (no Playwright)"
+	@echo "  make test-env TICK=1   - Start manual test env with auto-ticks enabled"
+	@echo "  make test-env-tick     - Same as test-env TICK=1"
+	@echo "  make test-env FRESH=1  - Full rebuild (slow) + snapshot"
+	@echo "  make test-env-reset    - Restore DB from snapshot (fast; servers stay running)"
+	@echo "  make test-env-snapshot - Create/overwrite snapshot from live DB"
+	@echo "  make scenario-two-player-reset - Reset DB to 2-player + pirates scenario"
+	@echo "  make test-a            - Run Table A backend golden-path integration test"
+	@echo "  make supertest         - Run JavaScript integration tests (Supertest + Jest)"
+	@echo "  make supertest TEST_FILE=src/__tests__/integration/colonization.integration.test.js - Run specific Supertest test file"
 	@echo "  make frontend          - Run frontend tests (Docker)"
-	@echo "  make all               - Run all tests (unit + integration + e2e)"
+	@echo "  make all               - Run all tests (unit + integration + e2e + supertest)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint          - Run linting and formatting"
@@ -30,6 +58,7 @@ help: # Show all available commands
 	@echo ""
 	@echo "Environment Management:"
 	@echo "  make test          - Start local test environment (SQLite + servers + test data)"
+	@echo "  make test-tick     - Same as test TICK=1"
 	@echo "  make test-stop     - Stop local test environment"
 	@echo "  make dev-up        - Start development containers"
 	@echo "  make dev-down      - Stop development containers"
@@ -51,11 +80,20 @@ unit: # Run unit tests (fast, no Docker)
 
 integration: # Run integration tests (fast, no Docker)
 	@echo "🔗 Running Integration Tests (SQLite)..."
-	. venv/bin/activate && python -m pytest tests/integration $(if $(FAILED),--lf,) -v --tb=short --disable-warnings
+	@if [ -n "$(TEST_FILE)" ]; then \
+		echo "🎯 Running specific test file: $(TEST_FILE)"; \
+		. venv/bin/activate && python -m pytest $(TEST_FILE) -v --tb=short --disable-warnings; \
+	else \
+		. venv/bin/activate && python -m pytest tests/integration $(if $(FAILED),--lf,) -v --tb=short --disable-warnings; \
+	fi
 
 integration-failed: # Run only previously failed integration tests
 	@echo "🔄 Running Only Previously Failed Integration Tests..."
 	. venv/bin/activate && python -m pytest tests/integration --lf -v --tb=short --disable-warnings
+
+test-a: # Table A backend golden-path integration test
+	@echo "🧪 Running Table A backend golden-path test..."
+	. venv/bin/activate && python -m pytest tests/integration/test_two_player_table_a_golden_path.py -v --tb=short --disable-warnings
 
 # Docker-based tests (PostgreSQL)
 e2e: # Run end-to-end tests (Docker + PostgreSQL)
@@ -68,6 +106,8 @@ e2e: # Run end-to-end tests (Docker + PostgreSQL)
 e2e-ui: # Run E2E tests with local UI (no Docker)
 	@echo "🖥️  Running E2E Tests with Local UI (No Docker)..."
 	@echo "📋 This will start backend and frontend locally, then run E2E tests"
+	@if [ "$(TICK)" = "1" ]; then echo "⏱️  Auto-ticks: enabled"; else echo "⏸️  Auto-ticks: disabled (set TICK=1)"; fi
+	@if [ "$(FRESH)" = "1" ]; then echo "♻️  DB mode: FRESH (repopulate)"; else echo "⚡ DB mode: RESTORE (snapshot)"; fi
 	@if [ -n "$(TEST_FILE)" ]; then \
 		echo "🎯 Targeting specific test file: $(TEST_FILE)"; \
 	else \
@@ -81,6 +121,7 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
 	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 	@-rm -f instance/test_e2e.db
+	@if [ "$(FRESH)" = "1" ]; then rm -f instance/test_e2e.db.bak; fi
 	@sleep 2
 	@echo "✅ Cleanup complete"
 	@echo ""
@@ -89,7 +130,7 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	@echo "✅ Instance directory ready"
 	@echo ""
 	@echo "🔧 Starting backend server..."
-	@DATABASE_URL='sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db' . venv/bin/activate && FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@. venv/bin/activate && DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' $(TICK_ENV) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
 	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
 	@sleep 5  # Give Flask time to start or show errors
 	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY" backend.log; then \
@@ -117,25 +158,24 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	fi
 	@echo "   ✅ Port 5000 is listening"
 	@echo ""
-	@echo "📊 Populating test database..."
+	@echo "📊 Setting up test database (fast backup/restore)..."
 	@echo "   Waiting for backend to initialize..."
-	@sleep 8
+	@sleep 2
 	@echo "   Checking backend health..."
-	@for i in 1 2 3 4 5; do \
+	@for i in 1 2 3; do \
 		if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
 			echo "   ✅ Backend is healthy"; \
 			break; \
 		else \
-			echo "   ⏳ Backend not ready yet (attempt $$i/5)..."; \
-			sleep 2; \
+			echo "   ⏳ Backend not ready yet (attempt $$i/3)..."; \
+			sleep 1; \
 		fi; \
 	done
-	@echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_e2e.db"
-	@export DATABASE_URL='sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py
-	@echo "✅ Test database populated"
+	@export DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && python scripts/setup_test_db.py
+	@echo "✅ Test database ready"
 	@echo ""
 	@echo "🎨 Starting frontend server..."
-	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 &
+	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 &
 	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
 	@sleep 10  # Give React time to start or crash
 	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
@@ -189,6 +229,19 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	@echo "✅ Cleanup complete"
 	@exit $$TEST_EXIT_CODE
 
+e2e-c: # Table C full loop Playwright spec (local UI)
+	@$(MAKE) e2e-ui TEST_FILE=tests/e2e/two-player-full-loop.spec.js
+
+# Convenience wrappers (GNU make doesn't support flags like --tick)
+test-env-tick:
+	@$(MAKE) test-env TICK=1
+
+test-tick:
+	@$(MAKE) test TICK=1
+
+e2e-ui-tick:
+	@$(MAKE) e2e-ui TICK=1
+
 
 frontend: # Run frontend tests (Docker)
 	@echo "🎨 Running Frontend Tests (Docker)..."
@@ -197,17 +250,9 @@ frontend: # Run frontend tests (Docker)
 	docker-compose -f config/docker/docker-compose.test.yml run --rm test-frontend npm test
 	@docker-compose -f config/docker/docker-compose.test.yml down
 
-# Combined testing
-all: # Run all tests (unit + integration + e2e)
-	@echo "🧪 Running All Tests (Unit + Integration + E2E)..."
-	$(MAKE) unit
-	$(MAKE) integration
-	$(MAKE) e2e-ui
-
-# Environment management
-test: # Start local test environment (SQLite + servers + test data)
-	@echo "🧪 Starting Local Test Environment..."
-	@echo "📋 This will start backend and frontend locally with test database"
+supertest: # Run JavaScript integration tests (Supertest + Jest)
+	@echo "🧪 Running JavaScript Integration Tests (Supertest + Jest)..."
+	@echo "📋 This will start backend and frontend locally, then run Supertest integration tests"
 	@echo ""
 	@echo "🧹 Cleaning up any existing processes and test database..."
 	@-pkill -f "FLASK_ENV=testing" || true
@@ -215,7 +260,7 @@ test: # Start local test environment (SQLite + servers + test data)
 	@-pkill -f "npm start" || true
 	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
 	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-	@-rm -f instance/test_e2e.db
+	@-rm -f instance/test_supertest.db
 	@sleep 2
 	@echo "✅ Cleanup complete"
 	@echo ""
@@ -223,10 +268,8 @@ test: # Start local test environment (SQLite + servers + test data)
 	@-mkdir -p instance
 	@echo "✅ Instance directory ready"
 	@echo ""
-	@echo "🔧 Starting backend server..."
-	@echo "   📁 Database file: $(PWD)/instance/test_e2e.db"
-	@echo "   🔗 Database URL: sqlite:///./instance/test_e2e.db"
-	@DATABASE_URL='sqlite:///./instance/test_e2e.db' . venv/bin/activate && FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@echo "🔧 Starting backend server for Supertest..."
+	@. venv/bin/activate && DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
 	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
 	@sleep 5  # Give Flask time to start or show errors
 	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
@@ -256,23 +299,156 @@ test: # Start local test environment (SQLite + servers + test data)
 	@echo ""
 	@echo "📊 Populating test database..."
 	@echo "   Waiting for backend to initialize..."
-	@sleep 8
+	@sleep 3  # Reduced from 8s since we're using fast backup restore
 	@echo "   Checking backend health..."
-	@for i in 1 2 3 4 5; do \
+	@for i in 1 2 3; do \
 		if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
 			echo "   ✅ Backend is healthy"; \
 			break; \
 		else \
-			echo "   ⏳ Backend not ready yet (attempt $$i/5)..."; \
-			sleep 2; \
+			echo "   ⏳ Backend not ready yet (attempt $$i/3)..."; \
+			sleep 1; \
 		fi; \
 	done
-	@echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_e2e.db"
-	@export DATABASE_URL='sqlite:///./instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py
+	@echo "🔧 Setting up test database (fast backup/restore)..."
+	@export DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && python scripts/setup_test_db.py
 	@echo "✅ Test database populated"
 	@echo ""
-	@echo "🎨 Starting frontend server..."
+	@echo "🎨 Starting frontend server for Supertest..."
 	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 &
+	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
+	@sleep 10  # Give React time to start or crash
+	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
+		echo "❌ FRONTEND FAILED TO START!"; \
+		echo "🔍 Frontend log:"; \
+		cat frontend.log; \
+		echo ""; \
+		echo "🛑 Stopping Makefile execution..."; \
+		exit 1; \
+	fi
+	@echo "🔍 Frontend process verification:"
+	@if ! ps -p $$(cat frontend.pid) > /dev/null; then \
+		echo "❌ Frontend PID $$(cat frontend.pid) is not running!"; \
+		ps aux | grep node; \
+		exit 1; \
+	fi
+	@echo "   ✅ Frontend PID $$(cat frontend.pid) is running"
+	@ps -p $$(cat frontend.pid) -o pid,ppid,cmd | head -2
+	@if ! lsof -i :3000 > /dev/null; then \
+		echo "❌ Nothing listening on port 3000"; \
+		lsof -i :3000 || echo "No processes found on port 3000"; \
+		exit 1; \
+	fi
+	@echo "   ✅ Port 3000 is listening"
+	@echo "✅ Frontend started successfully"
+	@echo ""
+	@echo "⏳ Waiting for services to be ready..."
+	@sleep 5
+	@echo "🔍 Final connectivity check:"
+	@echo "   Testing backend connectivity..."
+	@curl -s -o /dev/null -w "   Backend: HTTP %{http_code} - %{time_total}s response time\n" http://localhost:5000/health
+	@echo "   Testing frontend connectivity..."
+	@curl -s -o /dev/null -w "   Frontend: HTTP %{http_code} - %{time_total}s response time\n" http://localhost:3000
+	@echo "   ✅ Services connectivity verified"
+	@echo ""
+	@echo "🧪 Running Supertest Integration Tests..."
+	@if [ -n "$(TEST_FILE)" ]; then \
+		cd src/frontend && npx jest $(TEST_FILE) --watchAll=false; \
+	else \
+		cd src/frontend && npm run test:integration; \
+	fi
+	@TEST_EXIT_CODE=$$?
+	@echo ""
+	@echo "🧪 Supertest tests completed with exit code: $$TEST_EXIT_CODE"
+	@echo ""
+	@echo "🧹 Cleaning up processes and test database..."
+	@-kill $$(cat backend.pid) 2>/dev/null || true
+	@-kill $$(cat frontend.pid) 2>/dev/null || true
+	@-rm -f backend.pid frontend.pid backend.log frontend.log
+	@-rm -f instance/test_supertest.db
+	@echo "✅ Cleanup complete"
+	@exit $$TEST_EXIT_CODE
+
+# Combined testing
+all: # Run all tests (unit + integration + e2e + supertest)
+	@echo "🧪 Running All Tests (Unit + Integration + E2E + Supertest)..."
+	$(MAKE) unit
+	$(MAKE) integration
+	$(MAKE) e2e-ui
+	$(MAKE) supertest
+
+# Environment management
+test: # Start local test environment (SQLite + servers + test data)
+	@echo "🧪 Starting Local Test Environment..."
+	@echo "📋 This will start backend and frontend locally with test database"
+	@if [ "$(TICK)" = "1" ]; then echo "⏱️  Auto-ticks: enabled"; else echo "⏸️  Auto-ticks: disabled (set TICK=1)"; fi
+	@if [ "$(FRESH)" = "1" ]; then echo "♻️  DB mode: FRESH (repopulate)"; else echo "⚡ DB mode: RESTORE (snapshot)"; fi
+	@echo ""
+	@echo "🧹 Cleaning up any existing processes..."
+	@-pkill -f "FLASK_ENV=testing" || true
+	@-pkill -f "python -m src" || true
+	@-pkill -f "npm start" || true
+	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
+	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+	@if [ "$(FRESH)" = "1" ]; then -rm -f instance/test_e2e.db; fi
+	@sleep 2
+	@echo "✅ Cleanup complete"
+	@echo ""
+	@echo "🔧 Creating instance directory for database..."
+	@-mkdir -p instance
+	@echo "✅ Instance directory ready"
+	@echo ""
+	@echo "🔧 Starting backend server..."
+	@echo "   📁 Database file: $(PWD)/instance/test_e2e.db"
+	@echo "   🔗 Database URL: sqlite:////$(PWD)/instance/test_e2e.db"
+	@if [ "$(FRESH)" != "1" ] && [ -f instance/test_e2e.db.bak ]; then \
+		echo "⚡ Restoring DB file from snapshot before start (instance/test_e2e.db.bak → instance/test_e2e.db)"; \
+		cp -f instance/test_e2e.db.bak instance/test_e2e.db; \
+	fi
+	@. venv/bin/activate && DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
+	@sleep 5  # Give Flask time to start or show errors
+	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
+		echo "✅ Backend started successfully"; \
+	else \
+		echo "❌ BACKEND FAILED TO START!"; \
+		echo "🔍 Backend log:"; \
+		cat backend.log; \
+		echo ""; \
+		echo "🛑 Stopping Makefile execution..."; \
+		exit 1; \
+	fi
+	@echo "🔍 Backend process verification:"
+	@if ! ps -p $$(cat backend.pid) > /dev/null; then \
+		echo "❌ Backend PID $$(cat backend.pid) is not running!"; \
+		ps aux | grep python; \
+		exit 1; \
+	fi
+	@echo "   ✅ Backend PID $$(cat backend.pid) is running"
+	@ps -p $$(cat backend.pid) -o pid,ppid,cmd | head -2
+	@if ! lsof -i :5000 > /dev/null; then \
+		echo "❌ Nothing listening on port 5000"; \
+		lsof -i :5000 || echo "No processes found on port 5000"; \
+		exit 1; \
+	fi
+	@echo "   ✅ Port 5000 is listening"
+	@echo ""
+	@if [ "$(FRESH)" = "1" ] || [ ! -f instance/test_e2e.db.bak ]; then \
+		echo "📊 Populating test database (one-time / schema refresh)..."; \
+		export DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && python scripts/populate_test_data.py; \
+		echo "📸 Creating DB snapshot for fast reset..."; \
+		curl -s -X POST http://localhost:5000/api/admin/db/snapshot \
+			-H "X-Planetarion-Dev-Token: $(DEV_ADMIN_TOKEN)" \
+			-H "Content-Type: application/json" \
+			-d '{"overwrite": true}' >/dev/null || true; \
+		echo "✅ Snapshot ready"; \
+	else \
+		echo "⚡ Restoring DB from snapshot via API (fast)"; \
+		$(MAKE) test-env-reset DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) >/dev/null || true; \
+	fi
+	@echo ""
+	@echo "🎨 Starting frontend server..."
+	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 &
 	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
 	@sleep 10  # Give React time to start or crash
 	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
@@ -316,6 +492,297 @@ test: # Start local test environment (SQLite + servers + test data)
 	@echo ""
 	@echo "🛑 To stop: make test-stop"
 	@echo "🔄 To restart: make test-stop && make test"
+
+test-env: # Start backend + frontend for manual testing (no Playwright)
+	@echo "🧪 Starting Test Environment (Backend + Frontend)..."
+	@echo "📋 This will start backend and frontend locally with test database"
+	@echo "    No Playwright tests will be executed - for manual testing only"
+	@if [ "$(TICK)" = "1" ]; then echo "⏱️  Auto-ticks: enabled"; else echo "⏸️  Auto-ticks: disabled (set TICK=1)"; fi
+	@if [ "$(FRESH)" = "1" ]; then echo "♻️  DB mode: FRESH (repopulate)"; else echo "⚡ DB mode: RESTORE (snapshot)"; fi
+	@echo ""
+	@if [ "$(FRESH)" = "1" ]; then \
+		echo "🧹 Cleaning up any existing processes and test database..."; \
+		-pkill -f "FLASK_ENV=testing" || true; \
+		-pkill -f "python -m src" || true; \
+		-pkill -f "npm start" || true; \
+		-lsof -ti:5000 | xargs kill -9 2>/dev/null || true; \
+		-lsof -ti:3000 | xargs kill -9 2>/dev/null || true; \
+		-rm -f instance/test_e2e.db; \
+		sleep 2; \
+		echo "✅ Cleanup complete"; \
+		echo ""; \
+	fi
+	@echo "🔧 Creating instance directory for database..."
+	@-mkdir -p instance
+	@echo "✅ Instance directory ready"
+	@echo ""
+	@if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
+		echo "✅ Backend already running"; \
+	else \
+		if [ "$(FRESH)" != "1" ] && [ -f instance/test_e2e.db.bak ]; then \
+			echo "⚡ Restoring DB file from snapshot before start (instance/test_e2e.db.bak → instance/test_e2e.db)"; \
+			cp -f instance/test_e2e.db.bak instance/test_e2e.db; \
+		fi; \
+		echo "🔧 Starting backend server..."; \
+		. venv/bin/activate && DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 & \
+		sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid; \
+		sleep 5; \
+		if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\\| * Running on" backend.log; then \
+			echo "✅ Backend started successfully"; \
+		else \
+			echo "❌ BACKEND FAILED TO START!"; \
+			echo "🔍 Backend log:"; \
+			cat backend.log; \
+			echo ""; \
+			echo "🛑 Stopping Makefile execution..."; \
+			exit 1; \
+		fi; \
+		if ! lsof -i :5000 > /dev/null; then \
+			echo "❌ Nothing listening on port 5000"; \
+			lsof -i :5000 || echo "No processes found on port 5000"; \
+			exit 1; \
+		fi; \
+		echo "   ✅ Port 5000 is listening"; \
+	fi
+	@echo ""
+	@if [ "$(FRESH)" = "1" ] || [ ! -f instance/test_e2e.db.bak ]; then \
+		echo "📊 Populating test database (one-time / schema refresh)..."; \
+		export DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && python scripts/populate_test_data.py; \
+		echo "📸 Creating DB snapshot for fast reset..."; \
+		curl -s -X POST http://localhost:5000/api/admin/db/snapshot \
+			-H "X-Planetarion-Dev-Token: $(DEV_ADMIN_TOKEN)" \
+			-H "Content-Type: application/json" \
+			-d '{"overwrite": true}' >/dev/null || true; \
+		echo "✅ Snapshot ready"; \
+	else \
+		echo "⚡ Restoring DB from snapshot via API (fast)"; \
+		$(MAKE) test-env-reset DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) >/dev/null || true; \
+	fi
+	@echo ""
+	@echo "🎨 Starting frontend server..."
+	@if curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>" 2>/dev/null; then \
+		echo "✅ Frontend already running"; \
+		if [ ! -f frontend.pid ]; then \
+			pid=$$(lsof -ti:3000 2>/dev/null | head -1); \
+			if [ -n "$$pid" ]; then \
+				echo "$$pid" > frontend.pid; \
+			fi; \
+		fi; \
+	else \
+		cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 & \
+		sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid; \
+		sleep 10; \
+		if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
+			echo "❌ FRONTEND FAILED TO START!"; \
+			echo "🔍 Frontend log:"; \
+			cat frontend.log; \
+			echo ""; \
+			echo "🛑 Stopping Makefile execution..."; \
+			exit 1; \
+		fi; \
+	fi
+	@echo "🔍 Frontend process verification:"
+	@if [ ! -f frontend.pid ] || [ -z "$$(cat frontend.pid 2>/dev/null)" ]; then \
+		pid=$$(lsof -ti:3000 2>/dev/null | head -1); \
+		if [ -n "$$pid" ]; then echo "$$pid" > frontend.pid; fi; \
+	fi; \
+	if [ ! -f frontend.pid ] || [ -z "$$(cat frontend.pid 2>/dev/null)" ]; then \
+		echo "❌ Could not determine frontend PID (frontend.pid missing)"; \
+		lsof -i :3000 || true; \
+		exit 1; \
+	fi; \
+	if ! ps -p $$(cat frontend.pid) > /dev/null; then \
+		echo "❌ Frontend PID $$(cat frontend.pid) is not running!"; \
+		ps aux | grep node; \
+		exit 1; \
+	fi
+	@echo "   ✅ Frontend PID $$(cat frontend.pid) is running"
+	@ps -p $$(cat frontend.pid) -o pid,ppid,cmd | head -2
+	@if ! lsof -i :3000 > /dev/null; then \
+		echo "❌ Nothing listening on port 3000"; \
+		lsof -i :3000 || echo "No processes found on port 3000"; \
+		exit 1; \
+	fi
+	@echo "   ✅ Port 3000 is listening"
+	@echo "✅ Frontend started successfully"
+	@echo ""
+	@echo "⏳ Waiting for services to be ready..."
+	@sleep 5
+	@echo "🔍 Final connectivity check:"
+	@echo "   Testing backend connectivity..."
+	@curl -s -o /dev/null -w "   Backend: HTTP %{http_code} - %{time_total}s response time\n" http://localhost:5000/health
+	@echo "   Testing frontend connectivity..."
+	@curl -s -o /dev/null -w "   Frontend: HTTP %{http_code} - %{time_total}s response time\n" http://localhost:3000
+	@echo "   ✅ Services connectivity verified"
+	@echo ""
+	@echo "🎉 Test environment ready for manual testing!"
+	@echo "   🌐 Frontend: http://localhost:3000"
+	@echo "   🔧 Backend:  http://localhost:5000"
+	@echo "   👤 Test User: e2etestuser / testpassword123"
+	@echo "   ⏱️  Tick control: Dashboard “Run tick” button enabled"
+	@echo "   🧾 Fleet timeline: Fleet Management shows recent events"
+	@echo "   📊 Database: SQLite (instance/test_e2e.db)"
+	@echo ""
+	@echo "🧪 Ready for manual testing of JavaScript frontend ↔ Python backend interaction"
+	@echo "🛑 To stop: make test-stop"
+
+test-env-reset: # Restore DB from snapshot (fast; servers stay running)
+	@echo "🧹 Restoring DB from snapshot (servers stay running)..."
+	@curl -s -X POST http://localhost:5000/api/admin/db/restore \
+		-H "X-Planetarion-Dev-Token: $(DEV_ADMIN_TOKEN)" \
+		-H "Content-Type: application/json" \
+		-d '{}' | cat
+	@echo ""
+
+test-env-snapshot: # Create/overwrite snapshot from live DB
+	@echo "📸 Creating DB snapshot from live DB..."
+	@curl -s -X POST http://localhost:5000/api/admin/db/snapshot \
+		-H "X-Planetarion-Dev-Token: $(DEV_ADMIN_TOKEN)" \
+		-H "Content-Type: application/json" \
+		-d '{"overwrite": true}' | cat
+	@echo ""
+
+scenario-two-player-reset: # Reset DB to deterministic 2-player scenario
+	@echo "🎮 Resetting DB to two-player scenario..."
+	@curl -s -X POST http://localhost:5000/api/admin/scenarios/two-player/reset \
+		-H "X-Planetarion-Dev-Token: $(DEV_ADMIN_TOKEN)" \
+		-H "Content-Type: application/json" \
+		-d '{"password":"testpassword123"}' | cat
+	@echo ""
+
+# Phase 4: Colonization Testing Environment (No Playwright)
+colonization-env: # Start backend + frontend for colonization testing (no E2E tests)
+	@echo "🚀 Starting Colonization Testing Environment (Phase 4)..."
+	@echo "📋 This will start backend and frontend locally with colonization test data"
+	@echo "    Optimized for colonization mechanics testing without Playwright overhead"
+	@echo ""
+	@echo "🧹 Cleaning up any existing processes and test database..."
+	@-pkill -f "FLASK_ENV=testing" || true
+	@-pkill -f "python -m src" || true
+	@-pkill -f "npm start" || true
+	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
+	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+	@-rm -f instance/test_colonization.db
+	@sleep 2
+	@echo "✅ Cleanup complete"
+	@echo ""
+	@echo "🔧 Creating instance directory for database..."
+	@-mkdir -p instance
+	@echo "✅ Instance directory ready"
+	@echo ""
+	@echo "🔧 Starting backend server with colonization focus..."
+	@DATABASE_URL='sqlite:///./instance/test_colonization.db' . venv/bin/activate && FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
+	@sleep 5  # Give Flask time to start or show errors
+	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
+		echo "✅ Backend started successfully"; \
+	else \
+		echo "❌ BACKEND FAILED TO START!"; \
+		echo "🔍 Backend log:"; \
+		cat backend.log; \
+		echo ""; \
+		echo "🛑 Stopping Makefile execution..."; \
+		exit 1; \
+	fi
+	@echo "🔍 Backend process verification:"
+	@if ! ps -p $$(cat backend.pid) > /dev/null; then \
+		echo "❌ Backend PID $$(cat backend.pid) is not running!"; \
+		ps aux | grep python; \
+		exit 1; \
+	fi
+	@echo "   ✅ Backend PID $$(cat backend.pid) is running"
+	@ps -p $$(cat backend.pid) -o pid,ppid,cmd | head -2
+	@if ! lsof -i :5000 > /dev/null; then \
+		echo "❌ Nothing listening on port 5000"; \
+		lsof -i :5000 || echo "No processes found on port 5000"; \
+		exit 1; \
+	fi
+	@echo "   ✅ Port 5000 is listening"
+	@echo ""
+	@echo "📊 Populating test database with colonization data..."
+	@echo "   Waiting for backend to initialize..."
+	@sleep 8
+	@echo "   Checking backend health..."
+	@for i in 1 2 3 4 5; do \
+		if curl -s http://localhost:5000/health > /dev/null 2>&1; then \
+			echo "   ✅ Backend is healthy"; \
+			break; \
+		else \
+			echo "   ⏳ Backend not ready yet (attempt $$i/5)..."; \
+			sleep 2; \
+		fi; \
+	done
+	@echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_colonization.db"
+	@export DATABASE_URL='sqlite:///./instance/test_colonization.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py
+	@echo "✅ Test database populated with colonization scenarios"
+	@echo ""
+	@echo "🎨 Starting frontend server for colonization testing..."
+	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 &
+	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
+	@sleep 10  # Give React time to start or crash
+	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
+		echo "❌ FRONTEND FAILED TO START!"; \
+		echo "🔍 Frontend log:"; \
+		cat frontend.log; \
+		echo ""; \
+		echo "🛑 Stopping Makefile execution..."; \
+		exit 1; \
+	fi
+	@echo "🔍 Frontend process verification:"
+	@if ! ps -p $$(cat frontend.pid) > /dev/null; then \
+		echo "❌ Frontend PID $$(cat frontend.pid) is not running!"; \
+		ps aux | grep node; \
+		exit 1; \
+	fi
+	@echo "   ✅ Frontend PID $$(cat frontend.pid) is running"
+	@ps -p $$(cat frontend.pid) -o pid,ppid,cmd | head -2
+	@if ! lsof -i :3000 > /dev/null; then \
+		echo "❌ Nothing listening on port 3000"; \
+		lsof -i :3000 || echo "No processes found on port 3000"; \
+		exit 1; \
+	fi
+	@echo "   ✅ Port 3000 is listening"
+	@echo "✅ Frontend started successfully"
+	@echo ""
+	@echo "⏳ Waiting for services to be ready..."
+	@sleep 5
+	@echo "🔍 Final connectivity check:"
+	@echo "   Testing backend connectivity..."
+	@curl -s -o /dev/null -w "   Backend: HTTP %{http_code} - %{time_total}s response time\n" http://localhost:5000/health
+	@echo "   Testing frontend connectivity..."
+	@curl -s -o /dev/null -w "   Frontend: HTTP %{http_code} - %{time_total}s response time\n" http://localhost:3000
+	@echo "   ✅ Services connectivity verified"
+	@echo ""
+	@echo "🎯 Phase 4 Colonization Testing Environment Ready!"
+	@echo "   🌐 Frontend: http://localhost:3000"
+	@echo "   🔧 Backend:  http://localhost:5000"
+	@echo "   👤 Test User: e2etestuser / testpassword123"
+	@echo "   📊 Database: SQLite (instance/test_colonization.db)"
+	@echo ""
+	@echo "🧪 Ready for colonization mechanics testing:"
+	@echo "   • Manual testing of colonization workflows"
+	@echo "   • API testing with tools like curl/Postman"
+	@echo "   • Frontend-backend interaction validation"
+	@echo "   • Database state inspection"
+	@echo ""
+	@echo "🛑 To stop: make colonization-stop"
+	@echo "🔄 To restart: make colonization-stop && make colonization-env"
+
+colonization-stop: # Stop colonization testing environment
+	@echo "🛑 Stopping Colonization Testing Environment..."
+	@echo ""
+	@echo "📋 Stopping Services:"
+	@echo "   - Flask backend server"
+	@echo "   - React frontend server"
+	@echo "   - Cleaning up processes and colonization test database"
+	@echo ""
+	@-kill $$(cat backend.pid) 2>/dev/null || true
+	@-kill $$(cat frontend.pid) 2>/dev/null || true
+	@-rm -f backend.pid frontend.pid backend.log frontend.log
+	@-rm -f instance/test_colonization.db
+	@echo ""
+	@echo "✅ Colonization testing environment stopped!"
+	@echo "   🔄 Ready to restart with: make colonization-env"
 
 test-stop: # Stop local test environment
 	@echo "🛑 Stopping Local Test Environment..."

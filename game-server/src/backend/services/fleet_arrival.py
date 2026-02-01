@@ -7,14 +7,15 @@ It manages colonization, resource collection, and other mission completion logic
 
 from datetime import datetime, timedelta
 from backend.database import db
-from backend.models import Fleet, Planet, User, TickLog, Research
+from backend.models import Fleet, Planet, User, TickLog, Research, DebrisField, EspionageReport
 from backend.services.planet_traits import PlanetTraitService
 from backend.config import calculate_fuel_consumption
+from backend.services.fleet_state_machine import FleetStateMachine
 import json
 
 # Enhanced error handling constants
 COLONIZATION_ERRORS = {
-    'coordinates_occupied': 'Target coordinates are already occupied by another player',
+    'coordinates_occupied': 'Target coordinates are already colonized (occupied by another player)',
     'insufficient_research': 'Research level too low for target colonization difficulty',
     'colony_limit_reached': 'Maximum colony limit reached for this account',
     'insufficient_fuel': 'Not enough fuel for colonization mission',
@@ -42,12 +43,19 @@ class FleetArrivalService:
     """Service for processing arrived fleets and completing their missions"""
 
     @staticmethod
+    def _get_fleet_user(fleet):
+        user = getattr(fleet, 'owner', None)
+        if user is not None:
+            return user
+        return User.query.get(fleet.user_id)
+
+    @staticmethod
     def process_arrived_fleets():
         """Process all fleets that have arrived at their destinations"""
         print("DEBUG: Processing arrived fleets")
         arrived_fleets = Fleet.query.filter(
             Fleet.arrival_time <= datetime.utcnow(),
-            Fleet.status.in_(['traveling', 'returning'])
+            Fleet.status.in_(['traveling', 'returning', 'defending'])
         ).all()
 
         # Also check for coordinate-based missions that have arrived
@@ -72,6 +80,14 @@ class FleetArrivalService:
                 FleetArrivalService._process_exploration(fleet)
             elif fleet.mission == 'recycle':
                 FleetArrivalService._process_recycle(fleet)
+            elif fleet.mission == 'espionage':
+                FleetArrivalService._process_espionage(fleet)
+            elif fleet.mission == 'transport':
+                FleetArrivalService._process_transport(fleet)
+            elif fleet.mission == 'deploy':
+                FleetArrivalService._process_deploy(fleet)
+            elif fleet.mission == 'defend':
+                FleetArrivalService._process_defend(fleet)
             # Add other mission types as needed
 
     @staticmethod
@@ -98,6 +114,7 @@ class FleetArrivalService:
 
                 # Create tick log for failed colonization
                 tick_log = TickLog(
+                    tick_number=0,
                     event_type='colonization_failed',
                     event_description=f'Colonization failed for fleet {fleet.id}: {colonization_result["error"]}'
                 )
@@ -113,6 +130,7 @@ class FleetArrivalService:
                 FleetArrivalService._return_fleet_to_stationed(fleet)
 
                 tick_log = TickLog(
+                    tick_number=0,
                     event_type='colonization_failed',
                     event_description=f'Colonization failed for fleet {fleet.id}: No colony ships'
                 )
@@ -173,7 +191,7 @@ class FleetArrivalService:
 
         # Check if planet is already owned (race condition protection)
         if target_planet.user_id:
-            owner_username = getattr(target_planet.user, 'username', f'user_{target_planet.user_id}')
+            owner_username = getattr(getattr(target_planet, 'owner', None), 'username', f'user_{target_planet.user_id}')
             return {
                 'success': False,
                 'error': f'Planet already owned by {owner_username} (colonized during travel)'
@@ -257,9 +275,12 @@ class FleetArrivalService:
         target_planet.solar_plant = 1
 
         # Create tick log entry
-        username = getattr(fleet.user, 'username', f'user_{fleet.user_id}')
+        user = FleetArrivalService._get_fleet_user(fleet)
+        username = getattr(user, 'username', f'user_{fleet.user_id}')
         tick_log = TickLog(
+            tick_number=0,
             planet_id=target_planet.id,
+            fleet_id=fleet.id,
             event_type='colonization',
             event_description=f'Planet {target_planet.name} colonized by {username}'
         )
@@ -275,7 +296,214 @@ class FleetArrivalService:
     def _process_return(fleet):
         """Handle returning fleet arrival"""
         print(f"DEBUG: Processing return for fleet {fleet.id}")
+        # Deliver any cargo carried back to the origin planet.
+        try:
+            cargo_metal = int(getattr(fleet, "cargo_metal", 0) or 0)
+            cargo_crystal = int(getattr(fleet, "cargo_crystal", 0) or 0)
+            cargo_deuterium = int(getattr(fleet, "cargo_deuterium", 0) or 0)
+        except (TypeError, ValueError):
+            cargo_metal = cargo_crystal = cargo_deuterium = 0
+
+        if cargo_metal or cargo_crystal or cargo_deuterium:
+            origin_planet = Planet.query.get(getattr(fleet, "start_planet_id", None))
+            if origin_planet:
+                origin_planet.metal += cargo_metal
+                origin_planet.crystal += cargo_crystal
+                origin_planet.deuterium += cargo_deuterium
+
+            fleet.cargo_metal = 0
+            fleet.cargo_crystal = 0
+            fleet.cargo_deuterium = 0
+
+            try:
+                db.session.add(TickLog(
+                    tick_number=0,
+                    planet_id=getattr(fleet, "start_planet_id", None),
+                    fleet_id=fleet.id,
+                    event_type="cargo_delivered",
+                    event_description=f"Fleet {fleet.id} delivered {cargo_metal}M {cargo_crystal}C {cargo_deuterium}D",
+                ))
+            except RuntimeError:
+                pass
+
+        try:
+            db.session.add(TickLog(
+                tick_number=0,
+                planet_id=fleet.start_planet_id,
+                fleet_id=fleet.id,
+                event_type='fleet_returned',
+                event_description=f'Fleet {fleet.id} returned and is now stationed'
+            ))
+        except RuntimeError:
+            # Unit tests may call this without an application context.
+            pass
         FleetArrivalService._return_fleet_to_stationed(fleet)
+
+    @staticmethod
+    def _process_transport(fleet):
+        """Handle transport arrival: unload cargo to target (if owned), then return home."""
+        print(f"DEBUG: Processing transport for fleet {fleet.id}")
+        arrival_processed_at = datetime.utcnow()
+
+        try:
+            target_planet = Planet.query.get(getattr(fleet, "target_planet_id", None))
+            if not target_planet:
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                db.session.commit()
+                return
+
+            # MVP: only allow transporting to your own planets.
+            if target_planet.user_id != fleet.user_id:
+                db.session.add(TickLog(
+                    tick_number=0,
+                    fleet_id=fleet.id,
+                    planet_id=getattr(fleet, "start_planet_id", None),
+                    event_type="transport_failed",
+                    event_description=f"Fleet {fleet.id} transport failed: target not owned by sender",
+                ))
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                db.session.commit()
+                return
+
+            cargo_metal = int(getattr(fleet, "cargo_metal", 0) or 0)
+            cargo_crystal = int(getattr(fleet, "cargo_crystal", 0) or 0)
+            cargo_deuterium = int(getattr(fleet, "cargo_deuterium", 0) or 0)
+
+            if cargo_metal or cargo_crystal or cargo_deuterium:
+                target_planet.metal += cargo_metal
+                target_planet.crystal += cargo_crystal
+                target_planet.deuterium += cargo_deuterium
+
+                fleet.cargo_metal = 0
+                fleet.cargo_crystal = 0
+                fleet.cargo_deuterium = 0
+
+                db.session.add(TickLog(
+                    tick_number=0,
+                    planet_id=target_planet.id,
+                    fleet_id=fleet.id,
+                    event_type="transport_unloaded",
+                    event_description=f"Fleet {fleet.id} unloaded {cargo_metal}M {cargo_crystal}C {cargo_deuterium}D",
+                ))
+
+            # Return to origin after unloading.
+            if fleet.departure_time and fleet.arrival_time:
+                travel_time_seconds = max(0, (fleet.arrival_time - fleet.departure_time).total_seconds())
+            else:
+                travel_time_seconds = 3600
+
+            FleetStateMachine.set_returning(
+                fleet,
+                now=arrival_processed_at,
+                return_time_seconds=travel_time_seconds,
+            )
+            db.session.commit()
+        except Exception as e:
+            print(f"ERROR: Failed to process transport for fleet {fleet.id}: {e}")
+            db.session.rollback()
+            FleetArrivalService._return_fleet_to_stationed(fleet)
+            db.session.commit()
+
+    @staticmethod
+    def _process_deploy(fleet):
+        """Handle deploy arrival: move fleet to target and station there (no return), unload cargo if any."""
+        print(f"DEBUG: Processing deploy for fleet {fleet.id}")
+        arrival_processed_at = datetime.utcnow()
+
+        try:
+            target_planet = Planet.query.get(getattr(fleet, "target_planet_id", None))
+            if not target_planet:
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                db.session.commit()
+                return
+
+            if target_planet.user_id != fleet.user_id:
+                db.session.add(TickLog(
+                    tick_number=0,
+                    fleet_id=fleet.id,
+                    planet_id=getattr(fleet, "start_planet_id", None),
+                    event_type="deploy_failed",
+                    event_description=f"Fleet {fleet.id} deploy failed: target not owned by sender",
+                ))
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                db.session.commit()
+                return
+
+            cargo_metal = int(getattr(fleet, "cargo_metal", 0) or 0)
+            cargo_crystal = int(getattr(fleet, "cargo_crystal", 0) or 0)
+            cargo_deuterium = int(getattr(fleet, "cargo_deuterium", 0) or 0)
+
+            if cargo_metal or cargo_crystal or cargo_deuterium:
+                target_planet.metal += cargo_metal
+                target_planet.crystal += cargo_crystal
+                target_planet.deuterium += cargo_deuterium
+                fleet.cargo_metal = 0
+                fleet.cargo_crystal = 0
+                fleet.cargo_deuterium = 0
+
+                db.session.add(TickLog(
+                    tick_number=0,
+                    planet_id=target_planet.id,
+                    fleet_id=fleet.id,
+                    event_type="deploy_unloaded",
+                    event_description=f"Fleet {fleet.id} deployed {cargo_metal}M {cargo_crystal}C {cargo_deuterium}D",
+                ))
+
+            # Fleet is now stationed at the target planet.
+            fleet.start_planet_id = target_planet.id
+            FleetStateMachine.set_stationed(fleet, now=arrival_processed_at)
+            fleet.mission = "deploy"
+
+            db.session.commit()
+        except Exception as e:
+            print(f"ERROR: Failed to process deploy for fleet {fleet.id}: {e}")
+            db.session.rollback()
+            FleetArrivalService._return_fleet_to_stationed(fleet)
+            db.session.commit()
+
+    @staticmethod
+    def _process_defend(fleet):
+        """Handle defend arrival: station fleet at target in defending status."""
+        print(f"DEBUG: Processing defend for fleet {fleet.id}")
+        arrival_processed_at = datetime.utcnow()
+
+        try:
+            target_planet = Planet.query.get(getattr(fleet, "target_planet_id", None))
+            if not target_planet:
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                db.session.commit()
+                return
+
+            if target_planet.user_id != fleet.user_id:
+                db.session.add(TickLog(
+                    tick_number=0,
+                    fleet_id=fleet.id,
+                    planet_id=getattr(fleet, "start_planet_id", None),
+                    event_type="defend_failed",
+                    event_description=f"Fleet {fleet.id} defend failed: target not owned by sender",
+                ))
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                db.session.commit()
+                return
+
+            fleet.start_planet_id = target_planet.id
+            FleetStateMachine.set_sent_defending(fleet, target_planet_id=target_planet.id)
+            fleet.departure_time = arrival_processed_at
+            fleet.arrival_time = arrival_processed_at
+            fleet.eta = 0
+            db.session.add(TickLog(
+                tick_number=0,
+                planet_id=target_planet.id,
+                fleet_id=fleet.id,
+                event_type="defend_arrived",
+                event_description=f"Fleet {fleet.id} is now defending {target_planet.name}",
+            ))
+            db.session.commit()
+        except Exception as e:
+            print(f"ERROR: Failed to process defend for fleet {fleet.id}: {e}")
+            db.session.rollback()
+            FleetArrivalService._return_fleet_to_stationed(fleet)
+            db.session.commit()
 
     @staticmethod
     def _process_exploration(fleet):
@@ -313,7 +541,7 @@ class FleetArrivalService:
                 print(f"DEBUG: Fallback created {len(discovered_planets)} planets")
 
             # Mark system as explored for the user
-            user = fleet.user
+            user = FleetArrivalService._get_fleet_user(fleet)
             username = getattr(user, 'username', f'user_{fleet.user_id}')
             print(f"DEBUG: Processing exploration data for user {username}")
 
@@ -348,6 +576,7 @@ class FleetArrivalService:
 
             # Create tick log entry
             tick_log = TickLog(
+                tick_number=0,
                 event_type='exploration',
                 event_description=f'System {target_x}:{target_y}:{target_z} explored by {username}, discovered {len(discovered_planets)} planets'
             )
@@ -390,6 +619,8 @@ class FleetArrivalService:
         print(f"DEBUG: Processing attack for fleet {fleet.id}")
 
         try:
+            arrival_processed_at = datetime.utcnow()
+
             # Get target planet
             target_planet = Planet.query.get(fleet.target_planet_id)
             if not target_planet:
@@ -404,11 +635,15 @@ class FleetArrivalService:
                 return
 
             # Find defending fleet
-            defending_fleet = Fleet.query.filter_by(
-                user_id=target_planet.user_id,
-                start_planet_id=fleet.target_planet_id,
-                status__in=['stationed', 'defending']
-            ).first()
+            defending_fleet = (
+                Fleet.query.filter(
+                    Fleet.user_id == target_planet.user_id,
+                    Fleet.start_planet_id == fleet.target_planet_id,
+                    Fleet.status.in_(['stationed', 'defending']),
+                )
+                .order_by(Fleet.id.asc())
+                .first()
+            )
 
             if defending_fleet:
                 # Fleet vs Fleet combat
@@ -423,10 +658,111 @@ class FleetArrivalService:
                 combat_result = CombatEngine.calculate_planet_attack(fleet, target_planet)
                 CombatEngine.process_planet_attack_result(combat_result, fleet, target_planet)
 
+            # After combat, fleet returns home.
+            if fleet.departure_time and fleet.arrival_time:
+                travel_time_seconds = max(0, (fleet.arrival_time - fleet.departure_time).total_seconds())
+            else:
+                travel_time_seconds = 3600
+
+            FleetStateMachine.set_returning(
+                fleet,
+                now=arrival_processed_at,
+                return_time_seconds=travel_time_seconds,
+            )
+
+            db.session.commit()
             print(f"SUCCESS: Attack mission completed for fleet {fleet.id}")
 
         except Exception as e:
             print(f"ERROR: Failed to process attack for fleet {fleet.id}: {str(e)}")
+            db.session.rollback()
+            FleetArrivalService._return_fleet_to_stationed(fleet)
+
+    @staticmethod
+    def _process_espionage(fleet):
+        """Handle espionage fleet arrival: create a spy report, then return to origin."""
+        print(f"DEBUG: Processing espionage for fleet {fleet.id}")
+        arrival_processed_at = datetime.utcnow()
+
+        try:
+            target_planet = Planet.query.get(fleet.target_planet_id)
+            if not target_planet:
+                FleetArrivalService._return_fleet_to_stationed(fleet)
+                db.session.commit()
+                return
+
+            intel = {
+                "planet": {
+                    "id": target_planet.id,
+                    "name": target_planet.name,
+                    "coordinates": f"{target_planet.x}:{target_planet.y}:{target_planet.z}",
+                },
+                "owner": {
+                    "user_id": target_planet.user_id,
+                    "username": target_planet.owner.username if target_planet.owner else None,
+                },
+                "resources": {
+                    "metal": target_planet.metal,
+                    "crystal": target_planet.crystal,
+                    "deuterium": target_planet.deuterium,
+                },
+                "structures": {
+                    "metal_mine": target_planet.metal_mine,
+                    "crystal_mine": target_planet.crystal_mine,
+                    "deuterium_synthesizer": target_planet.deuterium_synthesizer,
+                    "solar_plant": target_planet.solar_plant,
+                    "fusion_reactor": target_planet.fusion_reactor,
+                    "research_lab": target_planet.research_lab,
+                },
+                "ships": {
+                    "small_cargo": getattr(target_planet, "small_cargo", 0),
+                    "large_cargo": getattr(target_planet, "large_cargo", 0),
+                    "light_fighter": getattr(target_planet, "light_fighter", 0),
+                    "heavy_fighter": getattr(target_planet, "heavy_fighter", 0),
+                    "cruiser": getattr(target_planet, "cruiser", 0),
+                    "battleship": getattr(target_planet, "battleship", 0),
+                    "colony_ship": getattr(target_planet, "colony_ship", 0),
+                    "recycler": getattr(target_planet, "recycler", 0),
+                    "espionage_probe": getattr(target_planet, "espionage_probe", 0),
+                    "bomber": getattr(target_planet, "bomber", 0),
+                    "destroyer": getattr(target_planet, "destroyer", 0),
+                    "deathstar": getattr(target_planet, "deathstar", 0),
+                    "battlecruiser": getattr(target_planet, "battlecruiser", 0),
+                },
+            }
+
+            db.session.add(EspionageReport(
+                user_id=fleet.user_id,
+                target_planet_id=target_planet.id,
+                target_user_id=target_planet.user_id,
+                fleet_id=fleet.id,
+                timestamp=arrival_processed_at,
+                success=True,
+                intel=json.dumps(intel),
+            ))
+
+            db.session.add(TickLog(
+                tick_number=0,
+                planet_id=fleet.start_planet_id,
+                fleet_id=fleet.id,
+                event_type="espionage_report",
+                event_description=f"Espionage report created for planet {target_planet.id}",
+            ))
+
+            if fleet.departure_time and fleet.arrival_time:
+                return_time = max(0, (fleet.arrival_time - fleet.departure_time).total_seconds())
+            else:
+                return_time = 3600
+
+            FleetStateMachine.set_returning(
+                fleet,
+                now=arrival_processed_at,
+                return_time_seconds=return_time,
+            )
+
+            db.session.commit()
+        except Exception as e:
+            print(f"ERROR: Failed to process espionage for fleet {fleet.id}: {str(e)}")
             db.session.rollback()
             FleetArrivalService._return_fleet_to_stationed(fleet)
 
@@ -436,6 +772,8 @@ class FleetArrivalService:
         print(f"DEBUG: Processing recycle for fleet {fleet.id}")
 
         try:
+            arrival_processed_at = datetime.utcnow()
+
             # Get target planet
             target_planet = Planet.query.get(fleet.target_planet_id)
             if not target_planet:
@@ -444,7 +782,7 @@ class FleetArrivalService:
                 return
 
             # Find debris field at planet
-            debris_field = target_planet.debris_fields.first()
+            debris_field = DebrisField.query.filter_by(planet_id=target_planet.id).first()
             if not debris_field:
                 print(f"WARNING: No debris field found at planet {target_planet.id}")
                 FleetArrivalService._return_fleet_to_stationed(fleet)
@@ -463,12 +801,16 @@ class FleetArrivalService:
             debris_field.crystal -= collected_crystal
             debris_field.deuterium -= collected_deuterium
 
-            # Add resources to fleet (simplified - would need cargo tracking)
-            # For now, just log the collection
+            # Load collected resources into fleet cargo. Cargo is delivered when the fleet returns.
+            fleet.cargo_metal = int(getattr(fleet, "cargo_metal", 0) or 0) + int(collected_metal or 0)
+            fleet.cargo_crystal = int(getattr(fleet, "cargo_crystal", 0) or 0) + int(collected_crystal or 0)
+            fleet.cargo_deuterium = int(getattr(fleet, "cargo_deuterium", 0) or 0) + int(collected_deuterium or 0)
+
             print(f"SUCCESS: Collected {collected_metal} metal, {collected_crystal} crystal, {collected_deuterium} deuterium")
 
             # Create tick log entry
             tick_log = TickLog(
+                tick_number=0,
                 planet_id=target_planet.id,
                 fleet_id=fleet.id,
                 event_type='recycle',
@@ -480,7 +822,16 @@ class FleetArrivalService:
             if debris_field.metal <= 0 and debris_field.crystal <= 0 and debris_field.deuterium <= 0:
                 db.session.delete(debris_field)
 
-            FleetArrivalService._return_fleet_to_stationed(fleet)
+            # Set fleet to return to origin, then deliver cargo on return arrival.
+            if fleet.departure_time and fleet.arrival_time:
+                return_time = max(0, (fleet.arrival_time - fleet.departure_time).total_seconds())
+            else:
+                return_time = 3600
+            FleetStateMachine.set_returning(
+                fleet,
+                now=arrival_processed_at,
+                return_time_seconds=return_time,
+            )
             db.session.commit()
 
             print(f"SUCCESS: Recycle mission completed for fleet {fleet.id}")
@@ -570,7 +921,4 @@ class FleetArrivalService:
     def _return_fleet_to_stationed(fleet):
         """Return a fleet to stationed status"""
         print(f"DEBUG: Returning fleet {fleet.id} to stationed status")
-        fleet.status = 'stationed'
-        fleet.mission = 'stationed'
-        fleet.arrival_time = None
-        fleet.eta = 0
+        FleetStateMachine.set_stationed(fleet)

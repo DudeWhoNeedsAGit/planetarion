@@ -32,17 +32,14 @@ class FleetTravelGuard:
         corrections_made = 0
         current_time = datetime.utcnow()
 
-        # Get all fleets that might need correction
+        # Only correct clearly invalid state combinations here.
+        #
+        # Mission completion (arrivals for traveling/returning/exploring/colonizing) is handled by
+        # FleetArrivalService, and we must not "station" fleets early or clear arrival times, as that
+        # prevents mission handlers from running and can violate DB constraints.
         problematic_fleets = Fleet.query.filter(
-            # Fleets that have arrived but wrong status
-            ((Fleet.arrival_time <= current_time) &
-             (Fleet.status.in_(['traveling', 'returning']) |
-              Fleet.status.like('exploring:%') |
-              Fleet.status.like('colonizing:%'))) |
-            # Fleets with invalid status combinations
-            ((Fleet.status == 'stationed') & (Fleet.arrival_time.isnot(None))) |
-            # Fleets with negative ETA
-            (Fleet.eta < 0)
+            (Fleet.eta < 0) |
+            ((Fleet.status == 'stationed') & (Fleet.eta != 0))
         ).all()
 
         logger.info(f"Found {len(problematic_fleets)} fleets requiring validation")
@@ -62,109 +59,16 @@ class FleetTravelGuard:
         """Correct a single fleet's state based on current conditions"""
         corrected = False
 
-        # Case 1: Fleet has arrived but still shows traveling
-        if (fleet.arrival_time and fleet.arrival_time <= current_time and
-            fleet.status in ['traveling', 'returning']):
-
-            if fleet.status == 'returning':
-                # Returning fleet has arrived home
-                fleet.status = 'stationed'
-                fleet.mission = 'stationed'
-                fleet.target_planet_id = fleet.start_planet_id
-                fleet.arrival_time = None
-                fleet.eta = 0
-                logger.info(f"Corrected returning fleet {fleet.id} to stationed at planet {fleet.start_planet_id}")
-
-            elif fleet.status == 'traveling':
-                # Traveling fleet has arrived at destination
-                fleet.status = 'stationed'
-                fleet.start_planet_id = fleet.target_planet_id  # Update home base
-                fleet.arrival_time = None
-                fleet.eta = 0
-                logger.info(f"Corrected traveling fleet {fleet.id} to stationed at planet {fleet.target_planet_id}")
-
-            corrected = True
-
-        # Case 2: Exploration fleet has arrived at target
-        elif (fleet.arrival_time and fleet.arrival_time <= current_time and
-              fleet.status.startswith('exploring:')):
-
-            # Set fleet to return to origin
-            fleet.status = 'returning'
-            fleet.mission = 'return'
-
-            # Calculate return journey time (same as outbound)
-            if fleet.departure_time and fleet.arrival_time:
-                travel_time = fleet.arrival_time - fleet.departure_time
-                fleet.arrival_time = current_time + travel_time
-                fleet.eta = int(travel_time.total_seconds())
-                logger.info(f"Exploration fleet {fleet.id} returning home, ETA: {fleet.eta} seconds")
-            else:
-                # Fallback: 1 hour return
-                fleet.arrival_time = current_time + timedelta(hours=1)
-                fleet.eta = 3600
-                logger.warning(f"Exploration fleet {fleet.id} using fallback return time (1 hour)")
-
-            corrected = True
-
-        # Case 3: Colonization fleet has arrived
-        elif (fleet.arrival_time and fleet.arrival_time <= current_time and
-              fleet.status.startswith('colonizing:')):
-
-            # Check if target coordinates are still available
-            coords = fleet.status.split(':')[1:]
-            if len(coords) >= 3:
-                try:
-                    target_x, target_y, target_z = map(int, coords)
-                    existing_planet = Planet.query.filter_by(
-                        x=target_x, y=target_y, z=target_z
-                    ).first()
-
-                    if existing_planet and existing_planet.user_id:
-                        # Coordinates occupied, return fleet
-                        fleet.status = 'returning'
-                        fleet.mission = 'return'
-                        if fleet.departure_time and fleet.arrival_time:
-                            travel_time = fleet.arrival_time - fleet.departure_time
-                            fleet.arrival_time = current_time + travel_time
-                            fleet.eta = int(travel_time.total_seconds())
-                        logger.warning(f"Colonization failed for fleet {fleet.id}, coordinates {target_x}:{target_y}:{target_z} occupied")
-                    else:
-                        # Coordinates available, set to stationed for processing
-                        fleet.status = 'stationed'
-                        fleet.mission = 'stationed'
-                        fleet.arrival_time = None
-                        fleet.eta = 0
-                        logger.info(f"Colonization fleet {fleet.id} ready for processing at {target_x}:{target_y}:{target_z}")
-
-                    corrected = True
-
-                except ValueError as e:
-                    logger.error(f"Invalid coordinates in fleet {fleet.id} status: {fleet.status} - {e}")
-                    # Return fleet to stationed to prevent infinite loops
-                    FleetTravelGuard._return_fleet_to_stationed(fleet)
-                    corrected = True
-
-        # Case 4: Stationed fleet with arrival time (shouldn't happen)
-        elif fleet.status == 'stationed' and fleet.arrival_time:
-            fleet.arrival_time = None
-            fleet.eta = 0
-            logger.warning(f"Cleared arrival time for stationed fleet {fleet.id}")
-            corrected = True
-
-        # Case 5: Negative ETA (shouldn't happen)
-        elif fleet.eta < 0:
+        # Case 1: Negative ETA (shouldn't happen)
+        if fleet.eta < 0:
             fleet.eta = 0
             logger.warning(f"Corrected negative ETA for fleet {fleet.id}")
             corrected = True
 
-        # Case 6: Fleet with invalid status format
-        elif ':' in fleet.status and not (
-            fleet.status.startswith(('exploring:', 'colonizing:')) or
-            fleet.status in ['stationed', 'traveling', 'returning']
-        ):
-            logger.error(f"Fleet {fleet.id} has invalid status: {fleet.status}")
-            FleetTravelGuard._return_fleet_to_stationed(fleet)
+        # Case 2: Stationed fleet with non-zero ETA
+        elif fleet.status == 'stationed' and fleet.eta != 0:
+            fleet.eta = 0
+            logger.warning(f"Cleared ETA for stationed fleet {fleet.id}")
             corrected = True
 
         return corrected
@@ -175,7 +79,7 @@ class FleetTravelGuard:
         logger.info(f"Returning fleet {fleet.id} to stationed status")
         fleet.status = 'stationed'
         fleet.mission = 'stationed'
-        fleet.arrival_time = None
+        fleet.arrival_time = datetime.utcnow()
         fleet.eta = 0
 
     @staticmethod

@@ -143,6 +143,19 @@ function Overview({ user, planets }) {
         </div>
       </div>
 
+      {/* Next Steps */}
+      <div className="bg-gray-800 rounded-lg p-6">
+        <h3 className="text-xl font-bold mb-4 text-white">Next Steps</h3>
+        <ul className="space-y-2 text-gray-300 text-sm">
+          <li>🌌 Open Galaxy Map, find enemies / pirates / allies.</li>
+          <li>🔬 Build a Research Lab to generate research points.</li>
+          <li>🕵️ Build espionage probes and send an Espionage mission to scout targets.</li>
+          <li>⚔️ Attack an enemy (or pirates) and check the Combat Center for reports.</li>
+          <li>♻️ After combat, send recyclers to collect debris.</li>
+          <li>⏱️ If something says “pending tick”, click “Run tick” (test env) or POST `/api/tick`.</li>
+        </ul>
+      </div>
+
       {/* Recent Activity Placeholder */}
       <div className="bg-gray-800 rounded-lg p-6">
         <h3 className="text-xl font-bold mb-4 text-white">Recent Activity</h3>

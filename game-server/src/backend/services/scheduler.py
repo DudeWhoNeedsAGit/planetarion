@@ -16,10 +16,21 @@ class GameScheduler:
                 from .tick import run_tick
                 run_tick()
 
-        # Add tick job to run every 5 seconds
+        interval_seconds = app.config.get("TICK_SCHEDULER_INTERVAL_SECONDS", 5) or 0
+        try:
+            interval_seconds = int(interval_seconds)
+        except (TypeError, ValueError):
+            interval_seconds = 5
+
+        if interval_seconds <= 0:
+            app.logger.info("Tick scheduler disabled (interval_seconds<=0)")
+            atexit.register(self.shutdown)
+            return
+
+        # Add tick job to run every N seconds
         self.scheduler.add_job(
             func=run_tick_with_context,
-            trigger=IntervalTrigger(seconds=5),
+            trigger=IntervalTrigger(seconds=interval_seconds),
             id='game_tick',
             name='Game Tick',
             replace_existing=True
@@ -28,7 +39,7 @@ class GameScheduler:
         # Register shutdown handler
         atexit.register(self.shutdown)
 
-        app.logger.info("Tick scheduler initialized - ticks will run every 5 seconds")
+        app.logger.info(f"Tick scheduler initialized - ticks will run every {interval_seconds} seconds")
 
     def start(self):
         """Start the scheduler"""

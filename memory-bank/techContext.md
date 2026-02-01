@@ -68,7 +68,154 @@
 - **Playwright**: End-to-end testing framework (currently slow due to Docker)
 - **React Testing Library**: Testing utilities for React
 - **Jest**: JavaScript testing framework (via CRA)
+- **Supertest**: HTTP endpoint testing for API integration tests
 - **pytest**: Python testing framework for backend and integration tests
+
+### JavaScript Integration Testing Without Playwright
+
+#### Supertest + Jest Pattern (RECOMMENDED)
+**Purpose**: Test backend APIs directly from JavaScript without browser automation
+**Benefits**: Fast execution, real backend integration, no browser overhead
+**Use Case**: API endpoint testing, data flow validation, authentication flows
+
+**Implementation Pattern**:
+```javascript
+// src/__tests__/integration/api.integration.test.js
+const request = require('supertest');
+const { createApp } = require('../../../backend/app');
+
+describe('API Integration Tests', () => {
+  let app;
+  let server;
+
+  beforeAll(() => {
+    app = createApp();
+    server = app.listen(3001);
+  });
+
+  afterAll(() => {
+    server.close();
+  });
+
+  test('should create and send colonization fleet', async () => {
+    // Test real API endpoints
+    const fleetResponse = await request(app)
+      .post('/api/fleet')
+      .send({
+        start_planet_id: 1,
+        ships: { small_cargo: 10, colony_ship: 1 }
+      });
+
+    expect(fleetResponse.status).toBe(201);
+    const fleetId = fleetResponse.body.fleet.id;
+
+    // Send colonization mission
+    const sendResponse = await request(app)
+      .post('/api/fleet/send')
+      .send({
+        fleet_id: fleetId,
+        mission: 'colonize',
+        target_x: 200,
+        target_y: 300,
+        target_z: 400
+      });
+
+    expect(sendResponse.status).toBe(200);
+    expect(sendResponse.body.fleet.mission).toBe('colonize');
+  });
+});
+```
+
+**Setup Requirements**:
+```json
+// package.json
+{
+  "devDependencies": {
+    "supertest": "^6.3.3",
+    "jest": "^29.7.0"
+  },
+  "scripts": {
+    "test:integration": "jest --testPathPattern=integration",
+    "test:api": "jest --testPathPattern=api.integration"
+  }
+}
+```
+
+#### MSW (Mock Service Worker) Pattern
+**Purpose**: Mock API responses for component testing
+**Benefits**: Realistic API simulation, offline testing, fast execution
+**Use Case**: Component integration testing, UI workflow validation
+
+**Implementation Pattern**:
+```javascript
+// src/__tests__/mocks/server.js
+import { setupServer } from 'msw/node';
+import { rest } from 'msw';
+
+export const handlers = [
+  rest.get('http://localhost:5000/api/fleet', (req, res, ctx) => {
+    return res(ctx.json([
+      {
+        id: 1,
+        mission: 'stationed',
+        status: 'stationed',
+        ships: { small_cargo: 10, colony_ship: 1 }
+      }
+    ]));
+  }),
+
+  rest.post('http://localhost:5000/api/fleet/send', (req, res, ctx) => {
+    return res(ctx.json({
+      fleet: { id: 1, status: 'traveling', mission: 'colonize' }
+    }));
+  })
+];
+
+export const server = setupServer(...handlers);
+```
+
+#### Test Execution Strategy
+```bash
+# Run JavaScript integration tests
+cd game-server/src/frontend
+npm run test:integration
+
+# Run API-specific tests
+npm run test:api
+
+# Run with coverage
+npm run test:integration -- --coverage
+```
+
+#### Comparison: Supertest vs Playwright
+
+| Aspect | Supertest + Jest | Playwright |
+|--------|------------------|------------|
+| **Speed** | ⚡ Fast (seconds) | 🐌 Slow (minutes) |
+| **Scope** | API + Business Logic | Full UI + API |
+| **Setup** | Simple (no browser) | Complex (browser setup) |
+| **Reliability** | 🔒 High (no UI flakiness) | 🎲 Medium (UI timing issues) |
+| **Debugging** | 🐛 Easy (console logs) | 🔍 Complex (browser dev tools) |
+| **Realism** | 🎯 High (real backend) | 🎯 High (real user experience) |
+| **CI Performance** | 🚀 Excellent | ⚠️ Resource intensive |
+
+#### When to Use Each Approach
+
+**Use Supertest + Jest when you want to test**:
+- ✅ API endpoint functionality
+- ✅ Business logic validation
+- ✅ Authentication and authorization
+- ✅ Database operations and constraints
+- ✅ Error handling and edge cases
+- ✅ Fast feedback during development
+- ✅ CI/CD pipeline efficiency
+
+**Use Playwright when you need to test**:
+- ✅ Complete user workflows
+- ✅ Visual UI elements and interactions
+- ✅ Cross-browser compatibility
+- ✅ Real user experience validation
+- ✅ Screenshot/visual regression testing
 
 ### Testing Strategy Evolution
 - **Current Issue**: E2E tests are slow (2-5 minutes) due to Docker + Chromium startup
@@ -124,9 +271,21 @@
 - **Authentication**: Bearer token (JWT)
 
 ### API Documentation
-- **OpenAPI/Swagger**: API specification format (planned)
-- **Interactive Docs**: API testing interface (planned)
-- **Endpoint Documentation**: Inline code documentation
+- **Flasgger 0.9.7.1**: OpenAPI/Swagger documentation generation
+- **OpenAPI 3.0**: Industry-standard API specification format
+- **Interactive Docs**: Swagger UI for testing endpoints directly
+- **Auto-Generated**: From code annotations and decorators
+- **Multiple Access Points**: `/apidocs/`, `/apispec.json`, `/export_openapi`
+- **Living Documentation**: Updates automatically with code changes
+
+#### Flasgger Integration Details
+- **Installation**: `pip install flasgger==0.9.7.1`
+- **Configuration**: Swagger UI enabled with custom routes
+- **Decorator Support**: `@swag_from` for detailed endpoint documentation
+- **Schema Generation**: Automatic OpenAPI spec generation from Flask routes
+- **Export Functionality**: `/export_openapi` endpoint returns complete JSON spec
+- **UI Features**: Interactive API testing, request/response examples
+- **Tag Organization**: Endpoints grouped by functionality (Authentication, Fleet, etc.)
 
 ### Real-time Communication
 - **Polling**: Current implementation for real-time updates

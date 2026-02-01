@@ -15,6 +15,12 @@ class User(db.Model):
     # Exploration data
     explored_systems = db.Column(db.Text)  # JSON string of explored coordinates
 
+    # Player lifecycle / protection (for respawn loop)
+    eliminated_at = db.Column(db.DateTime)
+    respawned_at = db.Column(db.DateTime)
+    protection_until = db.Column(db.DateTime)
+    respawn_count = db.Column(db.Integer, default=0)
+
     # Relationships
     planets = db.relationship('Planet', backref='owner', lazy=True)
     fleets = db.relationship('Fleet', backref='owner', lazy=True)
@@ -44,6 +50,9 @@ class Planet(db.Model):
     deuterium_synthesizer = db.Column(db.Integer, default=0)
     solar_plant = db.Column(db.Integer, default=1)
     fusion_reactor = db.Column(db.Integer, default=0)
+    metal_storage = db.Column(db.Integer, default=0)
+    crystal_storage = db.Column(db.Integer, default=0)
+    deuterium_tank = db.Column(db.Integer, default=0)
 
     # Ships (for testing - in real game, ships would be tracked separately)
     small_cargo = db.Column(db.Integer, default=0)
@@ -101,10 +110,16 @@ class Fleet(db.Model):
     battlecruiser = db.Column(db.Integer, default=0)
 
     # Fleet status
-    status = db.Column(db.String(20), default='stationed')
+    # Coordinate-based statuses like `colonizing:500:600:700` exceed 20 chars.
+    status = db.Column(db.String(64), default='stationed')
     departure_time = db.Column(db.DateTime, nullable=False)
     arrival_time = db.Column(db.DateTime, nullable=False)
     eta = db.Column(db.Integer, default=0)
+
+    # Cargo (used for recycle / transport loops)
+    cargo_metal = db.Column(db.BigInteger, default=0)
+    cargo_crystal = db.Column(db.BigInteger, default=0)
+    cargo_deuterium = db.Column(db.BigInteger, default=0)
 
     # Exploration data
     explored_coordinates = db.Column(db.Text)  # JSON string of explored coords
@@ -273,3 +288,24 @@ class DebrisField(db.Model):
 
     def __repr__(self):
         return f'<DebrisField planet:{self.planet_id} metal:{self.metal} crystal:{self.crystal}>'
+
+
+class EspionageReport(db.Model):
+    __tablename__ = 'espionage_reports'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # spy owner
+    target_planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False)
+    target_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    fleet_id = db.Column(db.Integer, db.ForeignKey('fleets.id'), nullable=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    success = db.Column(db.Boolean, default=True)
+    intel = db.Column(db.Text)  # JSON string
+
+    user = db.relationship('User', foreign_keys=[user_id], backref='espionage_reports')
+    target_user = db.relationship('User', foreign_keys=[target_user_id])
+    planet = db.relationship('Planet', backref='espionage_reports')
+    fleet = db.relationship('Fleet', backref='espionage_reports')
+
+    def __repr__(self):
+        return f'<EspionageReport user:{self.user_id} planet:{self.target_planet_id} success:{self.success}>'

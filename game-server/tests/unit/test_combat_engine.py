@@ -228,37 +228,15 @@ class TestCombatEngine:
 
     def test_calculate_debris(self):
         """Test debris field calculation"""
-        # Create simple classes to avoid Mock issues
-        class MockFleet:
-            def __init__(self):
-                self.small_cargo = 10
-                self.light_fighter = 5
-                self.cruiser = 0
-                self.battleship = 0
-                self.colony_ship = 0
-                self.heavy_fighter = 0
-                self.recycler = 0
+        debris = CombatEngine._calculate_debris_from_losses(
+            {'small_cargo': 2, 'light_fighter': 0},
+            {'cruiser': 1, 'battleship': 0},
+        )
 
-        attacker_fleet = MockFleet()
-        defender_fleet = MockFleet()
-        defender_fleet.small_cargo = 0
-        defender_fleet.light_fighter = 0
-        defender_fleet.cruiser = 5
-        defender_fleet.battleship = 3
-
-        # Mock the _calculate_losses method to return known values
-        with patch.object(CombatEngine, '_calculate_losses') as mock_losses:
-            mock_losses.side_effect = [
-                {'small_cargo': 2, 'light_fighter': 0},  # Attacker losses
-                {'cruiser': 1, 'battleship': 0}  # Defender losses
-            ]
-
-            debris = CombatEngine._calculate_debris(attacker_fleet, defender_fleet)
-
-            assert 'metal' in debris
-            assert 'crystal' in debris
-            assert debris['metal'] > 0
-            assert debris['crystal'] > 0
+        assert 'metal' in debris
+        assert 'crystal' in debris
+        assert debris['metal'] > 0
+        assert debris['crystal'] > 0
 
     def test_process_combat_result_updates_fleet_stats(self):
         """Test that combat results update fleet statistics"""

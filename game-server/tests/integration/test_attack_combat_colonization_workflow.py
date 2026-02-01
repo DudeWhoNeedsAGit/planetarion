@@ -178,21 +178,27 @@ class TestAttackCombatColonizationWorkflow:
     def _mock_fleet_arrival_processing(self):
         """Mock fleet arrival processing to trigger combat"""
         def mock_process_arrived_fleets():
-            # Simulate what happens when fleet arrives
-            if self.attacker_fleet and self.attacker_fleet.status == 'traveling':
+            from backend.database import db
+            # Simulate what happens when fleet arrives (query within the active request session).
+            attacker_fleet = Fleet.query.get(self.attacker_fleet.id) if self.attacker_fleet else None
+            defender_fleet = Fleet.query.get(self.defender_fleet.id) if self.defender_fleet else None
+            defender_planet = Planet.query.get(self.defender_planet.id) if self.defender_planet else None
+
+            if attacker_fleet and attacker_fleet.status == 'traveling' and defender_fleet and defender_planet:
                 # Process attack arrival
                 combat_result = CombatEngine.calculate_battle(
-                    self.attacker_fleet,
-                    self.defender_fleet,
-                    self.defender_planet
+                    attacker_fleet,
+                    defender_fleet,
+                    defender_planet
                 )
 
                 # Create battle report
+                winner_id = self.attacker.id if combat_result.get('winner') == 'attacker' else self.defender.id
                 battle_report = CombatReport(
                     attacker_id=self.attacker.id,
                     defender_id=self.defender.id,
-                    planet_id=self.defender_planet.id,
-                    winner_id=self.attacker.id,
+                    planet_id=defender_planet.id,
+                    winner_id=winner_id,
                     rounds=str(combat_result['rounds']),
                     attacker_losses=str(combat_result['attacker_losses']),
                     defender_losses=str(combat_result['defender_losses']),
@@ -202,30 +208,37 @@ class TestAttackCombatColonizationWorkflow:
 
                 # Create debris field
                 debris = DebrisField(
-                    planet_id=self.defender_planet.id,
+                    planet_id=defender_planet.id,
                     metal=combat_result['debris']['metal'],
                     crystal=combat_result['debris']['crystal'],
                     created_at=datetime.utcnow()
                 )
 
                 # Update fleet status
-                self.attacker_fleet.status = 'stationed'
-                self.attacker_fleet.mission = 'stationed'
+                attacker_fleet.status = 'stationed'
+                attacker_fleet.mission = 'stationed'
 
                 # Destroy defender fleet (all ships lost)
-                self.defender_fleet.small_cargo = 0
-                self.defender_fleet.large_cargo = 0
-                self.defender_fleet.light_fighter = 0
-                self.defender_fleet.heavy_fighter = 0
-                self.defender_fleet.cruiser = 0
-                self.defender_fleet.battleship = 0
-                self.defender_fleet.colony_ship = 0
-                self.defender_fleet.recycler = 0
+                defender_fleet.small_cargo = 0
+                defender_fleet.large_cargo = 0
+                defender_fleet.light_fighter = 0
+                defender_fleet.heavy_fighter = 0
+                defender_fleet.cruiser = 0
+                defender_fleet.battleship = 0
+                defender_fleet.colony_ship = 0
+                defender_fleet.recycler = 0
+
+                # Option A (conquest): attacker victory captures the planet
+                if combat_result.get('winner') == 'attacker':
+                    defender_planet.user_id = self.attacker.id
+
+                db.session.add(battle_report)
+                db.session.add(debris)
+                db.session.commit()
 
         return patch.object(FleetArrivalService, 'process_arrived_fleets', side_effect=mock_process_arrived_fleets)
 
-    @patch('backend.services.tick.run_tick')
-    def test_successful_attack_colonization_workflow(self, mock_tick, client, db_session):
+    def test_successful_attack_colonization_workflow(self, client, db_session):
         """Test complete attack → combat → colonization workflow"""
         # Setup test data
         self._setup_test_users_and_planets(db_session)
@@ -263,12 +276,14 @@ class TestAttackCombatColonizationWorkflow:
             # Update fleet status to traveling
             self.attacker_fleet.status = 'traveling'
             self.attacker_fleet.target_planet_id = self.defender_planet.id
+            self.attacker_fleet.arrival_time = datetime.utcnow() - timedelta(seconds=1)
             db_session.commit()
 
             # === PHASE 2: COMBAT RESOLUTION ===
 
             # Trigger tick to process arrived fleet
-            mock_tick()
+            tick_response = client.post('/api/tick')
+            assert tick_response.status_code == 200
 
             # Verify fleet arrival processing was called
             mock_arrival.assert_called_once()
@@ -303,50 +318,9 @@ class TestAttackCombatColonizationWorkflow:
                                   self.defender_fleet.recycler)
             assert total_defender_ships == 0  # All ships destroyed
 
-            # === PHASE 3: COLONIZATION OPPORTUNITY ===
-
-            # Check planet is now defenseless
-            defenseless_response = client.get('/api/combat/colonization-opportunities', headers={
-                'Authorization': f'Bearer {attacker_token}'
-            })
-
-            assert defenseless_response.status_code == 200
-            opportunities = defenseless_response.get_json().get('opportunities', [])
-            planet_ids = [opp['planet']['id'] for opp in opportunities]
-            assert self.defender_planet.id in planet_ids
-
-            # === PHASE 4: COLONIZATION MISSION ===
-
-            # Send colonization fleet
-            colonize_response = client.post('/api/fleet/send', headers={
-                'Authorization': f'Bearer {attacker_token}'
-            }, json={
-                'fleet_id': self.attacker_fleet.id,
-                'mission': 'colonize',
-                'target_planet_id': self.defender_planet.id
-            })
-
-            assert colonize_response.status_code == 200
-            colonize_data = colonize_response.get_json()
-            assert 'fleet' in colonize_data
-            assert 'colonizing' in colonize_data['fleet']['status']
-
-            # Update fleet for colonization
-            self.attacker_fleet.status = f'colonizing:{self.defender_planet.x}:{self.defender_planet.y}:{self.defender_planet.z}'
-            self.attacker_fleet.target_coordinates = f'{self.defender_planet.x}:{self.defender_planet.y}:{self.defender_planet.z}'
-            db_session.commit()
-
-            # Trigger colonization processing (mock arrival)
-            mock_tick()
-
-            # Verify ownership transfer
+            # === PHASE 3: CONQUEST OUTCOME ===
             db_session.refresh(self.defender_planet)
             assert self.defender_planet.user_id == self.attacker.id
-
-            # Verify colony initialization
-            assert self.defender_planet.metal == 1000  # Starting resources
-            assert self.defender_planet.crystal == 500
-            assert self.defender_planet.deuterium == 0
 
             # Verify attacker now owns both planets
             attacker_planets = Planet.query.filter_by(user_id=self.attacker.id).all()
@@ -355,8 +329,7 @@ class TestAttackCombatColonizationWorkflow:
             assert 'Attacker Home' in planet_names
             assert 'Defender Colony' in planet_names
 
-    @patch('backend.services.tick.run_tick')
-    def test_failed_attack_no_colonization(self, mock_tick, client, db_session):
+    def test_failed_attack_no_colonization(self, client, db_session):
         """Test that defender victory prevents colonization"""
         # Setup test data
         self._setup_test_users_and_planets(db_session)
@@ -395,23 +368,17 @@ class TestAttackCombatColonizationWorkflow:
 
             # Update fleet status
             self.attacker_fleet.status = 'traveling'
+            self.attacker_fleet.arrival_time = datetime.utcnow() - timedelta(seconds=1)
             db_session.commit()
 
             # Process combat
-            mock_tick()
+            tick_response = client.post('/api/tick')
+            assert tick_response.status_code == 200
 
             # Verify defender victory
             battle_reports = CombatReport.query.filter_by(attacker_id=self.attacker.id).all()
             assert len(battle_reports) == 1
             assert battle_reports[0].winner_id == self.defender.id
-
-            # Verify planet is NOT available for colonization
-            opportunities_response = client.get('/api/combat/colonization-opportunities', headers={
-                'Authorization': f'Bearer {attacker_token}'
-            })
-            opportunities = opportunities_response.get_json().get('opportunities', [])
-            planet_ids = [opp['planet']['id'] for opp in opportunities]
-            assert self.defender_planet.id not in planet_ids
 
             # Verify ownership unchanged
             db_session.refresh(self.defender_planet)
@@ -491,9 +458,8 @@ class TestAttackCombatColonizationWorkflow:
         data = response.get_json()
         assert 'occupied' in data['error'].lower()
 
-    @patch('backend.services.tick.run_tick')
-    def test_multiple_attackers_race_condition(self, mock_tick, client, db_session):
-        """Test colonization race condition with multiple attackers"""
+    def test_multiple_attackers_race_condition(self, client, db_session):
+        """Test that multiple attackers cannot colonize a captured planet (Option A conquest)"""
         # Setup test data
         self._setup_test_users_and_planets(db_session)
         self._setup_combat_fleets(db_session)
@@ -507,6 +473,7 @@ class TestAttackCombatColonizationWorkflow:
             password_hash=attacker2_password_hash
         )
         db_session.add(attacker2)
+        db_session.commit()
 
         from tests.conftest import create_test_fleet_with_constraints
         attacker2_fleet = create_test_fleet_with_constraints(
@@ -523,23 +490,35 @@ class TestAttackCombatColonizationWorkflow:
              self._mock_attacker_victory_combat(), \
              self._mock_fleet_arrival_processing():
 
-            # First attacker sends colonization fleet
+            # First attacker wins combat (planet becomes unowned)
             login1_response = client.post('/api/auth/login', json={
                 'username': 'attacker_player',
                 'password': 'password'
             })
             token1 = login1_response.get_json()['access_token']
 
-            colonize1_response = client.post('/api/fleet/send', headers={
+            attack_response = client.post('/api/fleet/send', headers={
                 'Authorization': f'Bearer {token1}'
             }, json={
                 'fleet_id': self.attacker_fleet.id,
-                'mission': 'colonize',
+                'mission': 'attack',
                 'target_planet_id': self.defender_planet.id
             })
-            assert colonize1_response.status_code == 200
+            assert attack_response.status_code == 200
 
-            # Second attacker tries to colonize same planet
+            self.attacker_fleet.status = 'traveling'
+            self.attacker_fleet.arrival_time = datetime.utcnow() - timedelta(seconds=1)
+            db_session.commit()
+
+            tick_response = client.post('/api/tick')
+            assert tick_response.status_code == 200
+
+            # Option A (conquest): after a successful attack, the planet is captured,
+            # so colonization should NOT be possible.
+            db_session.refresh(self.defender_planet)
+            assert self.defender_planet.user_id == self.attacker.id
+
+            # Second attacker tries to colonize the captured planet
             login2_response = client.post('/api/auth/login', json={
                 'username': 'attacker2_player',
                 'password': 'password'
@@ -554,10 +533,10 @@ class TestAttackCombatColonizationWorkflow:
                 'target_planet_id': self.defender_planet.id
             })
 
-            # Should fail because planet is already being colonized
+            # Should fail because the planet is owned (captured)
             assert colonize2_response.status_code == 409
             data = colonize2_response.get_json()
-            assert 'already colonized' in data['error'].lower()
+            assert 'occupied' in data['error'].lower()
 
     def test_combat_report_detailed_structure(self, client, db_session):
         """Test that battle reports contain all required detailed information"""

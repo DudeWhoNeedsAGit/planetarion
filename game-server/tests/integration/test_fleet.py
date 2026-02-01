@@ -116,13 +116,21 @@ class TestFleetEndpoints:
         headers = make_auth_headers(sample_fleet.user_id)
 
         # Create another planet as target
-        from backend.models import Planet
+        from backend.models import Planet, User
         from backend.database import db
+
+        enemy = User(
+            username='enemyuser',
+            email='enemy@example.com',
+            password_hash='x',
+        )
+        db.session.add(enemy)
+        db.session.flush()
 
         target_planet = Planet(
             name='Target Planet',
             x=200, y=200, z=200,
-            user_id=sample_fleet.user_id
+            user_id=enemy.id
         )
         db.session.add(target_planet)
         db.session.commit()
@@ -143,6 +151,49 @@ class TestFleetEndpoints:
         assert 'fleet' in data
         assert data['fleet']['status'] == 'traveling'
         assert data['fleet']['mission'] == 'attack'
+        # Timestamps should be serialized as UTC with Z suffix so the frontend can compute ETA correctly.
+        assert data['fleet']['departure_time'] is None or data['fleet']['departure_time'].endswith('Z')
+        assert data['fleet']['arrival_time'] is None or data['fleet']['arrival_time'].endswith('Z')
+
+    def test_send_fleet_forced_nonzero_eta(self, client, sample_fleet):
+        """Send should set a non-zero ETA when forced travel time is configured."""
+        headers = make_auth_headers(sample_fleet.user_id)
+
+        # Create another planet as target
+        from backend.models import Planet, User
+        from backend.database import db
+
+        enemy = User(
+            username='enemyuser2',
+            email='enemy2@example.com',
+            password_hash='x',
+        )
+        db.session.add(enemy)
+        db.session.flush()
+
+        target_planet = Planet(
+            name='Target Planet 2',
+            x=201, y=201, z=201,
+            user_id=enemy.id
+        )
+        db.session.add(target_planet)
+        db.session.commit()
+
+        send_data = {
+            'fleet_id': sample_fleet.id,
+            'target_planet_id': target_planet.id,
+            'mission': 'attack'
+        }
+
+        with patch('backend.routes.fleet.get_forced_travel_time_seconds', return_value=42):
+            response = client.post('/api/fleet/send', json=send_data, headers=headers)
+
+        assert response.status_code == 200
+        fleet = response.get_json()['fleet']
+        assert fleet['eta'] == 42
+        assert fleet['status'] == 'traveling'
+        assert fleet['departure_time'].endswith('Z')
+        assert fleet['arrival_time'].endswith('Z')
 
     def test_send_fleet_invalid_fleet(self, client, sample_user):
         """Test sending a non-existent fleet"""
@@ -210,7 +261,61 @@ class TestFleetEndpoints:
         response = client.post('/api/fleet/recall/99999', headers=headers)
 
         assert response.status_code == 404
-        data = response.get_json()
+
+    def test_dissolve_stationed_fleet_returns_ships_to_inventory(self, client, sample_user, sample_planet):
+        """Dissolving a stationed fleet should return ships back into the inventory fleet."""
+        headers = make_auth_headers(sample_user.id)
+
+        # Create a small fleet.
+        create_payload = {
+            'start_planet_id': sample_planet.id,
+            'ships': {'small_cargo': 5}
+        }
+        create_resp = client.post('/api/fleet', json=create_payload, headers=headers)
+        assert create_resp.status_code == 201
+        created_id = create_resp.get_json()['fleet']['id']
+
+        # Dissolve it.
+        dissolve_resp = client.post(f'/api/fleet/{created_id}/dissolve', headers=headers)
+        assert dissolve_resp.status_code == 200
+
+        # Inventory fleet should now include the ships again, and the dissolved fleet should be gone.
+        fleets = client.get('/api/fleet', headers=headers).get_json()
+        assert all(f['id'] != created_id for f in fleets)
+
+        inventory = next((f for f in fleets if f.get('mission') == 'inventory'), None)
+        assert inventory is not None
+        assert inventory['ships']['small_cargo'] >= 5
+
+    def test_dissolve_rejects_traveling_fleet(self, client, sample_fleet):
+        headers = make_auth_headers(sample_fleet.user_id)
+
+        # Traveling fleets cannot be dissolved.
+        from backend.database import db
+        sample_fleet.status = 'traveling'
+        db.session.commit()
+
+        resp = client.post(f'/api/fleet/{sample_fleet.id}/dissolve', headers=headers)
+        assert resp.status_code == 400
+
+    def test_dissolve_rejects_inventory_fleet(self, client, sample_user, sample_planet):
+        headers = make_auth_headers(sample_user.id)
+
+        # Ensure an inventory fleet exists (create_fleet will create it).
+        create_payload = {
+            'start_planet_id': sample_planet.id,
+            'ships': {'small_cargo': 1}
+        }
+        resp = client.post('/api/fleet', json=create_payload, headers=headers)
+        assert resp.status_code == 201
+
+        fleets = client.get('/api/fleet', headers=headers).get_json()
+        inventory = next((f for f in fleets if f.get('mission') == 'inventory'), None)
+        assert inventory is not None
+
+        resp2 = client.post(f"/api/fleet/{inventory['id']}/dissolve", headers=headers)
+        assert resp2.status_code == 400
+        data = resp2.get_json()
         assert 'error' in data
 
     def test_recall_fleet_stationed(self, client, sample_fleet):

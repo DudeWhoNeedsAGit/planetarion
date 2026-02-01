@@ -11,8 +11,12 @@ This module is primarily for administrative or public planet data access.
 """
 
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from sqlalchemy import func, distinct
+import os
+import json
 from backend.database import db
-from backend.models import Planet, User
+from backend.models import Planet, User, DebrisField
 
 planets_bp = Blueprint('planets', __name__, url_prefix='/api')
 
@@ -60,119 +64,227 @@ def get_planet(planet_id):
         }
     })
 
-@planets_bp.route('/galaxy/system/<int:x>/<int:y>/<int:z>', methods=['GET'])
+@planets_bp.route('/galaxy/system/<x>/<y>/<z>', methods=['GET'])
+@jwt_required()
 def get_system_planets(x, y, z):
-    """Get all planets in a specific system"""
-    print("DEBUG: Galaxy system endpoint called")
-    print(f"DEBUG: System coordinates: {x}:{y}:{z}")
-
+    """Get all planets in a specific system."""
     try:
-        print("DEBUG: Querying database for planets in system...")
+        try:
+            x = int(x)
+            y = int(y)
+            z = int(z)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid coordinates'}), 400
+
+        user_id = int(get_jwt_identity())
         planets = Planet.query.filter_by(x=x, y=y, z=z).all()
-        print(f"DEBUG: Found {len(planets)} planets in system")
+
+        # Fog-of-war: only reveal planets if the system is explored, or if the user owns a planet here.
+        # In FLASK_ENV=testing, disable fog to keep E2E flows deterministic and fast.
+        if os.getenv('FLASK_ENV') != 'testing':
+            system_key = f"{x}:{y}:{z}"
+            user_owns_planet_in_system = any(p.user_id == user_id for p in planets)
+            if not user_owns_planet_in_system:
+                explored_systems = set()
+                user = User.query.get(user_id)
+                if user and user.explored_systems:
+                    try:
+                        explored_data = json.loads(user.explored_systems)
+                        explored_systems = {
+                            s.get('coordinates')
+                            for s in explored_data
+                            if isinstance(s, dict) and s.get('coordinates')
+                        }
+                    except Exception:
+                        explored_systems = set()
+                if system_key not in explored_systems:
+                    return jsonify([])
+
+        planet_ids = [p.id for p in planets]
+
+        debris_by_planet_id = {}
+        if planet_ids:
+            debris_rows = (
+                db.session.query(
+                    DebrisField.planet_id,
+                    func.sum(DebrisField.metal).label('metal'),
+                    func.sum(DebrisField.crystal).label('crystal'),
+                    func.sum(DebrisField.deuterium).label('deuterium'),
+                )
+                .filter(DebrisField.planet_id.in_(planet_ids))
+                .group_by(DebrisField.planet_id)
+                .all()
+            )
+            debris_by_planet_id = {
+                int(pid): {
+                    'metal': int(metal or 0),
+                    'crystal': int(crystal or 0),
+                    'deuterium': int(deuterium or 0),
+                }
+                for (pid, metal, crystal, deuterium) in debris_rows
+            }
 
         result = [{
             'id': planet.id,
             'name': planet.name,
             'coordinates': f"{planet.x}:{planet.y}:{planet.z}",
+            'x': planet.x,
+            'y': planet.y,
+            'z': planet.z,
             'user_id': planet.user_id,
-            'owner_name': planet.owner.username if planet.owner else None
+            'owner_name': planet.owner.username if planet.owner else None,
+            'debris': debris_by_planet_id.get(planet.id, {'metal': 0, 'crystal': 0, 'deuterium': 0}),
         } for planet in planets]
 
-        print(f"DEBUG: Returning {len(result)} planets data")
-        print("DEBUG: Galaxy system endpoint successful")
         return jsonify(result)
 
     except Exception as e:
         print(f"ERROR: Galaxy system endpoint failed: {str(e)}")
-        print("DEBUG: Galaxy system endpoint failed")
         return jsonify({'error': 'Internal server error'}), 500
 
-@planets_bp.route('/galaxy/nearby/<int:center_x>/<int:center_y>/<int:center_z>', methods=['GET'])
+@planets_bp.route('/galaxy/nearby/<center_x>/<center_y>/<center_z>', methods=['GET'])
+@jwt_required()
 def get_nearby_systems(center_x, center_y, center_z):
-    """Get nearby systems that can be explored"""
-    print("DEBUG: Galaxy nearby endpoint called")
-    print(f"DEBUG: Center coordinates: {center_x}:{center_y}:{center_z}")
+    """Return system summaries within a range around the given center coordinates.
 
+    Response:
+      { systems: [...], meta: {...} }
+    """
     try:
-        # For now, return systems without auth for testing
-        # TODO: Add JWT auth back when frontend is ready
-        from backend.models import User
-        import json
+        user_id = int(get_jwt_identity())
+        try:
+            center_x = int(center_x)
+            center_y = int(center_y)
+            center_z = int(center_z)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid center coordinates'}), 400
 
-        # For testing, use a dummy user or skip user-specific logic
-        user = None  # TODO: Add proper user handling
-        print("DEBUG: User handling - using dummy user for now")
+        # Default exploration/intel range scales with interstellar communication.
+        from backend.models import Research
+        research = Research.query.filter_by(user_id=user_id).first()
+        comm_level = research.interstellar_communication if research else 0
+        default_range = 2000 + int(comm_level or 0) * 500
+        range_limit = request.args.get('range', default_range, type=int)
+        limit = request.args.get('limit', 500, type=int)
+        offset = request.args.get('offset', 0, type=int)
 
-        print("DEBUG: Loading complete galaxy data (no range limit)...")
-        # Find ALL planets in the database for complete galaxy view
-        planets = Planet.query.all()
-        print(f"DEBUG: Found {len(planets)} planets in entire galaxy")
+        min_x, max_x = center_x - range_limit, center_x + range_limit
+        min_y, max_y = center_y - range_limit, center_y + range_limit
+        min_z, max_z = center_z - range_limit, center_z + range_limit
 
-        # Group by system coordinates
-        print("DEBUG: Grouping planets by system coordinates...")
-        systems = {}
-        for planet in planets:
-            key = f"{planet.x}:{planet.y}:{planet.z}"
-            if key not in systems:
-                systems[key] = {
-                    'x': planet.x,
-                    'y': planet.y,
-                    'z': planet.z,
-                    'planets': 0,
-                    'explored': True,
-                    'owner_id': planet.user_id  # Set owner based on first planet found
-                }
-            systems[key]['planets'] += 1
-            # If multiple planets with different owners, mark as contested (None)
-            if systems[key]['owner_id'] != planet.user_id:
-                systems[key]['owner_id'] = None
-        print(f"DEBUG: Grouped into {len(systems)} systems")
-
-        # Load user's explored systems
         explored_systems = set()
+        user = User.query.get(user_id)
         if user and user.explored_systems:
             try:
                 explored_data = json.loads(user.explored_systems)
-                explored_systems = {s['coordinates'] for s in explored_data}
-                print(f"DEBUG: Loaded {len(explored_systems)} explored systems from user data")
-            except:
-                print("DEBUG: Failed to parse user explored systems data")
-        else:
-            print("DEBUG: No user data for explored systems")
-
-        # Mark systems as explored based on user's history
-        print("DEBUG: Marking systems as explored based on user history...")
-        for key, system in systems.items():
-            system['explored'] = key in explored_systems
-
-        # Add some unexplored systems (placeholder for now)
-        # In a real implementation, this would be based on exploration history
-        unexplored_count = 5
-        print(f"DEBUG: Adding {unexplored_count} placeholder unexplored systems...")
-        for i in range(unexplored_count):
-            x = center_x + (i - 2) * 20
-            y = center_y + (i - 2) * 15
-            z = center_z + (i - 2) * 10
-            key = f"{x}:{y}:{z}"
-            if key not in systems:
-                systems[key] = {
-                    'x': x,
-                    'y': y,
-                    'z': z,
-                    'planets': 0,
-                    'explored': key in explored_systems,
-                    'owner_id': None  # Unowned systems
+                explored_systems = {
+                    s.get('coordinates')
+                    for s in explored_data
+                    if isinstance(s, dict) and s.get('coordinates')
                 }
+            except Exception:
+                explored_systems = set()
 
-        result = list(systems.values())
-        print(f"DEBUG: Returning {len(result)} systems data")
-        print("DEBUG: Galaxy nearby endpoint successful")
-        return jsonify(result)
+        rows = (
+            db.session.query(
+                Planet.x.label('x'),
+                Planet.y.label('y'),
+                Planet.z.label('z'),
+                func.count(Planet.id).label('planet_count'),
+                func.count(distinct(Planet.user_id)).label('owner_count'),
+                func.min(Planet.user_id).label('min_owner'),
+                func.max(Planet.user_id).label('max_owner'),
+            )
+            .filter(
+                Planet.x.between(min_x, max_x),
+                Planet.y.between(min_y, max_y),
+                Planet.z.between(min_z, max_z),
+            )
+            .group_by(Planet.x, Planet.y, Planet.z)
+            .order_by(Planet.x.asc(), Planet.y.asc(), Planet.z.asc())
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+
+        debris_rows = (
+            db.session.query(Planet.x, Planet.y, Planet.z)
+            .join(DebrisField, DebrisField.planet_id == Planet.id)
+            .filter(
+                Planet.x.between(min_x, max_x),
+                Planet.y.between(min_y, max_y),
+                Planet.z.between(min_z, max_z),
+                (DebrisField.metal + DebrisField.crystal + DebrisField.deuterium) > 0,
+            )
+            .group_by(Planet.x, Planet.y, Planet.z)
+            .all()
+        )
+        debris_keys = {f"{x}:{y}:{z}" for (x, y, z) in debris_rows}
+
+        owner_ids = {
+            int(r.max_owner)
+            for r in rows
+            if r.owner_count == 1 and r.max_owner is not None
+        }
+        owners = {}
+        if owner_ids:
+            owners = {
+                u.id: {"username": u.username, "alliance_id": u.alliance_id}
+                for u in User.query.filter(User.id.in_(owner_ids)).all()
+            }
+
+        systems = []
+        for r in rows:
+            key = f"{r.x}:{r.y}:{r.z}"
+
+            owner_id = int(r.max_owner) if r.owner_count == 1 and r.max_owner is not None else None
+            owner_name = owners.get(owner_id, {}).get("username") if owner_id is not None else None
+
+            if r.owner_count == 0:
+                relation = 'unowned'
+            elif r.owner_count > 1:
+                relation = 'contested'
+            elif owner_id == user_id:
+                relation = 'self'
+            elif owner_name == 'pirates':
+                relation = 'pirates'
+            elif user and user.alliance_id and owners.get(owner_id, {}).get("alliance_id") == user.alliance_id:
+                relation = 'ally'
+            else:
+                relation = 'enemy'
+
+            explored = (key in explored_systems) or (relation == 'self')
+
+            systems.append({
+                'key': key,
+                'x': r.x,
+                'y': r.y,
+                'z': r.z,
+                'planet_count': int(r.planet_count),
+                # Backward-compatible alias for older UI code.
+                'planets': int(r.planet_count),
+                'owner_id': owner_id,
+                'owner_name': owner_name,
+                'relation': relation,
+                'explored': explored,
+                'flags': {
+                    'has_debris': key in debris_keys,
+                    'has_pirates': relation == 'pirates',
+                }
+            })
+
+        return jsonify({
+            'systems': systems,
+            'meta': {
+                'center': {'x': center_x, 'y': center_y, 'z': center_z},
+                'range': range_limit,
+                'limit': limit,
+                'offset': offset,
+            }
+        })
 
     except Exception as e:
         print(f"ERROR: Galaxy nearby endpoint failed: {str(e)}")
-        print("DEBUG: Galaxy nearby endpoint failed")
         return jsonify({'error': 'Internal server error'}), 500
 
 @planets_bp.route('/planets', methods=['POST'])

@@ -58,12 +58,15 @@ class TestFleetTravelGuard:
         self.fleet.arrival_time = self.current_time + timedelta(hours=1)
         self.fleet.eta = 3600
 
-        # Call the utility method
-        FleetTravelGuard._return_fleet_to_stationed(self.fleet)
+        with patch('backend.services.fleet_travel_guard.datetime') as mock_datetime:
+            mock_datetime.utcnow.return_value = self.current_time
+
+            # Call the utility method
+            FleetTravelGuard._return_fleet_to_stationed(self.fleet)
 
         assert self.fleet.status == 'stationed'
         assert self.fleet.mission == 'stationed'
-        assert self.fleet.arrival_time is None
+        assert self.fleet.arrival_time == self.current_time
         assert self.fleet.eta == 0
 
     @patch('backend.services.fleet_travel_guard.datetime')

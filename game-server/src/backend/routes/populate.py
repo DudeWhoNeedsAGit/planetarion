@@ -190,11 +190,74 @@ def create_enemy_planets_around_player(player_planets, num_enemies=5):
 
     return enemy_data
 
+
+def create_pirate_camps_around_player(player_planets, num_camps=2):
+    """Create pirate camp planets owned by a dedicated 'pirates' NPC user."""
+    import bcrypt
+    import random
+    import math
+
+    # Get or create pirates user
+    pirates = User.query.filter_by(username="pirates").first()
+    if not pirates:
+        pirates_pw = bcrypt.hashpw('pirates'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        pirates = User(username="pirates", email="pirates@example.com", password_hash=pirates_pw)
+        db.session.add(pirates)
+        db.session.commit()
+
+    pirate_data = []
+    for player_planet in player_planets[: max(1, len(player_planets))]:
+        for i in range(num_camps):
+            angle = random.uniform(0, 2 * math.pi)
+            distance = random.randint(300, 900)
+            height_offset = random.randint(-200, 200)
+
+            x = int(player_planet.x + distance * math.cos(angle))
+            y = int(player_planet.y + distance * math.sin(angle))
+            z = int(player_planet.z + height_offset)
+
+            x = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], x))
+            y = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], y))
+            z = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], z))
+
+            name = f"Pirate Camp {i+1} near {player_planet.name}"
+            planet = Planet(name=name, x=x, y=y, z=z, user_id=pirates.id, metal=50000, crystal=25000, deuterium=10000)
+            db.session.add(planet)
+            db.session.flush()
+
+            # Defensive fleet parked at the camp
+            now = datetime.utcnow()
+            fleet = Fleet(
+                user_id=pirates.id,
+                mission='defend',
+                status='stationed',
+                start_planet_id=planet.id,
+                target_planet_id=planet.id,
+                departure_time=now,
+                arrival_time=now,
+                eta=0,
+                light_fighter=200 + i * 50,
+                heavy_fighter=100 + i * 25,
+                cruiser=25 + i * 5,
+                battleship=10 + i * 2,
+            )
+            db.session.add(fleet)
+            pirate_data.append((planet, fleet))
+
+    db.session.commit()
+    return pirate_data
+
 @populate_bp.route('/populate', methods=['POST'])
 def populate_database():
     """Populate the database with realistic test data"""
 
     from flask import request
+    import os
+    from flask import current_app
+
+    # Safety: this endpoint clears and recreates data, so only allow it in testing.
+    if (current_app.config.get('FLASK_ENV') != 'testing') and (os.getenv('FLASK_ENV') != 'testing'):
+        return jsonify({'error': 'Populate is only available when FLASK_ENV=testing'}), 403
 
     # Check if deterministic mode is requested
     deterministic = request.args.get('deterministic', 'false').lower() == 'true'
@@ -212,7 +275,6 @@ def populate_database():
         print("DEBUG: Data cleared successfully")
 
         # Make generation deterministic for testing
-        import os
         if deterministic or os.getenv('FLASK_ENV') == 'testing':
             random.seed(42)  # Fixed seed for deterministic results
             fake.seed_instance(42)  # Fixed seed for Faker
@@ -485,6 +547,16 @@ def populate_database():
                     db.session.add(enemy_fleet)
 
                     print(f"DEBUG: Created enemy planet with fleet at ({enemy_planet.x}, {enemy_planet.y}, {enemy_planet.z})")
+
+                pirate_data = create_pirate_camps_around_player(test_user_planets, num_camps=1)
+                for pirate_planet, pirate_fleet in pirate_data:
+                    planets.append(pirate_planet)
+                    db.session.add(pirate_planet)
+                    db.session.flush()
+                    pirate_fleet.start_planet_id = pirate_planet.id
+                    pirate_fleet.target_planet_id = pirate_planet.id
+                    db.session.add(pirate_fleet)
+                    print(f"DEBUG: Created pirate camp at ({pirate_planet.x}, {pirate_planet.y}, {pirate_planet.z})")
 
         db.session.commit()
 

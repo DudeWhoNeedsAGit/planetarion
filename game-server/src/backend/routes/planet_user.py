@@ -14,142 +14,182 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet
+from backend.config import get_planet_storage_caps
 
 planet_mgmt_bp = Blueprint('planet_mgmt', __name__, url_prefix='/api/planet')
+
+ALLOWED_BUILDINGS = {
+    'metal_mine',
+    'crystal_mine',
+    'deuterium_synthesizer',
+    'solar_plant',
+    'fusion_reactor',
+    'metal_storage',
+    'crystal_storage',
+    'deuterium_tank',
+    'research_lab',
+}
+
+
+def _planet_to_dict(planet):
+    caps = get_planet_storage_caps(planet)
+    return {
+        'id': planet.id,
+        'user_id': planet.user_id,
+        'name': planet.name,
+        'x': planet.x,
+        'y': planet.y,
+        'z': planet.z,
+        'coordinates': f"{planet.x}:{planet.y}:{planet.z}",
+        'resources': {
+            'metal': planet.metal,
+            'crystal': planet.crystal,
+            'deuterium': planet.deuterium,
+        },
+        'storage': {
+            'metal': caps['metal'],
+            'crystal': caps['crystal'],
+            'deuterium': caps['deuterium'],
+        },
+        'ships': {
+            'small_cargo': getattr(planet, 'small_cargo', 0),
+            'large_cargo': getattr(planet, 'large_cargo', 0),
+            'light_fighter': getattr(planet, 'light_fighter', 0),
+            'heavy_fighter': getattr(planet, 'heavy_fighter', 0),
+            'cruiser': getattr(planet, 'cruiser', 0),
+            'battleship': getattr(planet, 'battleship', 0),
+            'colony_ship': getattr(planet, 'colony_ship', 0),
+            'recycler': getattr(planet, 'recycler', 0),
+            'espionage_probe': getattr(planet, 'espionage_probe', 0),
+            'bomber': getattr(planet, 'bomber', 0),
+            'destroyer': getattr(planet, 'destroyer', 0),
+            'deathstar': getattr(planet, 'deathstar', 0),
+            'battlecruiser': getattr(planet, 'battlecruiser', 0),
+        },
+        'structures': {
+            'metal_mine': planet.metal_mine,
+            'crystal_mine': planet.crystal_mine,
+            'deuterium_synthesizer': planet.deuterium_synthesizer,
+            'solar_plant': planet.solar_plant,
+            'fusion_reactor': planet.fusion_reactor,
+            'metal_storage': getattr(planet, 'metal_storage', 0),
+            'crystal_storage': getattr(planet, 'crystal_storage', 0),
+            'deuterium_tank': getattr(planet, 'deuterium_tank', 0),
+            'research_lab': getattr(planet, 'research_lab', 0),
+        },
+        'production_rates': calculate_production_rates(planet),
+    }
+
 
 @planet_mgmt_bp.route('', methods=['GET'])
 @jwt_required()
 def get_user_planets():
-    user_id = get_jwt_identity()
-    user = User.query.get_or_404(user_id)
+    user_id = int(get_jwt_identity())
+    User.query.get_or_404(user_id)
 
     planets = Planet.query.filter_by(user_id=user_id).all()
-
-    return jsonify([{
-        'id': planet.id,
-        'name': planet.name,
-        'coordinates': f"{planet.x}:{planet.y}:{planet.z}",
-        'resources': {
-            'metal': planet.metal,
-            'crystal': planet.crystal,
-            'deuterium': planet.deuterium
-        },
-        'structures': {
-            'metal_mine': planet.metal_mine,
-            'crystal_mine': planet.crystal_mine,
-            'deuterium_synthesizer': planet.deuterium_synthesizer,
-            'solar_plant': planet.solar_plant,
-            'fusion_reactor': planet.fusion_reactor
-        },
-        'production_rates': calculate_production_rates(planet)
-    } for planet in planets])
+    return jsonify([_planet_to_dict(planet) for planet in planets])
 
 @planet_mgmt_bp.route('/<int:planet_id>', methods=['GET'])
 @jwt_required()
 def get_planet(planet_id):
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     planet = Planet.query.filter_by(id=planet_id, user_id=user_id).first_or_404()
 
-    return jsonify({
-        'id': planet.id,
-        'name': planet.name,
-        'coordinates': f"{planet.x}:{planet.y}:{planet.z}",
-        'resources': {
-            'metal': planet.metal,
-            'crystal': planet.crystal,
-            'deuterium': planet.deuterium
-        },
-        'structures': {
-            'metal_mine': planet.metal_mine,
-            'crystal_mine': planet.crystal_mine,
-            'deuterium_synthesizer': planet.deuterium_synthesizer,
-            'solar_plant': planet.solar_plant,
-            'fusion_reactor': planet.fusion_reactor
-        },
-        'production_rates': calculate_production_rates(planet)
-    })
+    return jsonify(_planet_to_dict(planet))
+
 
 @planet_mgmt_bp.route('/buildings', methods=['PUT'])
 @jwt_required()
 def update_buildings():
-    user_id = get_jwt_identity()
-    data = request.get_json()
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
 
-    if not data or 'planet_id' not in data or 'buildings' not in data:
-        return jsonify({'error': 'Missing planet_id or buildings data'}), 400
+    planet_id = data.get('planet_id')
+    buildings = data.get('buildings')
+    if not planet_id or not isinstance(buildings, dict):
+        return jsonify({'error': 'Missing required data'}), 400
 
-    planet = Planet.query.filter_by(id=data['planet_id'], user_id=user_id).first_or_404()
+    planet = Planet.query.filter_by(id=planet_id, user_id=user_id).first_or_404()
 
-    # Calculate costs and check resources
     total_cost_metal = 0
     total_cost_crystal = 0
     total_cost_deuterium = 0
 
-    for building, new_level in data['buildings'].items():
-        if building not in ['metal_mine', 'crystal_mine', 'deuterium_synthesizer', 'solar_plant', 'fusion_reactor']:
+    upgrades = {}
+    for building, new_level in buildings.items():
+        if building not in ALLOWED_BUILDINGS:
+            continue
+        if not isinstance(new_level, int):
             continue
 
         current_level = getattr(planet, building)
         if new_level <= current_level:
             continue
 
-        # Calculate upgrade cost (simplified formula)
-        cost_multiplier = 1.5 ** (new_level - 1)
-        if building in ['metal_mine', 'crystal_mine']:
-            metal_cost = int(60 * cost_multiplier)
-            crystal_cost = int(15 * cost_multiplier)
-            total_cost_metal += metal_cost
-            total_cost_crystal += crystal_cost
-        elif building == 'deuterium_synthesizer':
-            metal_cost = int(225 * cost_multiplier)
-            crystal_cost = int(75 * cost_multiplier)
-            total_cost_metal += metal_cost
-            total_cost_crystal += crystal_cost
-        elif building == 'solar_plant':
-            metal_cost = int(75 * cost_multiplier)
-            crystal_cost = int(30 * cost_multiplier)
-            total_cost_metal += metal_cost
-            total_cost_crystal += crystal_cost
-        elif building == 'fusion_reactor':
-            metal_cost = int(900 * cost_multiplier)
-            crystal_cost = int(360 * cost_multiplier)
-            deuterium_cost = int(180 * cost_multiplier)
-            total_cost_metal += metal_cost
-            total_cost_crystal += crystal_cost
-            total_cost_deuterium += deuterium_cost
+        # Cost should be cumulative for each level upgraded (prevents skipping levels cheaply).
+        for level in range(current_level + 1, new_level + 1):
+            cost_multiplier = 1.5 ** (level - 1)
+            if building in {'metal_mine', 'crystal_mine'}:
+                total_cost_metal += int(60 * cost_multiplier)
+                total_cost_crystal += int(15 * cost_multiplier)
+            elif building == 'deuterium_synthesizer':
+                total_cost_metal += int(225 * cost_multiplier)
+                total_cost_crystal += int(75 * cost_multiplier)
+            elif building == 'solar_plant':
+                total_cost_metal += int(75 * cost_multiplier)
+                total_cost_crystal += int(30 * cost_multiplier)
+            elif building == 'fusion_reactor':
+                total_cost_metal += int(900 * cost_multiplier)
+                total_cost_crystal += int(360 * cost_multiplier)
+                total_cost_deuterium += int(180 * cost_multiplier)
+            elif building in {'metal_storage', 'crystal_storage', 'deuterium_tank'}:
+                total_cost_metal += int(100 * cost_multiplier)
+                total_cost_crystal += int(50 * cost_multiplier)
+            elif building == 'research_lab':
+                total_cost_metal += int(200 * cost_multiplier)
+                total_cost_crystal += int(100 * cost_multiplier)
+                total_cost_deuterium += int(50 * cost_multiplier)
 
-    # Check if user has enough resources
-    if (planet.metal < total_cost_metal or
-        planet.crystal < total_cost_crystal or
-        planet.deuterium < total_cost_deuterium):
+        upgrades[building] = new_level
+
+    if (
+        planet.metal < total_cost_metal
+        or planet.crystal < total_cost_crystal
+        or planet.deuterium < total_cost_deuterium
+    ):
         return jsonify({'error': 'Insufficient resources'}), 400
 
-    # Deduct resources and update buildings
     planet.metal -= total_cost_metal
     planet.crystal -= total_cost_crystal
     planet.deuterium -= total_cost_deuterium
 
-    for building, new_level in data['buildings'].items():
-        if hasattr(planet, building):
-            setattr(planet, building, new_level)
+    for building, new_level in upgrades.items():
+        setattr(planet, building, new_level)
 
     db.session.commit()
 
-    return jsonify({
-        'message': 'Buildings updated successfully',
-        'resources': {
-            'metal': planet.metal,
-            'crystal': planet.crystal,
-            'deuterium': planet.deuterium
-        },
-        'structures': {
-            'metal_mine': planet.metal_mine,
-            'crystal_mine': planet.crystal_mine,
-            'deuterium_synthesizer': planet.deuterium_synthesizer,
-            'solar_plant': planet.solar_plant,
-            'fusion_reactor': planet.fusion_reactor
+    return jsonify(
+        {
+            'message': 'Buildings updated successfully',
+            'resources': {
+                'metal': planet.metal,
+                'crystal': planet.crystal,
+                'deuterium': planet.deuterium,
+            },
+            'structures': {
+                'metal_mine': planet.metal_mine,
+                'crystal_mine': planet.crystal_mine,
+                'deuterium_synthesizer': planet.deuterium_synthesizer,
+                'solar_plant': planet.solar_plant,
+                'fusion_reactor': planet.fusion_reactor,
+                'metal_storage': getattr(planet, 'metal_storage', 0),
+                'crystal_storage': getattr(planet, 'crystal_storage', 0),
+                'deuterium_tank': getattr(planet, 'deuterium_tank', 0),
+                'research_lab': getattr(planet, 'research_lab', 0),
+            },
         }
-    })
+    )
 
 def calculate_production_rates(planet):
     """Calculate resource production rates based on buildings"""
@@ -160,7 +200,12 @@ def calculate_production_rates(planet):
 
     # Energy consumption affects production
     energy_production = planet.solar_plant * 20 + planet.fusion_reactor * 50
-    energy_consumption = planet.metal_mine * 10 + planet.crystal_mine * 10 + planet.deuterium_synthesizer * 20
+    energy_consumption = (
+        planet.metal_mine * 10
+        + planet.crystal_mine * 10
+        + planet.deuterium_synthesizer * 20
+        + (planet.research_lab or 0) * 15
+    )
 
     if energy_consumption > energy_production:
         # Reduce production if not enough energy

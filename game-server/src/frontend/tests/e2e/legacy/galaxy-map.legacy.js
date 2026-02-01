@@ -1,31 +1,10 @@
 const { test, expect } = require('@playwright/test');
-
-// Helper function for login - use same pattern as working fleet tests
-async function loginAsE2eTestUser(page) {
-  // Navigate to the app
-  await page.goto('/');
-
-  // Login with existing test account
-  await page.fill('input[name="username"]', 'e2etestuser');
-  await page.fill('input[name="password"]', 'testpassword123');
-
-  // Submit login
-  await page.click('button[type="submit"]');
-
-  // Wait for login to complete
-  await page.waitForTimeout(2000);
-
-  // Verify login success - check for dashboard header
-  await expect(page.locator('h1:has-text("Planetarion")')).toBeVisible();
-}
+const { loginViaLocalStorage } = require('./helpers/testSession');
 
 // Helper function to navigate to Galaxy Map
 async function navigateToGalaxyMap(page) {
-  // Click Galaxy navigation to open modal (matches actual nav text)
-  await page.locator('nav').locator('text=Galaxy').click();
-
-  // Wait for modal to appear (increased timeout)
-  await page.waitForTimeout(1000);
+  await page.getByTestId('nav-galaxy').click();
+  await page.getByTestId('galaxy-modal').waitFor();
 }
 
 // Helper function to get coordinate values from display
@@ -74,8 +53,8 @@ async function clearGalaxyData(page) {
 
 test.describe('Galaxy Map Navigation', () => {
   // Handle login for each test - use same pattern as working fleet tests
-  test.beforeEach(async ({ page }) => {
-    await loginAsE2eTestUser(page);
+  test.beforeEach(async ({ page, request }) => {
+    await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
   });
 
   test('should navigate to Galaxy Map and display modal', async ({ page }) => {
@@ -83,9 +62,10 @@ test.describe('Galaxy Map Navigation', () => {
     await navigateToGalaxyMap(page);
 
     // Verify Galaxy Map modal appears - use specific selector like fleet tests
+    await expect(page.getByTestId('galaxy-modal')).toBeVisible();
     await expect(page.locator('h2').filter({ hasText: 'Galaxy Map' })).toBeVisible();
     await expect(page.locator('text=Center:')).toBeVisible();
-    await expect(page.locator('text=Range: 50 units')).toBeVisible();
+    await expect(page.locator('text=Range:')).toBeVisible();
   });
 
   test('should display Galaxy Map modal structure', async ({ page }) => {
@@ -93,10 +73,10 @@ test.describe('Galaxy Map Navigation', () => {
     await navigateToGalaxyMap(page);
 
     // Check modal overlay
-    await expect(page.locator('.fixed.inset-0.bg-black.bg-opacity-75')).toBeVisible();
+    await expect(page.getByTestId('galaxy-modal')).toBeVisible();
 
     // Check modal content - use more specific selector to avoid dashboard cards
-    await expect(page.locator('.bg-gray-800.rounded-lg.p-6.max-w-6xl')).toBeVisible();
+    await expect(page.getByTestId('galaxy-modal-content')).toBeVisible();
 
     // Check header with title and close button - use specific selector like fleet
     await expect(page.locator('h2').filter({ hasText: 'Galaxy Map' })).toBeVisible();
@@ -129,8 +109,7 @@ test.describe('Galaxy Map Navigation', () => {
     // Navigate to Galaxy Map using helper
     await navigateToGalaxyMap(page);
 
-    // Wait for component to load
-    await page.waitForTimeout(2000);
+    await expect(page.getByTestId('galaxy-modal')).toBeVisible();
 
     // Check for our debug messages
     const debugMessages = consoleMessages.filter(msg =>
@@ -146,9 +125,6 @@ test.describe('Galaxy Map Navigation', () => {
     // Navigate to Galaxy Map using helper
     await navigateToGalaxyMap(page);
 
-    // Wait for systems to load (fallback data)
-    await page.waitForTimeout(2000);
-
     // Check if any system markers appear (systems are markers, not cards)
     const systemMarkers = page.locator('.absolute.w-16.h-16.rounded-full.border-2');
     await expect(systemMarkers.first()).toBeVisible();
@@ -158,9 +134,6 @@ test.describe('Galaxy Map Navigation', () => {
     // Navigate to Galaxy Map using helper
     await navigateToGalaxyMap(page);
 
-    // Wait for systems
-    await page.waitForTimeout(2000);
-
     // Check for coordinate pattern in system markers (systems show coordinates as titles)
     const systemMarkers = page.locator('.absolute.w-16.h-16.rounded-full.border-2');
     await expect(systemMarkers.first()).toHaveAttribute('title', /.*:.*:.*/);
@@ -169,9 +142,6 @@ test.describe('Galaxy Map Navigation', () => {
   test('should show exploration buttons', async ({ page }) => {
     // Navigate to Galaxy Map using helper
     await navigateToGalaxyMap(page);
-
-    // Wait for systems
-    await page.waitForTimeout(2000);
 
     // Check that system markers are clickable (they handle exploration)
     const systemMarkers = page.locator('.absolute.w-16.h-16.rounded-full.border-2');
@@ -189,10 +159,10 @@ test.describe('Galaxy Map Navigation', () => {
     await expect(page.locator('h2:has-text("Galaxy Map")')).toBeVisible();
 
     // Click close button
-    await page.click('button:has-text("✕")');
+    await page.getByTestId('galaxy-close').click();
 
     // Verify modal is closed (Galaxy Map text should not be visible in modal)
-    await expect(page.locator('.fixed.inset-0.bg-black.bg-opacity-75')).not.toBeVisible();
+    await expect(page.getByTestId('galaxy-modal')).not.toBeVisible();
   });
 
   test('should maintain navigation state', async ({ page }) => {

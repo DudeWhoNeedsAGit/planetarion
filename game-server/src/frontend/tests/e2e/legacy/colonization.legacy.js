@@ -1,24 +1,21 @@
 const { test, expect } = require('@playwright/test');
+const { loginViaLocalStorage } = require('./helpers/testSession');
 
 test.describe('Colonization', () => {
-  test.beforeEach(async ({ page }) => {
-    // Login first
-    await page.goto('/');
-    await page.fill('input[name="username"]', 'e2etestuser');
-    await page.fill('input[name="password"]', 'testpassword123');
-    await page.click('button[type="submit"]');
-    await page.waitForTimeout(2000);
+  test.beforeEach(async ({ page, request }) => {
+    await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
   });
 
   test('should display galaxy map with explorable systems', async ({ page }) => {
     // Navigate to galaxy map
-    await page.click('text=Galaxy Map');
+    await page.getByTestId('nav-galaxy').click();
 
     // Should show galaxy map modal
+    await expect(page.getByTestId('galaxy-modal')).toBeVisible();
     await expect(page.locator('h2')).toContainText('Galaxy Map');
 
     // Should display systems
-    await expect(page.locator('.grid')).toBeVisible();
+    await expect(page.getByTestId('galaxy-modal-content')).toBeVisible();
 
     // Should show center coordinates
     await expect(page.locator('text=Center:')).toBeVisible();
@@ -26,7 +23,7 @@ test.describe('Colonization', () => {
 
   test('should allow exploration of unexplored systems', async ({ page }) => {
     // Navigate to galaxy map
-    await page.click('text=Galaxy Map');
+    await page.getByTestId('nav-galaxy').click();
 
     // Find an unexplored system (yellow button)
     const exploreButton = page.locator('button:has-text("Explore")').first();
@@ -41,15 +38,12 @@ test.describe('Colonization', () => {
     await exploreButton.click();
 
     // Wait a moment for the alert to be handled
-    await page.waitForTimeout(1000);
-
-    // Test passes if no errors occurred (alert was handled)
-    await expect(page.locator('h2')).toContainText('Galaxy Map');
+    await expect(page.getByTestId('galaxy-modal')).toBeVisible();
   });
 
   test('should show explored systems with planet count', async ({ page }) => {
     // Navigate to galaxy map
-    await page.click('text=Galaxy Map');
+    await page.getByTestId('nav-galaxy').click();
 
     // Look for explored systems (blue background)
     const exploredSystem = page.locator('.bg-blue-900').first();
@@ -65,7 +59,7 @@ test.describe('Colonization', () => {
 
   test('should display system details when viewing explored system', async ({ page }) => {
     // Navigate to galaxy map
-    await page.click('text=Galaxy Map');
+    await page.getByTestId('nav-galaxy').click();
 
     // Find and click "View System" button
     const viewSystemButton = page.locator('button:has-text("View System")').first();
@@ -83,7 +77,7 @@ test.describe('Colonization', () => {
 
   test('should show colonization button for unowned planets', async ({ page }) => {
     // Navigate to galaxy map
-    await page.click('text=Galaxy Map');
+    await page.getByTestId('nav-galaxy').click();
 
     // Find explored system and view it
     const viewSystemButton = page.locator('button:has-text("View System")').first();
@@ -109,7 +103,7 @@ test.describe('Colonization', () => {
 
   test('should not show colonization button for owned planets', async ({ page }) => {
     // Navigate to galaxy map
-    await page.click('text=Galaxy Map');
+    await page.getByTestId('nav-galaxy').click();
 
     // Find explored system and view it
     const viewSystemButton = page.locator('button:has-text("View System")').first();
@@ -129,7 +123,7 @@ test.describe('Colonization', () => {
 
   test('should handle colonization fleet requirements', async ({ page }) => {
     // Navigate to galaxy map
-    await page.click('text=Galaxy Map');
+    await page.getByTestId('nav-galaxy').click();
 
     // Try to colonize without proper fleet
     const viewSystemButton = page.locator('button:has-text("View System")').first();
@@ -150,15 +144,15 @@ test.describe('Colonization', () => {
 
   test('should close galaxy map modal', async ({ page }) => {
     // Navigate to galaxy map
-    await page.click('text=Galaxy Map');
+    await page.getByTestId('nav-galaxy').click();
 
     // Should show modal
-    await expect(page.locator('h2')).toContainText('Galaxy Map');
+    await expect(page.getByTestId('galaxy-modal')).toBeVisible();
 
     // Click close button
-    await page.locator('button:has-text("✕")').first().click();
+    await page.getByTestId('galaxy-close').click();
 
     // Modal should be closed
-    await expect(page.locator('h2')).not.toContainText('Galaxy Map');
+    await expect(page.getByTestId('galaxy-modal')).not.toBeVisible();
   });
 });

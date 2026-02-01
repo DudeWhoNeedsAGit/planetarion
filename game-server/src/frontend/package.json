@@ -21,14 +21,24 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:integration": "PLANETARION_SUPERTEST=1 CI=true react-scripts test --testPathPattern=integration --watchAll=false --passWithNoTests --runInBand",
+    "test:unit": "CI=true react-scripts test --testPathPattern=unit --watchAll=false --passWithNoTests",
+    "test:colonization": "react-scripts test --testPathPattern=colonization --watchAll=false",
+    "test:fleet": "react-scripts test --testPathPattern=fleet --watchAll=false",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
+    "test:ci": "npm run test:unit && npm run test:integration",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
     "extends": [
       "react-app",
       "react-app/jest"
+    ]
+  },
+  "jest": {
+    "transformIgnorePatterns": [
+      "node_modules/(?!supertest)/"
     ]
   },
   "browserslist": {
@@ -47,6 +57,7 @@
     "@playwright/test": "^1.40.0",
     "autoprefixer": "^10.4.14",
     "postcss": "^8.4.24",
+    "supertest": "^7.1.4",
     "tailwindcss": "^3.3.3"
   }
 }

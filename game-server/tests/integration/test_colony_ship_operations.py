@@ -539,4 +539,4 @@ class TestColonyShipOperations:
         assert travel_info['is_coordinate_based'] == True
         assert travel_info['target_coordinates'] == '50:60:70'
         assert 'fleet_speed' in travel_info
-        assert travel_info['fleet_speed'] == 2500  # Colony ship speed
+        assert travel_info['fleet_speed'] == 75000  # Colony ship speed (2500 * 30)

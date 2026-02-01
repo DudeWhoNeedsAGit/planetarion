@@ -13,67 +13,89 @@ All endpoints require JWT authentication and operate on the user's own fleets.
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
-from backend.models import User, Planet, Fleet, Research
+from backend.models import User, Planet, Fleet, Research, TickLog
+from backend.config import get_forced_travel_time_seconds, get_min_travel_time_seconds
 from backend.services.fleet_arrival import FleetArrivalService, COLONIZATION_ERRORS, MISSION_ERRORS
-from datetime import datetime, timedelta
+from backend.services.fleet_state_machine import FleetStateMachine, FleetStateError
+from datetime import datetime, timedelta, timezone
 import math
 
 fleet_mgmt_bp = Blueprint('fleet_mgmt', __name__, url_prefix='/api/fleet')
+
+INVENTORY_FLEET_MISSION = 'inventory'
+
+def _iso_utc(dt: datetime | None) -> str | None:
+    """Return ISO-8601 UTC timestamp with 'Z' suffix.
+
+    Our DB stores naive datetimes; treat naive values as UTC to avoid client timezone misparsing.
+    """
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+    return dt.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+def serialize_fleet_ships(fleet):
+    return {
+        'small_cargo': fleet.small_cargo,
+        'large_cargo': fleet.large_cargo,
+        'light_fighter': fleet.light_fighter,
+        'heavy_fighter': fleet.heavy_fighter,
+        'cruiser': fleet.cruiser,
+        'battleship': fleet.battleship,
+        'colony_ship': fleet.colony_ship,
+        'recycler': fleet.recycler,
+        'espionage_probe': fleet.espionage_probe,
+        'bomber': fleet.bomber,
+        'destroyer': fleet.destroyer,
+        'deathstar': fleet.deathstar,
+        'battlecruiser': fleet.battlecruiser
+    }
+
+
+def serialize_fleet(fleet, planet_dict=None):
+    # Import here to avoid circular imports
+    from backend.services.fleet_travel import FleetTravelService
+
+    planet_dict = planet_dict or {}
+    return {
+        'id': fleet.id,
+        'mission': fleet.mission,
+        'start_planet_id': fleet.start_planet_id,
+        'target_planet_id': fleet.target_planet_id,
+        'status': fleet.status,
+        'ships': serialize_fleet_ships(fleet),
+        'departure_time': _iso_utc(fleet.departure_time),
+        'arrival_time': _iso_utc(fleet.arrival_time),
+        'eta': fleet.eta,
+        'travel_info': FleetTravelService.calculate_travel_info(fleet),
+        'start_planet': get_planet_info(fleet.start_planet_id, planet_dict),
+        'target_planet': get_planet_info(fleet.target_planet_id, planet_dict) if fleet.target_planet_id and fleet.target_planet_id > 0 else None
+    }
 
 @fleet_mgmt_bp.route('', methods=['GET'])
 @jwt_required()
 def get_user_fleets():
     print("DEBUG: Fleet GET endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
     print("DEBUG: Querying fleets for user...")
     fleets = Fleet.query.filter_by(user_id=user_id).all()
     print(f"DEBUG: Found {len(fleets)} fleets for user")
 
-    # Import here to avoid circular imports
-    from backend.services.fleet_travel import FleetTravelService
-
     # Get planet information for display
     planets = Planet.query.filter_by(user_id=user_id).all()
     planet_dict = {p.id: p for p in planets}
 
     print("DEBUG: Fleet GET endpoint successful")
-    return jsonify([{
-        'id': fleet.id,
-        'mission': fleet.mission,
-        'start_planet_id': fleet.start_planet_id,
-        'target_planet_id': fleet.target_planet_id,
-        'status': fleet.status,
-        'ships': {
-            'small_cargo': fleet.small_cargo,
-            'large_cargo': fleet.large_cargo,
-            'light_fighter': fleet.light_fighter,
-            'heavy_fighter': fleet.heavy_fighter,
-            'cruiser': fleet.cruiser,
-            'battleship': fleet.battleship,
-            'colony_ship': fleet.colony_ship,
-            'recycler': fleet.recycler,
-            'espionage_probe': fleet.espionage_probe,
-            'bomber': fleet.bomber,
-            'destroyer': fleet.destroyer,
-            'deathstar': fleet.deathstar,
-            'battlecruiser': fleet.battlecruiser
-        },
-        'departure_time': fleet.departure_time.isoformat() if fleet.departure_time else None,
-        'arrival_time': fleet.arrival_time.isoformat() if fleet.arrival_time else None,
-        'eta': fleet.eta,
-        # Enhanced travel information
-        'travel_info': FleetTravelService.calculate_travel_info(fleet),
-        'start_planet': get_planet_info(fleet.start_planet_id, planet_dict),
-        'target_planet': get_planet_info(fleet.target_planet_id, planet_dict) if fleet.target_planet_id and fleet.target_planet_id > 0 else None
-    } for fleet in fleets])
+    return jsonify([serialize_fleet(fleet, planet_dict) for fleet in fleets])
 
 @fleet_mgmt_bp.route('', methods=['POST'])
 @jwt_required()
 def create_fleet():
     print("DEBUG: Fleet POST endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
     data = request.get_json()
     print(f"DEBUG: Request data: {data}")
@@ -87,26 +109,96 @@ def create_fleet():
     if not start_planet:
         return jsonify({'error': 'Planet not found or not owned by user'}), 404
 
-    # Check if ships are available on the planet
+    # Check if ships are available (inventory is a stationed fleet at this planet).
     ships = data.get('ships', {})
     total_ships = sum(ships.values())
 
     if total_ships == 0:
         return jsonify({'error': 'Fleet must contain at least one ship'}), 400
 
-    # Validate ship availability on the planet
+    inventory_fleet = (
+        Fleet.query.filter_by(
+            user_id=user_id,
+            start_planet_id=data['start_planet_id'],
+            status='stationed',
+            mission=INVENTORY_FLEET_MISSION,
+        )
+        .order_by(Fleet.id.asc())
+        .first()
+    )
+    if not inventory_fleet:
+        # Backwards-compat: fall back to old inventory convention.
+        inventory_fleet = (
+            Fleet.query.filter_by(user_id=user_id, start_planet_id=data['start_planet_id'], status='stationed', mission='stationed')
+            .order_by(Fleet.id.asc())
+            .first()
+        )
+
+    if not inventory_fleet:
+        # Backwards-compat: fall back to any stationed fleet.
+        inventory_fleet = (
+            Fleet.query.filter_by(user_id=user_id, start_planet_id=data['start_planet_id'], status='stationed')
+            .order_by(Fleet.id.asc())
+            .first()
+        )
+
+    if not inventory_fleet:
+        # Legacy fallback: this codebase historically tracked ship inventory on the Planet model.
+        # Create an inventory fleet from the planet's ship counts so older flows/tests keep working.
+        inventory_fleet = Fleet(
+            user_id=user_id,
+            mission=INVENTORY_FLEET_MISSION,
+            status='stationed',
+            start_planet_id=data['start_planet_id'],
+            target_planet_id=data['start_planet_id'],
+            departure_time=datetime.utcnow(),
+            arrival_time=datetime.utcnow(),
+            small_cargo=getattr(start_planet, 'small_cargo', 0) or 0,
+            large_cargo=getattr(start_planet, 'large_cargo', 0) or 0,
+            light_fighter=getattr(start_planet, 'light_fighter', 0) or 0,
+            heavy_fighter=getattr(start_planet, 'heavy_fighter', 0) or 0,
+            cruiser=getattr(start_planet, 'cruiser', 0) or 0,
+            battleship=getattr(start_planet, 'battleship', 0) or 0,
+            colony_ship=getattr(start_planet, 'colony_ship', 0) or 0,
+        )
+        db.session.add(inventory_fleet)
+        db.session.flush()
+
+    # If the planet still has legacy ship columns, migrate them into the inventory fleet once.
+    # This keeps shipyard-created inventory fleets compatible with old populate datasets.
+    for ship_col in (
+        'small_cargo',
+        'large_cargo',
+        'light_fighter',
+        'heavy_fighter',
+        'cruiser',
+        'battleship',
+        'colony_ship',
+    ):
+        amount = getattr(start_planet, ship_col, 0) or 0
+        if amount <= 0:
+            continue
+        current = getattr(inventory_fleet, ship_col, 0) or 0
+        setattr(inventory_fleet, ship_col, current + amount)
+        setattr(start_planet, ship_col, 0)
+
+    # Validate ship availability on the inventory fleet.
     for ship_type, count in ships.items():
-        if count > 0:
-            available_ships = getattr(start_planet, ship_type, 0)
-            if available_ships < count:
-                return jsonify({
-                    'error': f'Not enough {ship_type} ships available. Requested: {count}, Available: {available_ships}'
-                }), 400
+        if not count or count <= 0:
+            continue
+        if not hasattr(inventory_fleet, ship_type):
+            return jsonify({'error': f'Invalid ship type: {ship_type}'}), 400
+        available_ships = getattr(inventory_fleet, ship_type, 0) or 0
+        if available_ships < count:
+            return jsonify({
+                'error': f'Not enough {ship_type} ships available. Requested: {count}, Available: {available_ships}'
+            }), 400
 
     # Create fleet
     fleet = Fleet(
         user_id=user_id,
         mission='stationed',  # Default mission
+        status='stationed',
         start_planet_id=data['start_planet_id'],
         target_planet_id=data['start_planet_id'],  # Same as start initially
         small_cargo=ships.get('small_cargo', 0),
@@ -126,40 +218,99 @@ def create_fleet():
         arrival_time=datetime.utcnow()  # Will be updated when sent
     )
 
+    # Deduct ships from inventory fleet.
+    for ship_type, count in ships.items():
+        if not count or count <= 0:
+            continue
+        current = getattr(inventory_fleet, ship_type, 0) or 0
+        setattr(inventory_fleet, ship_type, max(0, current - count))
+
     db.session.add(fleet)
     db.session.commit()
 
     return jsonify({
         'message': 'Fleet created successfully',
-        'fleet': {
-            'id': fleet.id,
-            'mission': fleet.mission,
-            'start_planet_id': fleet.start_planet_id,
-            'target_planet_id': fleet.target_planet_id,
-            'status': fleet.status,
-            'ships': {
-                'small_cargo': fleet.small_cargo,
-                'large_cargo': fleet.large_cargo,
-                'light_fighter': fleet.light_fighter,
-                'heavy_fighter': fleet.heavy_fighter,
-                'cruiser': fleet.cruiser,
-                'battleship': fleet.battleship,
-                'colony_ship': fleet.colony_ship,
-                'recycler': fleet.recycler,
-                'espionage_probe': fleet.espionage_probe,
-                'bomber': fleet.bomber,
-                'destroyer': fleet.destroyer,
-                'deathstar': fleet.deathstar,
-                'battlecruiser': fleet.battlecruiser
-            }
-        }
+        'fleet': serialize_fleet(fleet, {start_planet.id: start_planet})
     }), 201
+
+@fleet_mgmt_bp.route('/<int:fleet_id>/dissolve', methods=['POST'])
+@jwt_required()
+def dissolve_fleet(fleet_id: int):
+    """
+    Dissolve a stationed fleet back into the planet's inventory fleet.
+
+    Allowed only for stationed fleets that are not the inventory fleet.
+    """
+    user_id = int(get_jwt_identity())
+
+    fleet = Fleet.query.filter_by(id=fleet_id, user_id=user_id).first()
+    if not fleet:
+        return jsonify({'error': 'Fleet not found'}), 404
+
+    if fleet.status != 'stationed':
+        return jsonify({'error': 'Only stationed fleets can be dissolved'}), 400
+
+    if fleet.mission == INVENTORY_FLEET_MISSION:
+        return jsonify({'error': 'Inventory fleet cannot be dissolved'}), 400
+
+    # Find (or create) inventory fleet for this planet.
+    inventory_fleet = (
+        Fleet.query.filter_by(
+            user_id=user_id,
+            start_planet_id=fleet.start_planet_id,
+            status='stationed',
+            mission=INVENTORY_FLEET_MISSION,
+        )
+        .order_by(Fleet.id.asc())
+        .first()
+    )
+    if not inventory_fleet:
+        # Backwards-compat: prefer old convention before falling back to creating from Planet.
+        inventory_fleet = (
+            Fleet.query.filter_by(
+                user_id=user_id,
+                start_planet_id=fleet.start_planet_id,
+                status='stationed',
+                mission='stationed',
+            )
+            .order_by(Fleet.id.asc())
+            .first()
+        )
+
+    if not inventory_fleet:
+        start_planet = Planet.query.filter_by(id=fleet.start_planet_id, user_id=user_id).first()
+        if not start_planet:
+            return jsonify({'error': 'Start planet not found'}), 404
+        inventory_fleet = Fleet(
+            user_id=user_id,
+            mission=INVENTORY_FLEET_MISSION,
+            status='stationed',
+            start_planet_id=fleet.start_planet_id,
+            target_planet_id=fleet.start_planet_id,
+            departure_time=datetime.utcnow(),
+            arrival_time=datetime.utcnow(),
+        )
+        db.session.add(inventory_fleet)
+        db.session.flush()
+
+    # Return ships from this fleet into inventory.
+    for ship_type, count in serialize_fleet_ships(fleet).items():
+        if not count:
+            continue
+        current = getattr(inventory_fleet, ship_type, 0) or 0
+        setattr(inventory_fleet, ship_type, current + count)
+        setattr(fleet, ship_type, 0)
+
+    db.session.delete(fleet)
+    db.session.commit()
+
+    return jsonify({'message': 'Fleet dissolved successfully'}), 200
 
 @fleet_mgmt_bp.route('/send', methods=['POST'])
 @jwt_required()
 def send_fleet():
     print("DEBUG: Fleet send endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
     data = request.get_json()
     print(f"DEBUG: Request data: {data}")
@@ -169,12 +320,27 @@ def send_fleet():
         return jsonify({'error': 'Missing required fields'}), 400
 
     # Get fleet
-    fleet = Fleet.query.filter_by(id=data['fleet_id'], user_id=user_id).first()
+    try:
+        fleet_id = int(data['fleet_id'])
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid fleet_id'}), 400
+
+    fleet = Fleet.query.filter_by(id=fleet_id, user_id=user_id).first()
     if not fleet:
         return jsonify({'error': 'Fleet not found'}), 404
 
-    if fleet.status != 'stationed':
-        return jsonify({'error': 'Fleet is not available for sending'}), 400
+    try:
+        FleetStateMachine.ensure_can_send(fleet, data.get('mission'))
+    except FleetStateError as e:
+        return jsonify({'error': str(e)}), 400
+
+    raw_target_planet_id = data.get('target_planet_id')
+    target_planet_id = None
+    if raw_target_planet_id is not None and raw_target_planet_id != '':
+        try:
+            target_planet_id = int(raw_target_planet_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid target_planet_id'}), 400
 
     # Handle different mission types
     if data['mission'] == 'explore':
@@ -199,10 +365,10 @@ def send_fleet():
 
     elif data['mission'] == 'attack':
         # Attack mission - target must be enemy planet
-        if 'target_planet_id' not in data:
+        if target_planet_id is None:
             return jsonify({'error': 'Target planet required for attack mission'}), 400
 
-        target_planet = Planet.query.get(data['target_planet_id'])
+        target_planet = Planet.query.get(target_planet_id)
         if not target_planet:
             return jsonify({'error': 'Target planet not found'}), 404
 
@@ -215,15 +381,15 @@ def send_fleet():
             return jsonify({'error': 'Cannot attack unowned planet. Use colonization instead.'}), 400
 
         fleet.mission = 'attack'
-        fleet.target_planet_id = data['target_planet_id']
+        fleet.target_planet_id = target_planet_id
         fleet.status = 'traveling'
 
     elif data['mission'] == 'defend':
         # Defend mission - station fleet at planet for defense
-        if 'target_planet_id' not in data:
+        if target_planet_id is None:
             return jsonify({'error': 'Target planet required for defend mission'}), 400
 
-        target_planet = Planet.query.get(data['target_planet_id'])
+        target_planet = Planet.query.get(target_planet_id)
         if not target_planet:
             return jsonify({'error': 'Target planet not found'}), 404
 
@@ -231,16 +397,18 @@ def send_fleet():
         if target_planet.user_id != user_id:
             return jsonify({'error': 'Cannot defend planet you do not own'}), 400
 
+        # Defend behaves like "deploy fleet to your planet and keep it there".
+        # While traveling, keep status=traveling so arrival processing can finalize to defending.
         fleet.mission = 'defend'
-        fleet.target_planet_id = data['target_planet_id']
-        fleet.status = 'defending'
+        fleet.target_planet_id = target_planet_id
+        fleet.status = 'traveling'
 
     elif data['mission'] == 'recycle':
         # Recycle mission - collect debris from planet
-        if 'target_planet_id' not in data:
+        if target_planet_id is None:
             return jsonify({'error': 'Target planet required for recycle mission'}), 400
 
-        target_planet = Planet.query.get(data['target_planet_id'])
+        target_planet = Planet.query.get(target_planet_id)
         if not target_planet:
             return jsonify({'error': 'Target planet not found'}), 404
 
@@ -249,7 +417,72 @@ def send_fleet():
             return jsonify({'error': 'Fleet must contain recycler ships for recycle mission'}), 400
 
         fleet.mission = 'recycle'
-        fleet.target_planet_id = data['target_planet_id']
+        fleet.target_planet_id = target_planet_id
+        fleet.status = 'traveling'
+
+    elif data['mission'] in ('transport', 'deploy'):
+        if target_planet_id is None:
+            return jsonify({'error': 'Target planet required'}), 400
+
+        target_planet = Planet.query.get(target_planet_id)
+        if not target_planet:
+            return jsonify({'error': 'Target planet not found'}), 404
+
+        # MVP: only allow transport/deploy to your own planets.
+        if target_planet.user_id != user_id:
+            return jsonify({'error': 'Target planet must be owned by you'}), 400
+
+        # Parse optional cargo. (UI wiring can come later; tests use this now.)
+        def parse_non_negative_int(value, field):
+            if value is None or value == '':
+                return 0
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"Invalid {field}")
+            if parsed < 0:
+                raise ValueError(f"Invalid {field}")
+            return parsed
+
+        try:
+            cargo_metal = parse_non_negative_int(data.get('cargo_metal'), 'cargo_metal')
+            cargo_crystal = parse_non_negative_int(data.get('cargo_crystal'), 'cargo_crystal')
+            cargo_deuterium = parse_non_negative_int(data.get('cargo_deuterium'), 'cargo_deuterium')
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+
+        start_planet = Planet.query.get(fleet.start_planet_id)
+        if not start_planet:
+            return jsonify({'error': 'Origin planet not found'}), 404
+
+        if start_planet.metal < cargo_metal or start_planet.crystal < cargo_crystal or start_planet.deuterium < cargo_deuterium:
+            return jsonify({'error': 'Insufficient resources to load cargo'}), 400
+
+        start_planet.metal -= cargo_metal
+        start_planet.crystal -= cargo_crystal
+        start_planet.deuterium -= cargo_deuterium
+
+        fleet.cargo_metal = cargo_metal
+        fleet.cargo_crystal = cargo_crystal
+        fleet.cargo_deuterium = cargo_deuterium
+
+        fleet.mission = data['mission']
+        fleet.target_planet_id = target_planet_id
+        fleet.status = 'traveling'
+
+    elif data['mission'] == 'espionage':
+        if target_planet_id is None:
+            return jsonify({'error': 'Target planet required for espionage mission'}), 400
+
+        target_planet = Planet.query.get(target_planet_id)
+        if not target_planet:
+            return jsonify({'error': 'Target planet not found'}), 404
+
+        if fleet.espionage_probe <= 0:
+            return jsonify({'error': 'Fleet must contain espionage probes for espionage mission'}), 400
+
+        fleet.mission = 'espionage'
+        fleet.target_planet_id = target_planet_id
         fleet.status = 'traveling'
 
     elif data['mission'] == 'colonize':
@@ -288,12 +521,33 @@ def send_fleet():
             # Check if coordinates are already occupied
             existing_planet = Planet.query.filter_by(x=target_x, y=target_y, z=target_z).first()
             if existing_planet:
-                return jsonify({'error': COLONIZATION_ERRORS['coordinates_occupied']}), 409
-
-            fleet.target_planet_id = 0  # Will be updated when colony is created
+                if existing_planet.user_id:
+                    return jsonify({'error': COLONIZATION_ERRORS['coordinates_occupied']}), 409
+                fleet.target_planet_id = existing_planet.id
+            else:
+                # Create an unowned placeholder planet so arrival processing can claim it.
+                placeholder = Planet(
+                    name='Uncharted Planet',
+                    x=target_x,
+                    y=target_y,
+                    z=target_z,
+                    user_id=None,
+                )
+                db.session.add(placeholder)
+                db.session.flush()
+                fleet.target_planet_id = placeholder.id
 
         else:
             return jsonify({'error': COLONIZATION_ERRORS['invalid_coordinates']}), 400
+
+        # Prevent multiple simultaneous colonization attempts to the same target.
+        existing_colonizer = Fleet.query.filter(
+            Fleet.id != fleet.id,
+            Fleet.mission == 'colonize',
+            Fleet.status == f'colonizing:{target_x}:{target_y}:{target_z}'
+        ).first()
+        if existing_colonizer:
+            return jsonify({'error': COLONIZATION_ERRORS['coordinates_occupied']}), 409
 
         # Validate research requirements
         from backend.services.planet_traits import PlanetTraitService
@@ -356,15 +610,15 @@ def send_fleet():
 
     else:
         # For other missions, target planet must exist
-        if 'target_planet_id' not in data:
+        if target_planet_id is None:
             return jsonify({'error': 'Target planet required'}), 400
 
-        target_planet = Planet.query.get(data['target_planet_id'])
+        target_planet = Planet.query.get(target_planet_id)
         if not target_planet:
             return jsonify({'error': 'Target planet not found'}), 404
 
         fleet.mission = data['mission']
-        fleet.target_planet_id = data['target_planet_id']
+        fleet.target_planet_id = target_planet_id
         fleet.status = 'traveling'
 
     # Calculate distance and travel time
@@ -376,28 +630,48 @@ def send_fleet():
     fleet_speed = FleetTravelService.calculate_fleet_speed(fleet)
     travel_time_hours = distance / fleet_speed if fleet_speed > 0 else 0
 
-    # Apply minimum travel time to prevent instant arrivals (30 seconds minimum)
-    MIN_TRAVEL_TIME_SECONDS = 30
-    travel_time_seconds = max(travel_time_hours * 3600, MIN_TRAVEL_TIME_SECONDS)
+    # Research effect: Astrophysics reduces travel time.
+    user_research = Research.query.filter_by(user_id=user_id).first()
+    astro_level = user_research.astrophysics if user_research else 0
+    travel_multiplier = 1.0 / (1.0 + (astro_level or 0) * 0.05)
+
+    # Apply minimum travel time to prevent instant arrivals (configurable; 0 in testing),
+    # with an optional forced override for fast E2E runs.
+    MIN_TRAVEL_TIME_SECONDS = get_min_travel_time_seconds()
+    travel_time_seconds = max(travel_time_hours * 3600 * travel_multiplier, MIN_TRAVEL_TIME_SECONDS)
+    forced_travel = get_forced_travel_time_seconds()
+    if forced_travel is not None:
+        travel_time_seconds = forced_travel
     travel_time_hours = travel_time_seconds / 3600
 
     fleet.departure_time = datetime.utcnow()
     fleet.arrival_time = fleet.departure_time + timedelta(seconds=travel_time_seconds)
     fleet.eta = int(travel_time_seconds)
 
+    start_name = getattr(start_planet, 'name', f'Planet {fleet.start_planet_id}')
+    if data['mission'] == 'explore':
+        to_label = f"{target_planet.x}:{target_planet.y}:{target_planet.z}"
+    elif data['mission'] == 'colonize' and 'target_x' in locals() and target_x is not None:
+        to_label = f"{target_x}:{target_y}:{target_z}"
+    else:
+        to_label = getattr(target_planet, 'name', f'Planet {fleet.target_planet_id}')
+
+    db.session.add(TickLog(
+        tick_number=0,
+        planet_id=fleet.start_planet_id,
+        fleet_id=fleet.id,
+        event_type='fleet_sent',
+        event_description=f'Fleet {fleet.id} sent ({fleet.mission}) from {start_name} to {to_label}'
+    ))
+
     db.session.commit()
+
+    planets = Planet.query.filter_by(user_id=user_id).all()
+    planet_dict = {p.id: p for p in planets}
 
     return jsonify({
         'message': 'Fleet sent successfully',
-        'fleet': {
-            'id': fleet.id,
-            'mission': fleet.mission,
-            'target_planet_id': fleet.target_planet_id,
-            'status': fleet.status,
-            'departure_time': fleet.departure_time.isoformat(),
-            'arrival_time': fleet.arrival_time.isoformat(),
-            'eta': fleet.eta
-        }
+        'fleet': serialize_fleet(fleet, planet_dict)
     })
 
 @fleet_mgmt_bp.route('/recall/<int:fleet_id>', methods=['POST'])
@@ -405,7 +679,7 @@ def send_fleet():
 def recall_fleet(fleet_id):
     print("DEBUG: Fleet recall endpoint called")
     print(f"DEBUG: Fleet ID: {fleet_id}")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
     fleet = Fleet.query.filter_by(id=fleet_id, user_id=user_id).first()
@@ -413,50 +687,44 @@ def recall_fleet(fleet_id):
         print("DEBUG: Fleet not found")
         return jsonify({'error': 'Fleet not found'}), 404
 
-    if fleet.status not in ['traveling', 'returning'] and not fleet.status.startswith('exploring:') and not fleet.status.startswith('colonizing:'):
-        return jsonify({'error': 'Fleet cannot be recalled'}), 400
+    try:
+        FleetStateMachine.ensure_can_recall(fleet)
+    except FleetStateError as e:
+        return jsonify({'error': str(e)}), 400
 
     # Calculate return time (simplified - same speed back)
     now = datetime.utcnow()
     if fleet.status == 'traveling':
         # Calculate remaining time to target and double it for return
         remaining_time = (fleet.arrival_time - now).total_seconds()
+        remaining_time = max(0, remaining_time)
         return_time = remaining_time * 2
     else:
         # Already returning, just use current ETA
         return_time = fleet.eta
 
-    fleet.status = 'returning'
-    fleet.mission = 'return'
-    fleet.arrival_time = now + timedelta(seconds=return_time)
-    fleet.eta = int(return_time)
+    # Prevent instant / negative returns (keep consistent with outbound min travel time).
+    MIN_TRAVEL_TIME_SECONDS = get_min_travel_time_seconds()
+    return_time = max(MIN_TRAVEL_TIME_SECONDS, return_time)
+
+    FleetStateMachine.set_returning(fleet, now=now, return_time_seconds=return_time)
+
+    db.session.add(TickLog(
+        tick_number=0,
+        planet_id=fleet.start_planet_id,
+        fleet_id=fleet.id,
+        event_type='fleet_recalled',
+        event_description=f'Fleet {fleet.id} recalled and is returning'
+    ))
 
     db.session.commit()
 
+    planets = Planet.query.filter_by(user_id=user_id).all()
+    planet_dict = {p.id: p for p in planets}
+
     return jsonify({
         'message': 'Fleet recalled successfully',
-        'fleet': {
-            'id': fleet.id,
-            'status': fleet.status,
-            'mission': fleet.mission,
-            'arrival_time': fleet.arrival_time.isoformat(),
-            'eta': fleet.eta,
-            'ships': {  # Include ships data to prevent frontend crashes
-                'small_cargo': fleet.small_cargo,
-                'large_cargo': fleet.large_cargo,
-                'light_fighter': fleet.light_fighter,
-                'heavy_fighter': fleet.heavy_fighter,
-                'cruiser': fleet.cruiser,
-                'battleship': fleet.battleship,
-                'colony_ship': fleet.colony_ship,
-                'recycler': fleet.recycler,
-                'espionage_probe': fleet.espionage_probe,
-                'bomber': fleet.bomber,
-                'destroyer': fleet.destroyer,
-                'deathstar': fleet.deathstar,
-                'battlecruiser': fleet.battlecruiser
-            }
-        }
+        'fleet': serialize_fleet(fleet, planet_dict)
     })
 
 @fleet_mgmt_bp.route('/clear-all', methods=['DELETE'])
@@ -464,7 +732,7 @@ def recall_fleet(fleet_id):
 def clear_all_fleets():
     """Clear all fleets for the current user (for testing purposes)"""
     print("DEBUG: Clear all fleets endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
     # Delete all fleets for this user

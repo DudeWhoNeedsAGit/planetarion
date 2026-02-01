@@ -5,6 +5,7 @@ from backend.models import User, Planet
 import bcrypt
 import re
 import random
+from flasgger import swag_from
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -34,6 +35,65 @@ def generate_starting_planet_coordinates():
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
+    """
+    Register a new user account
+    ---
+    tags:
+      - Authentication
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - username
+            - email
+            - password
+          properties:
+            username:
+              type: string
+              description: Unique username for the user
+              example: "johndoe"
+            email:
+              type: string
+              format: email
+              description: Valid email address
+              example: "john@example.com"
+            password:
+              type: string
+              minLength: 8
+              description: Password for authentication
+              example: "securepassword123"
+    responses:
+      201:
+        description: User registered successfully
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "User registered successfully"
+            access_token:
+              type: string
+              description: JWT access token for authentication
+            user:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                username:
+                  type: string
+                  example: "johndoe"
+                email:
+                  type: string
+                  example: "john@example.com"
+      400:
+        description: Missing required fields or invalid email format
+      409:
+        description: Username or email already exists
+    """
     print("DEBUG: Register endpoint called")
     data = request.get_json()
     print(f"DEBUG: Registration data received: {data}")
@@ -114,6 +174,61 @@ def register():
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
+    """
+    Authenticate user and return JWT token
+    ---
+    tags:
+      - Authentication
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - username
+            - password
+          properties:
+            username:
+              type: string
+              description: User's username
+              example: "johndoe"
+            password:
+              type: string
+              description: User's password
+              example: "securepassword123"
+    responses:
+      200:
+        description: Login successful
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Login successful"
+            token:
+              type: string
+              description: JWT token (backward compatibility)
+            access_token:
+              type: string
+              description: JWT access token
+            user:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                username:
+                  type: string
+                  example: "johndoe"
+                email:
+                  type: string
+                  example: "john@example.com"
+      400:
+        description: Missing username or password
+      401:
+        description: Invalid username or password
+    """
     print("DEBUG: Login endpoint called")
     data = request.get_json()
     print(f"DEBUG: Login data received: username={data.get('username', 'N/A')}")
@@ -171,7 +286,7 @@ def login():
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     user = User.query.get_or_404(user_id)
 
     return jsonify({

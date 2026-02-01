@@ -14,7 +14,12 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet, Fleet
-from backend.config import get_all_ship_stats, get_ship_stats, get_ships_by_role, get_ship_roles
+from backend.config import (
+    get_all_ship_stats,
+    get_ship_stats as get_ship_stats_config,
+    get_ships_by_role,
+    get_ship_roles as get_ship_roles_config,
+)
 
 shipyard_bp = Blueprint('shipyard', __name__, url_prefix='/api/shipyard')
 
@@ -90,7 +95,7 @@ SHIP_COSTS = {
 @shipyard_bp.route('/build', methods=['POST'])
 @jwt_required()
 def build_ship():
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     data = request.get_json()
 
     if not data or 'planet_id' not in data or 'ship_type' not in data or 'quantity' not in data:
@@ -100,6 +105,11 @@ def build_ship():
     planet = Planet.query.filter_by(id=data['planet_id'], user_id=user_id).first()
     if not planet:
         return jsonify({'error': 'Planet not found or not owned by user'}), 404
+    # Ensure we operate on fresh resource values even if the session holds a stale identity-map copy.
+    try:
+        db.session.refresh(planet)
+    except Exception:
+        pass
 
     ship_type = data['ship_type']
     quantity = data['quantity']
@@ -120,7 +130,19 @@ def build_ship():
     if (planet.metal < total_cost_metal or
         planet.crystal < total_cost_crystal or
         planet.deuterium < total_cost_deuterium):
-        return jsonify({'error': 'Insufficient resources'}), 400
+        return jsonify({
+            'error': 'Insufficient resources',
+            'required': {
+                'metal': total_cost_metal,
+                'crystal': total_cost_crystal,
+                'deuterium': total_cost_deuterium,
+            },
+            'available': {
+                'metal': planet.metal,
+                'crystal': planet.crystal,
+                'deuterium': planet.deuterium,
+            }
+        }), 400
 
     # Deduct resources
     planet.metal -= total_cost_metal
@@ -129,17 +151,26 @@ def build_ship():
 
     # Create or update fleet with the new ships
     # For demo simplicity, we'll add ships to an existing fleet or create a new one
-    fleet = Fleet.query.filter_by(
-        user_id=user_id,
-        start_planet_id=data['planet_id'],
-        status='stationed'
-    ).first()
+    # Ship inventory should live in a dedicated "inventory" fleet for this planet.
+    # If we pick an arbitrary stationed fleet (e.g. a previously-traveling mission),
+    # newly built ships can appear "missing" in Fleet UI.
+    fleet = (
+        Fleet.query.filter_by(
+            user_id=user_id,
+            start_planet_id=data['planet_id'],
+            status='stationed',
+            mission='inventory',
+        )
+        .order_by(Fleet.id.asc())
+        .first()
+    )
 
     if not fleet:
         # Create new fleet
         fleet = Fleet(
             user_id=user_id,
-            mission='stationed',
+            mission='inventory',
+            status='stationed',
             start_planet_id=data['planet_id'],
             target_planet_id=data['planet_id'],
             departure_time=db.func.now(),
@@ -190,17 +221,18 @@ def get_ship_stats():
 @shipyard_bp.route('/stats/<ship_type>', methods=['GET'])
 def get_ship_stats_single(ship_type):
     """Get statistics for a specific ship type"""
-    stats = get_ship_stats(ship_type)
+    stats = get_ship_stats_config(ship_type)
     if not stats:
         return jsonify({'error': f'Ship type {ship_type} not found'}), 404
     return jsonify(stats), 200
 
 @shipyard_bp.route('/roles', methods=['GET'])
-def get_ship_roles():
+def get_ship_roles_route():
     """Get all available ship roles"""
+    roles = get_ship_roles_config()
     return jsonify({
-        'roles': get_ship_roles(),
-        'ships_by_role': {role: get_ships_by_role(role) for role in get_ship_roles()}
+        'roles': roles,
+        'ships_by_role': {role: get_ships_by_role(role) for role in roles}
     }), 200
 
 @shipyard_bp.route('/roles/<role>', methods=['GET'])

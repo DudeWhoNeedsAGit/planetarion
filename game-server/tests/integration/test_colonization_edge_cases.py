@@ -74,9 +74,9 @@ class TestColonizationRaceConditions:
             'fleet_id': fleet2.id, 'mission': 'colonize', 'target_planet_id': target.id
         })
 
-        # Both should succeed (current implementation doesn't handle race conditions)
-        results = [response1.status_code, response2.status_code]
-        assert all(status == 200 for status in results), "Both colonizations should succeed with current implementation"
+        # Only one should be accepted; the second should be rejected as already being colonized
+        assert response1.status_code == 200
+        assert response2.status_code == 409
 
         # Note: Planet ownership is set when fleet arrives, not when sent
         # In current implementation, both fleets are sent successfully but planet remains unowned until arrival
@@ -95,8 +95,8 @@ class TestColonizationRaceConditions:
         db_session.commit()
 
         # Create home planets
-        home1 = Planet(name='Home1', x=0, y=0, z=0, user_id=attacker1.id)
-        home2 = Planet(name='Home2', x=10, y=10, z=10, user_id=attacker2.id)
+        home1 = Planet(name='Home1', x=0, y=0, z=0, user_id=attacker1.id, deuterium=100000)
+        home2 = Planet(name='Home2', x=10, y=10, z=10, user_id=attacker2.id, deuterium=100000)
         db_session.add_all([home1, home2])
         db_session.commit()
 
@@ -129,9 +129,8 @@ class TestColonizationRaceConditions:
             'target_x': target_coords['x'], 'target_y': target_coords['y'], 'target_z': target_coords['z']
         })
 
-        # Both should succeed (current implementation doesn't handle coordinate race conditions)
-        results = [response1.status_code, response2.status_code]
-        assert all(status == 200 for status in results), "Both coordinate colonizations should succeed with current implementation"
+        assert response1.status_code == 200
+        assert response2.status_code == 409
 
 
 class TestColonyInitialization:
@@ -203,7 +202,7 @@ class TestColonyInitialization:
         db_session.commit()
 
         # Create home planet
-        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id)
+        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id, deuterium=100000)
         db_session.add(home)
         db_session.commit()
 
@@ -259,7 +258,7 @@ class TestResearchLevelChanges:
         db_session.commit()
 
         # Create home planet
-        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id)
+        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id, deuterium=100000)
         db_session.add(home)
         db_session.commit()
 
@@ -305,7 +304,7 @@ class TestResearchLevelChanges:
         db_session.commit()
 
         # Create home planet
-        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id)
+        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id, deuterium=100000)
         db_session.add(home)
         db_session.commit()
 
@@ -346,7 +345,7 @@ class TestMultipleColonyShips:
         db_session.commit()
 
         # Create home planet
-        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id)
+        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id, deuterium=100000)
         db_session.add(home)
         db_session.commit()
 
@@ -453,7 +452,7 @@ class TestAdvancedErrorScenarios:
         db_session.commit()
 
         # Create home planet
-        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id)
+        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id, deuterium=100000)
         db_session.add(home)
         db_session.commit()
 
@@ -491,7 +490,7 @@ class TestAdvancedErrorScenarios:
         db_session.commit()
 
         # Create home planet
-        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id)
+        home = Planet(name='Home', x=0, y=0, z=0, user_id=user.id, deuterium=100000)
         db_session.add(home)
         db_session.commit()
 

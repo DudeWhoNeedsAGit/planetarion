@@ -20,9 +20,10 @@ Imagine commanding a space empire where every decision matters:
 Getting started is simple - just follow these steps:
 
 ### Prerequisites
-- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
-- At least 4GB of RAM
 - Git
+- Python 3.11+ (project currently runs on Python 3.12 locally too)
+- Node.js 18+ (frontend + Playwright)
+- Optional: Docker/Docker Compose (for Postgres-based environment)
 
 ### Installation
 
@@ -32,18 +33,35 @@ Getting started is simple - just follow these steps:
    cd planetarion
    ```
 
-2. **Start the game**
+2. **Start a local test server (fast loop)**
    ```bash
    cd game-server
-   docker compose up --build
+   make test-env-tick
    ```
 
 3. **Open your browser**
    - Visit **http://localhost:3000** to start playing!
    - The backend API runs on **http://localhost:5000**
-   - Database is available on **localhost:5432**
+   - Local test DB is SQLite at `game-server/instance/test_e2e.db`
 
-That's it! The game will automatically set up the database and start all services.
+**Reset the world fast (no restart):**
+```bash
+cd game-server
+make test-env-reset
+```
+
+**Deterministic scenario for fleet/combat testing:**
+```bash
+cd game-server
+make scenario-two-player-reset
+```
+
+### Alternative: Docker Compose (PostgreSQL)
+
+```bash
+cd game-server
+docker compose up --build
+```
 
 ## 🎯 Game Features
 
@@ -53,7 +71,9 @@ That's it! The game will automatically set up the database and start all service
 - ✅ **Building Construction**: Upgrade mines, power plants, and research labs
 - ✅ **Fleet Management**: Build and command space fleets
 - ✅ **Real-time Economy**: Resources generate automatically over time
-- ✅ **Strategic Combat**: Fleet vs fleet battles (coming soon)
+- ✅ **Combat + Debris + Recycling**: Battles generate debris fields; recyclers collect and return resources
+- ✅ **Espionage (MVP)**: Send probes and view spy reports
+- ✅ **Tick-based World**: Manual ticks for deterministic testing; auto-ticks for “real play” feel
 
 ### Data Protection & Deployment
 - ✅ **Automated Backups**: Enterprise-grade PostgreSQL database protection
@@ -79,7 +99,7 @@ For detailed information about the game, development, and technical implementati
 - **[🎨 Coding Style](./.clinerules/coding_style.md)** - Code standards and conventions
 
 ### 🛠️ **Development & Testing**
-- **[🧪 Testing Guide](./game-server/README.md#testing)** - How to test the game
+- **[🧪 Testing Guide](./game-server/README.md#testing)** - How to run unit/integration/e2e
 - **[💻 Development](./game-server/README.md#development)** - Contributing to the project
 - **[⚙️ Automated Testing](./.clinerules)** - CI/CD configuration and testing rules
 - **[🐳 Docker Commands](./.clinerules/docker-commands.md)** - Container management guide
@@ -120,11 +140,11 @@ Planetarion is built with modern web technologies:
 
 - **Frontend**: React with Tailwind CSS for a beautiful, responsive interface
 - **Backend**: Flask API with JWT authentication and real-time processing
-- **Database**: PostgreSQL for reliable data storage and complex queries
+- **Database**: SQLite for local testing/dev; PostgreSQL for Docker/prod
 - **Infrastructure**: Docker containers for easy deployment and scaling
 - **Data Protection**: Automated PostgreSQL backups with hash validation
 - **Deployment**: A-B deployment automation with QNAP NAS support
-- **Real-time**: Automatic resource generation and fleet movement calculations
+- **Real-time**: Tick-based resource generation and fleet movement/arrival processing
 - **Monitoring**: Comprehensive logging and error handling systems
 
 ## 🔍 Repository Analysis Tool

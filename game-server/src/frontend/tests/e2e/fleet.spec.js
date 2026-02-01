@@ -1,27 +1,12 @@
 const { test, expect } = require('@playwright/test');
-
-// Helper function for login
-async function loginAsE2eTestUser(page) {
-  // Navigate to the app
-  await page.goto('/');
-
-  // Login with existing test account
-  await page.fill('input[name="username"]', 'e2etestuser');
-  await page.fill('input[name="password"]', 'testpassword123');
-
-  // Submit login
-  await page.click('button[type="submit"]');
-
-  // Wait for login to complete
-  await page.waitForTimeout(2000);
-
-  // Verify login success
-  await expect(page.locator('h2:has-text("Welcome back")')).toBeVisible();
-}
+const { loginViaLocalStorage } = require('./helpers/testSession');
 
 // Helper function to navigate to fleets page
 async function navigateToFleets(page) {
-  await page.locator('nav').locator('text=Fleets').click();
+  await page.getByTestId('nav-fleets').click();
+  await page.getByTestId('fleet-management').waitFor();
+  await page.getByTestId('fleet-planet-selector').waitFor();
+  await page.getByTestId('fleet-planet-button').first().waitFor();
 }
 
 // Helper function to clear all fleets for the current user (for testing empty states)
@@ -50,130 +35,75 @@ async function clearAllFleets(page) {
 }
 
 test.describe('Fleet Management', () => {
+  test.beforeEach(async ({ page, request }) => {
+    await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
+    await navigateToFleets(page);
+  });
 
   test('should display fleet management section', async ({ page }) => {
-    // Login with test user
-    await loginAsE2eTestUser(page);
-
-    // Navigate to fleets
-    await navigateToFleets(page);
-
-    // Check for fleet management header - use more robust selector
-    await expect(page.locator('h3').filter({ hasText: 'Fleet Management' })).toBeVisible();
-    await expect(page.locator('text=Create Fleet')).toBeVisible();
+    await expect(page.getByTestId('fleet-management')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /fleet management/i })).toBeVisible();
+    await expect(page.getByTestId('fleet-create-button')).toBeVisible();
   });
 
   test('should show no fleets message when empty', async ({ page }) => {
-    // Login with test user
-    await loginAsE2eTestUser(page);
-
     // Clear all fleets to test empty state
     await clearAllFleets(page);
-
-    // Navigate to fleets
+    await page.reload();
     await navigateToFleets(page);
+    await expect(page.getByTestId('fleet-empty-state')).toBeVisible();
 
-    // Should show empty state - check for the message text
-    const noFleetsMessage = page.locator('text=No fleets available. Create your first fleet!');
-
-    // Check if the message is visible
-    await expect(noFleetsMessage).toBeVisible();
+    // Restore state for subsequent tests (create a minimal fleet via UI).
+    await page.getByTestId('fleet-create-button').click();
+    await page.getByTestId('fleet-start-planet-select').selectOption({ index: 1 });
+    await page.getByTestId('fleet-ship-small_cargo').fill('1');
+    await page.getByTestId('fleet-create-submit').click();
+    await expect(page.getByRole('alert')).toContainText('Fleet created successfully!');
   });
 
   test('should open create fleet modal', async ({ page }) => {
-    // Login with test user
-    await loginAsE2eTestUser(page);
-
-    // Navigate to fleets
-    await navigateToFleets(page);
-
     // Click create fleet button
-    await page.click('text=Create Fleet');
+    await page.getByTestId('fleet-create-button').click();
 
     // Modal should appear
-    await expect(page.locator('text=Create New Fleet')).toBeVisible();
-    await expect(page.locator('text=Starting Planet')).toBeVisible();
-    // Use more specific selector to avoid ambiguity
-    await expect(page.locator('label').filter({ hasText: 'Ships' })).toBeVisible();
+    await expect(page.getByTestId('fleet-create-modal')).toBeVisible();
+    await expect(page.getByTestId('fleet-start-planet-select')).toBeVisible();
+    await expect(page.getByTestId('fleet-ship-small_cargo')).toBeVisible();
   });
 
   test('should create a new fleet', async ({ page }) => {
-    // Login with test user
-    await loginAsE2eTestUser(page);
-
-    // Navigate to fleets
-    await navigateToFleets(page);
-
-    // Click create fleet button
-    await page.click('text=Create Fleet');
-
-    // Wait for modal
-    await page.waitForTimeout(500);
+    await page.getByTestId('fleet-create-button').click();
 
     // Fill form (assuming user has planets)
-    const planetSelect = page.locator('select').first();
-    if (await planetSelect.isVisible()) {
-      // Select first available planet
-      await planetSelect.selectOption({ index: 1 });
+    await page.getByTestId('fleet-start-planet-select').selectOption({ index: 1 });
+    await page.getByTestId('fleet-ship-small_cargo').fill('5');
+    await page.getByTestId('fleet-create-submit').click();
 
-      // Add some ships - use more specific selector
-      const shipInputs = page.locator('input[type="number"]');
-      if (await shipInputs.first().isVisible()) {
-        // Fill the first ship input (Small Cargo)
-        await shipInputs.first().fill('5');
-      }
-
-      // Submit form
-      await page.click('button[type="submit"]');
-
-      // Should show success message
-      await page.waitForTimeout(1000);
-      const successMessage = page.locator('text=Fleet created successfully');
-      await expect(successMessage).toBeVisible();
-    }
+    await expect(page.getByRole('alert')).toContainText('Fleet created successfully!');
   });
 
   test('should validate fleet creation with no ships', async ({ page }) => {
-    // Login with test user
-    await loginAsE2eTestUser(page);
-
-    // Navigate to fleets
-    await navigateToFleets(page);
-
     // Click create fleet button
-    await page.click('text=Create Fleet');
-
-    // Wait for modal
-    await page.waitForTimeout(500);
+    await page.getByTestId('fleet-create-button').click();
 
     // Try to submit without ships
-    const planetSelect = page.locator('select').first();
-    if (await planetSelect.isVisible()) {
-      await planetSelect.selectOption({ index: 1 });
-
-      // Submit form
-      await page.click('button[type="submit"]');
-
-      // Should show error
-      await expect(page.locator('text=Fleet must contain at least one ship')).toBeVisible();
-    }
+    await page.getByTestId('fleet-start-planet-select').selectOption({ index: 1 });
+    await page.getByTestId('fleet-create-submit').click();
+    await expect(page.getByRole('alert')).toContainText('Fleet must contain at least one ship');
   });
 
   test('should display fleet information', async ({ page }) => {
-    // Look for fleet cards
-    const fleetCard = page.locator('.bg-gray-700').first();
-
-    if (await fleetCard.isVisible()) {
-      // Check fleet card structure
-      await expect(fleetCard.locator('text=Fleet #')).toBeVisible();
-      await expect(fleetCard.locator('text=Status:')).toBeVisible();
-
-      // Check for ship information
-      await expect(fleetCard.locator('text=Ships')).toBeVisible();
-      await expect(fleetCard.locator('text=From')).toBeVisible();
-      await expect(fleetCard.locator('text=To')).toBeVisible();
-      await expect(fleetCard.locator('text=ETA')).toBeVisible();
+    const fleetCard = page.getByTestId('fleet-tile').first();
+    if (await fleetCard.count() === 0) {
+      test.skip(true, 'No fleets present to validate card rendering.');
     }
+
+    await expect(fleetCard).toBeVisible();
+    await expect(fleetCard.getByText('Status:')).toBeVisible();
+    await expect(fleetCard.getByText('Ships', { exact: true })).toBeVisible();
+    await expect(fleetCard.getByTestId('fleet-from-value')).toBeVisible();
+    await expect(fleetCard.getByTestId('fleet-to-value')).toBeVisible();
+    await expect(fleetCard.getByTestId('fleet-eta-value')).toBeVisible();
   });
 
   test('should show send button for stationed fleets', async ({ page }) => {
@@ -187,9 +117,9 @@ test.describe('Fleet Management', () => {
       await sendButton.click();
 
       // Send modal should appear
-      await expect(page.locator('text=Send Fleet')).toBeVisible();
-      await expect(page.locator('text=Target Planet')).toBeVisible();
-      await expect(page.locator('text=Mission')).toBeVisible();
+      await expect(page.getByTestId('fleet-send-modal')).toBeVisible();
+      await expect(page.getByTestId('fleet-target-planet-select')).toBeVisible();
+      await expect(page.getByTestId('fleet-mission-select')).toBeVisible();
     }
   });
 
@@ -200,22 +130,22 @@ test.describe('Fleet Management', () => {
     if (await sendButton.isVisible()) {
       await sendButton.click();
 
-      // Wait for modal
-      await page.waitForTimeout(500);
+      const targetSelect = page.getByTestId('fleet-target-planet-select');
+      await expect(targetSelect).toBeVisible();
 
-      // Fill send form
-      const targetSelect = page.locator('select').filter({ hasText: /target|Target/ }).first();
-      if (await targetSelect.isVisible()) {
-        // Select first available target
-        await targetSelect.selectOption({ index: 1 });
-
-        // Submit
-        await page.click('text=Send Fleet');
-
-        // Should show success
-        await page.waitForTimeout(1000);
-        await expect(page.locator('text=Fleet sent successfully')).toBeVisible();
+      const optionCount = await targetSelect.locator('option').count();
+      if (optionCount < 2) {
+        test.skip(true, 'No target planets available for this mission.');
       }
+
+      await targetSelect.selectOption({ index: 1 });
+      await page.getByTestId('fleet-send-submit').click();
+      await expect(page.getByRole('alert')).toContainText('Fleet sent successfully!');
+
+      // After sending, the destination should not render as "N/A".
+      // (The UI uses API-provided target planet info for enemy/unowned targets.)
+      const firstFleet = page.getByTestId('fleet-tile').first();
+      await expect(firstFleet.getByTestId('fleet-to-value')).not.toHaveText('N/A');
     }
   });
 
@@ -230,7 +160,7 @@ test.describe('Fleet Management', () => {
       await recallButton.click();
 
       // Should show success message
-      await expect(page.locator('text=Fleet recalled successfully')).toBeVisible();
+      await expect(page.getByRole('alert')).toContainText('Fleet recalled successfully!');
     }
   });
 
@@ -249,22 +179,18 @@ test.describe('Fleet Management', () => {
 
   test('should handle fleet status colors', async ({ page }) => {
     // Look for status indicators
-    const statusIndicator = page.locator('text=Status:').first();
+    const statusValue = page.getByTestId('fleet-status-value').first();
+    if (await statusValue.count() === 0) test.skip(true, 'No fleet status visible.');
 
-    if (await statusIndicator.isVisible()) {
-      // Status should have appropriate color class
-      const statusText = await statusIndicator.locator('xpath=following-sibling::*').textContent();
+    const statusText = (await statusValue.textContent()) || '';
+    const className = await statusValue.evaluate((el) => el.className);
 
-      if (statusText.includes('stationed')) {
-        // Should have green color
-        await expect(statusIndicator.locator('.text-green-400')).toBeVisible();
-      } else if (statusText.includes('traveling')) {
-        // Should have yellow color
-        await expect(statusIndicator.locator('.text-yellow-400')).toBeVisible();
-      } else if (statusText.includes('returning')) {
-        // Should have blue color
-        await expect(statusIndicator.locator('.text-blue-400')).toBeVisible();
-      }
+    if (statusText.includes('stationed')) {
+      expect(className).toContain('text-green-400');
+    } else if (statusText.includes('traveling')) {
+      expect(className).toContain('text-yellow-400');
+    } else if (statusText.includes('returning')) {
+      expect(className).toContain('text-blue-400');
     }
   });
 
@@ -277,7 +203,7 @@ test.describe('Fleet Management', () => {
       const etaValue = await etaDisplay.locator('xpath=following-sibling::*').textContent();
 
       // Should be in time format, "Arrived", or "N/A" - be very flexible
-      const isValidFormat = ['Arrived', 'N/A'].includes(etaValue) ||
+      const isValidFormat = ['Arrived', 'Arrived (pending tick)', 'N/A'].includes(etaValue) ||
                            /\d{1,2}:\d{2}:\d{2}/.test(etaValue) ||
                            /\d{1,2}:\d{2}/.test(etaValue) ||
                            /\d+/.test(etaValue); // Just any number
@@ -287,26 +213,20 @@ test.describe('Fleet Management', () => {
   });
 
   test('should close modals with cancel button', async ({ page }) => {
-    // Login with test user
-    await loginAsE2eTestUser(page);
-
-    // Navigate to fleets
-    await navigateToFleets(page);
-
     // Open create fleet modal
-    await page.click('text=Create Fleet');
-    await expect(page.locator('text=Create New Fleet')).toBeVisible();
+    await page.getByTestId('fleet-create-button').click();
+    await expect(page.getByTestId('fleet-create-modal')).toBeVisible();
 
     // Click cancel
-    await page.click('text=Cancel');
+    await page.getByTestId('fleet-create-cancel').click();
 
     // Modal should close
-    await expect(page.locator('text=Create New Fleet')).not.toBeVisible();
+    await expect(page.getByTestId('fleet-create-modal')).not.toBeVisible();
   });
 
   test('should handle multiple fleets', async ({ page }) => {
-    // Count fleet cards
-    const fleetCards = page.locator('.bg-gray-700');
+    // Count fleet tiles (avoid matching non-fleet cards)
+    const fleetCards = page.locator('[data-testid="fleet-tile"]');
     const fleetCount = await fleetCards.count();
 
     if (fleetCount > 1) {

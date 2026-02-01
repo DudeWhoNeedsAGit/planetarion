@@ -21,25 +21,6 @@ def populate_via_api():
     print(f"🗄️  Database URL: {database_url}")
     print(f"🔧 Environment DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT SET')}")
 
-    # Check if e2etestuser exists before population
-    print("\n🔍 Checking existing users before population...")
-    try:
-        response = requests.get(f"{backend_url}/users", timeout=5)
-        if response.status_code == 200:
-            users = response.json()
-            print(f"   👥 Existing users: {len(users)}")
-            for user in users:
-                print(f"      - {user.get('username', 'N/A')} (ID: {user.get('id', 'N/A')})")
-                if user.get('username') == 'e2etestuser':
-                    print("   ⚠️  e2etestuser already exists!")
-                    break
-            else:
-                print("   ✅ e2etestuser does not exist (good for population)")
-        else:
-            print(f"   ❌ Could not check users: {response.status_code}")
-    except Exception as e:
-        print(f"   ❌ Error checking users: {e}")
-
     # Wait for backend to be ready
     max_attempts = 30
     for attempt in range(max_attempts):
@@ -73,7 +54,7 @@ def populate_via_api():
             print(f"   📈 Tick Logs: {data.get('tick_logs', 'N/A')}")
 
             # Verify e2etestuser was created with correct credentials
-            print("\n🔍 Verifying e2etestuser creation...")
+            print("\n Verifying e2etestuser creation...")
             try:
                 users_response = requests.get(f"{backend_url}/users", timeout=5)
                 if users_response.status_code == 200:

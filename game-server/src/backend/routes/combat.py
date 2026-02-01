@@ -11,15 +11,42 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import CombatReport, DebrisField, Planet, User
+import json
 
 combat_bp = Blueprint('combat', __name__, url_prefix='/api/combat')
+
+
+def _get_explored_system_keys(user: User) -> set[str]:
+    explored_systems = set()
+    if not user or not getattr(user, "explored_systems", None):
+        return explored_systems
+    try:
+        explored_data = json.loads(user.explored_systems) or []
+        for entry in explored_data:
+            if isinstance(entry, dict) and entry.get("coordinates"):
+                explored_systems.add(str(entry["coordinates"]))
+    except Exception:
+        return set()
+    return explored_systems
+
+
+def _is_planet_visible_to_user(*, user_id: int, user: User | None, planet: Planet, fought_planet_ids: set[int]) -> bool:
+    if planet.user_id == user_id:
+        return True
+    if planet.id in fought_planet_ids:
+        return True
+    if user is None:
+        return False
+    explored = _get_explored_system_keys(user)
+    return f"{planet.x}:{planet.y}:{planet.z}" in explored
+
 
 @combat_bp.route('/reports', methods=['GET'])
 @jwt_required()
 def get_combat_reports():
     """Get combat reports for the authenticated user"""
     print("DEBUG: Combat reports endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
     # Get query parameters
@@ -81,7 +108,7 @@ def get_combat_reports():
 def get_combat_report(report_id):
     """Get detailed combat report by ID"""
     print(f"DEBUG: Get combat report {report_id}")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
 
     report = CombatReport.query.filter_by(id=report_id).first()
     if not report:
@@ -124,21 +151,47 @@ def get_combat_report(report_id):
 def get_debris_fields():
     """Get debris fields visible to the user"""
     print("DEBUG: Debris fields endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
 
-    # Get debris fields from planets the user can see
-    # For now, show all debris fields (in a real game, this would be limited by scanning range)
-    debris_fields = DebrisField.query.all()
+    # Visible debris fields should be limited to:
+    # - planets you own
+    # - planets you've fought at (attacker or defender)
+    # - planets in systems you've explored
+    user = User.query.get(user_id)
+
+    fought_planet_ids_rows = (
+        db.session.query(CombatReport.planet_id)
+        .filter(
+            db.or_(
+                CombatReport.attacker_id == user_id,
+                CombatReport.defender_id == user_id,
+            )
+        )
+        .distinct()
+        .all()
+    )
+    fought_planet_ids = {int(r[0]) for r in fought_planet_ids_rows if r and r[0] is not None}
+
+    debris_fields = (
+        DebrisField.query.join(Planet, DebrisField.planet_id == Planet.id)
+        .filter((DebrisField.metal + DebrisField.crystal + DebrisField.deuterium) > 0)
+        .all()
+    )
 
     formatted_debris = []
     for debris in debris_fields:
+        planet = debris.planet
+        if not planet:
+            continue
+        if not _is_planet_visible_to_user(user_id=user_id, user=user, planet=planet, fought_planet_ids=fought_planet_ids):
+            continue
         formatted_debris.append({
             'id': debris.id,
             'planet': {
-                'id': debris.planet.id,
-                'name': debris.planet.name,
-                'coordinates': f"{debris.planet.x}:{debris.planet.y}:{debris.planet.z}",
-                'owner': debris.planet.user.username if debris.planet.user else None
+                'id': planet.id,
+                'name': planet.name,
+                'coordinates': f"{planet.x}:{planet.y}:{planet.z}",
+                'owner': planet.owner.username if getattr(planet, 'owner', None) else None
             },
             'resources': {
                 'metal': debris.metal,
@@ -159,11 +212,27 @@ def get_debris_fields():
 def get_planet_debris(planet_id):
     """Get debris field for a specific planet"""
     print(f"DEBUG: Get debris for planet {planet_id}")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
 
     debris = DebrisField.query.filter_by(planet_id=planet_id).first()
     if not debris:
         return jsonify({'error': 'No debris field found at this planet'}), 404
+
+    user = User.query.get(user_id)
+    fought_planet_ids_rows = (
+        db.session.query(CombatReport.planet_id)
+        .filter(
+            db.or_(
+                CombatReport.attacker_id == user_id,
+                CombatReport.defender_id == user_id,
+            )
+        )
+        .distinct()
+        .all()
+    )
+    fought_planet_ids = {int(r[0]) for r in fought_planet_ids_rows if r and r[0] is not None}
+    if debris.planet and not _is_planet_visible_to_user(user_id=user_id, user=user, planet=debris.planet, fought_planet_ids=fought_planet_ids):
+        return jsonify({'error': 'Access denied'}), 403
 
     return jsonify({
         'id': debris.id,
@@ -171,7 +240,7 @@ def get_planet_debris(planet_id):
             'id': debris.planet.id,
             'name': debris.planet.name,
             'coordinates': f"{debris.planet.x}:{debris.planet.y}:{debris.planet.z}",
-            'owner': debris.planet.user.username if debris.planet.user else None
+            'owner': debris.planet.owner.username if getattr(debris.planet, 'owner', None) else None
         },
         'resources': {
             'metal': debris.metal,
@@ -187,7 +256,7 @@ def get_planet_debris(planet_id):
 def get_combat_statistics():
     """Get combat statistics for the authenticated user"""
     print("DEBUG: Combat statistics endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
 
     # Get user's fleets for combat statistics
     from backend.models import Fleet

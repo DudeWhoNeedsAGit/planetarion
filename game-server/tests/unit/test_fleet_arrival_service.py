@@ -33,7 +33,7 @@ class TestFleetArrivalService:
         # Verify fleet state
         assert mock_fleet.status == 'stationed'
         assert mock_fleet.mission == 'stationed'
-        assert mock_fleet.arrival_time == None
+        assert mock_fleet.arrival_time is not None
         assert mock_fleet.eta == 0
 
     def test_process_arrived_fleets_no_fleets(self, app):
@@ -206,8 +206,8 @@ class TestFleetArrivalService:
             mock_fleet = Mock(spec=Fleet)
             mock_fleet.status = 'exploring:100:200:300'
             mock_fleet.user_id = 1
-            mock_fleet.user = Mock()
-            mock_fleet.user.username = 'TestUser'
+            mock_fleet.owner = Mock()
+            mock_fleet.owner.username = 'TestUser'
             mock_fleet.explored_systems = None  # Explicit attribute instead of hasattr patch
 
             # Mock no existing planet
@@ -221,7 +221,8 @@ class TestFleetArrivalService:
                         # Mock JSON dumps to avoid Mock serialization issues
                         mock_json.dumps.return_value = '{"coordinates": "100:200:300", "explored_at": "2025-01-01T12:00:00", "fleet_id": 123}'
 
-                        FleetArrivalService._process_exploration(mock_fleet)
+                        with patch('backend.services.tick.generate_exploration_planets', return_value=[]):
+                            FleetArrivalService._process_exploration(mock_fleet)
 
                         # Verify fleet was returned to stationed
                         assert mock_fleet.status == 'stationed'
@@ -243,7 +244,7 @@ class TestFleetArrivalService:
         # Verify fleet was returned to stationed
         assert mock_fleet.status == 'stationed'
         assert mock_fleet.mission == 'stationed'
-        assert mock_fleet.arrival_time == None
+        assert mock_fleet.arrival_time is not None
         assert mock_fleet.eta == 0
 
     def test_invalid_coordinate_parsing(self, app):
@@ -312,5 +313,5 @@ class TestFleetArrivalServiceIntegration:
         # Verify only the expected changes
         assert mock_fleet.status == 'stationed'
         assert mock_fleet.mission == 'stationed'
-        assert mock_fleet.arrival_time == None
+        assert mock_fleet.arrival_time is not None
         assert mock_fleet.eta == 0

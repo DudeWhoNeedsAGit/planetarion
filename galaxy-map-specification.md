@@ -10,6 +10,34 @@
 3. Debug why yellow player location marker doesn't move with map panning
 4. Create comprehensive technical documentation for ChatGPT debugging assistance
 
+## Proposed v2 Data Contract (High-ROI)
+
+The Galaxy Map should be an "intel + launcher" screen. That requires a stable, fast backend contract that can:
+- Render markers quickly without loading every planet in the database
+- Indicate ownership/relationships at-a-glance
+- Support filters later (friends/alliances, pirates, debris)
+
+### Endpoint: `GET /api/galaxy/nearby/<center_x>/<center_y>/<center_z>?range=<int>&limit=<int>&offset=<int>`
+
+- **Auth:** JWT required
+- **Purpose:** Return *system summaries* within a bounding range around the player's current center.
+- **Response shape:**
+  - `systems[]`:
+    - `key`: `"x:y:z"`
+    - `x`, `y`, `z`
+    - `planet_count`
+    - `owner_id` (nullable; null for unowned/contested)
+    - `owner_name` (nullable)
+    - `relation`: `self | enemy | unowned | contested`
+    - `explored`: boolean (based on user.explored_systems + always-true for self systems)
+    - `flags`: `{ has_debris: boolean, has_pirates: boolean }`
+  - `meta`: `{ center: {x,y,z}, range, limit, offset }`
+
+### Endpoint: `GET /api/galaxy/system/<x>/<y>/<z>`
+
+- **Auth:** JWT required
+- **Purpose:** Return planets in a system with minimal fields needed for action buttons (attack/colonize) and ownership labeling.
+
 ## Test Errors and Failures
 
 ### Test Execution Results

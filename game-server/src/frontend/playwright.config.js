@@ -1,14 +1,16 @@
 // playwright.config.js
 module.exports = {
   testDir: './tests/e2e',
+  globalSetup: process.env.PW_SEED === '1' ? require.resolve('./tests/e2e/global-setup.js') : undefined,
   timeout: 30 * 1000,
   expect: {
     timeout: 5000,
   },
-  fullyParallel: true,
+  // Default to serialized runs because the E2E suite shares a single backend + DB.
+  fullyParallel: process.env.PW_FULLY_PARALLEL === '1',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 4 : 6,
+  workers: process.env.PW_WORKERS ? parseInt(process.env.PW_WORKERS, 10) : (process.env.CI ? 4 : 1),
   reporter: [['html', { open: 'never' }]],
   use: {
     actionTimeout: 0,

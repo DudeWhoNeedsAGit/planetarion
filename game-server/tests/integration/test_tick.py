@@ -215,6 +215,33 @@ class TestTickIntegration:
         db.session.refresh(sample_planet)
         assert sample_planet.metal >= 999999999999
 
+    def test_tick_respects_storage_caps_without_reducing_existing(self, client, sample_planet):
+        """Resource generation should not exceed storage caps, and should not reduce overflow."""
+        # Default storage level is 0, but caps are still high; temporarily force a low cap by setting huge negative.
+        # Instead, we simulate capping by setting resource just below cap.
+        from backend.config import get_planet_storage_caps
+
+        sample_planet.metal_mine = 10
+        sample_planet.solar_plant = 50
+        db.session.commit()
+
+        caps = get_planet_storage_caps(sample_planet)
+        sample_planet.metal = caps["metal"] - 1
+        db.session.commit()
+
+        res = client.post('/api/tick')
+        assert res.status_code == 200
+        db.session.refresh(sample_planet)
+        assert sample_planet.metal <= caps["metal"]
+
+        # If already above cap, do not reduce.
+        sample_planet.metal = caps["metal"] + 100
+        db.session.commit()
+        res2 = client.post('/api/tick')
+        assert res2.status_code == 200
+        db.session.refresh(sample_planet)
+        assert sample_planet.metal >= caps["metal"] + 100
+
 class TestTickEdgeCases:
     """Test tick endpoint edge cases"""
 
@@ -258,7 +285,7 @@ class TestAutomaticTickSystem:
     """Test the automatic 5-second tick system"""
 
     def test_automatic_tick_resource_generation(self, client, sample_planet):
-        """Test that automatic ticks increase resources over 15 seconds (3 ticks)"""
+        """Test that 3 ticks increase resources"""
         
         # Set up planet with mines for predictable production
         sample_planet.metal_mine = 5
@@ -278,9 +305,10 @@ class TestAutomaticTickSystem:
 
         print(f"Initial resources - Metal: {initial_metal}, Crystal: {initial_crystal}, Deuterium: {initial_deuterium}")
 
-        # Wait for 3 ticks (15 seconds with 5-second intervals)
-        print("Waiting 15 seconds for 3 automatic ticks...")
-        time.sleep(15)
+        # In tests we trigger ticks explicitly to avoid relying on background scheduling.
+        for _ in range(3):
+            response = client.post('/api/tick')
+            assert response.status_code == 200
 
         # Refresh planet data from database
         db.session.refresh(sample_planet)
@@ -292,70 +320,23 @@ class TestAutomaticTickSystem:
         assert sample_planet.crystal > initial_crystal, f"Crystal should increase: {sample_planet.crystal} > {initial_crystal}"
         assert sample_planet.deuterium > initial_deuterium, f"Deuterium should increase: {sample_planet.deuterium} > {initial_deuterium}"
 
-        # Calculate expected minimum increase for 3 ticks
-        # Metal: 5 mines × 30 base × (1.1^5) × 3 ticks × (1/7200) per tick
-        metal_production_rate = 5 * 30 * (1.1 ** 5)  # ~212.58 per hour
-        expected_metal_increase = metal_production_rate * 3 / 7200  # ~0.0886 per tick × 3 = ~0.266
+        expected_metal_increase = 3
+        expected_crystal_increase = 3
+        expected_deuterium_increase = 3
 
-        # Crystal: 3 mines × 20 base × (1.1^3) × 3 ticks × (1/7200) per tick
-        crystal_production_rate = 3 * 20 * (1.1 ** 3)  # ~79.86 per hour
-        expected_crystal_increase = crystal_production_rate * 3 / 7200  # ~0.0333 per tick × 3 = ~0.099
-
-        # Deuterium: 2 synthesizers × 10 base × (1.1^2) × 3 ticks × (1/7200) per tick
-        deuterium_production_rate = 2 * 10 * (1.1 ** 2)  # ~24.2 per hour
-        expected_deuterium_increase = deuterium_production_rate * 3 / 7200  # ~0.0101 per tick × 3 = ~0.030
-
-        print(f"Expected increases - Metal: {expected_metal_increase:.3f}, Crystal: {expected_crystal_increase:.3f}, Deuterium: {expected_deuterium_increase:.3f}")
+        print(f"Expected minimum increases - Metal: {expected_metal_increase}, Crystal: {expected_crystal_increase}, Deuterium: {expected_deuterium_increase}")
         print(f"Actual increases - Metal: {sample_planet.metal - initial_metal}, Crystal: {sample_planet.crystal - initial_crystal}, Deuterium: {sample_planet.deuterium - initial_deuterium}")
 
         # Verify minimum expected increases (allowing for floating point precision)
-        assert sample_planet.metal >= initial_metal + expected_metal_increase - 0.1, \
-            f"Metal increase should meet minimum: {sample_planet.metal - initial_metal} >= {expected_metal_increase - 0.1}"
-        assert sample_planet.crystal >= initial_crystal + expected_crystal_increase - 0.1, \
-            f"Crystal increase should meet minimum: {sample_planet.crystal - initial_crystal} >= {expected_crystal_increase - 0.1}"
-        assert sample_planet.deuterium >= initial_deuterium + expected_deuterium_increase - 0.1, \
-            f"Deuterium increase should meet minimum: {sample_planet.deuterium - initial_deuterium} >= {expected_deuterium_increase - 0.1}"
+        assert sample_planet.metal >= initial_metal + expected_metal_increase
+        assert sample_planet.crystal >= initial_crystal + expected_crystal_increase
+        assert sample_planet.deuterium >= initial_deuterium + expected_deuterium_increase
 
-    @patch('backend.services.tick.run_tick')
-    def test_automatic_tick_timing_accuracy(self, mock_tick, client, sample_planet):
-        """Test that ticks occur at approximately 5-second intervals"""
-
-        # Mock the tick function to control execution and prevent recursion
-        mock_tick.return_value = True
-
-        # Clear existing tick logs
-        TickLog.query.delete()
-        db.session.commit()
-
-        # Set up planet
-        sample_planet.metal_mine = 1
-        db.session.commit()
-
-        initial_log_count = TickLog.query.count()
-
-        # Manually trigger 4 ticks with controlled timing
-        import time
-        start_time = time.time()
-
-        for i in range(4):
-            mock_tick()
-            if i < 3:  # Don't sleep after last tick
-                time.sleep(5)  # 5-second intervals
-
-        end_time = time.time()
-        final_log_count = TickLog.query.count()
-
-        elapsed_time = end_time - start_time
-        tick_count = final_log_count - initial_log_count
-
-        print(f"Elapsed time: {elapsed_time:.2f} seconds")
-        print(f"Tick logs created: {tick_count}")
-
-        # Should have created exactly 4 ticks
-        assert tick_count == 4, f"Should have exactly 4 ticks, got {tick_count}"
-
-        # Average interval should be close to 5 seconds
-        if tick_count > 1:
-            avg_interval = elapsed_time / (tick_count - 1)
-            print(f"Average tick interval: {avg_interval:.2f} seconds")
-            assert 4.5 <= avg_interval <= 6.5, f"Average interval should be 4.5-6.5 seconds, got {avg_interval}"
+    def test_scheduler_tick_interval_configured(self, client):
+        """Test that the scheduler is configured for 5-second ticks"""
+        scheduler = client.application.extensions.get('game_scheduler')
+        assert scheduler is not None
+        jobs = scheduler.get_jobs()
+        tick_jobs = [j for j in jobs if j.id == 'game_tick']
+        assert len(tick_jobs) == 1
+        assert int(tick_jobs[0].trigger.interval.total_seconds()) == 5

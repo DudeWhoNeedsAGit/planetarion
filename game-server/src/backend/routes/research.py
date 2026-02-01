@@ -23,7 +23,7 @@ research_bp = Blueprint('research', __name__, url_prefix='/api/research')
 def get_research():
     """Get user's current research status"""
     print("DEBUG: Research GET endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
     # Get or create research record
@@ -58,7 +58,7 @@ def upgrade_research(research_type):
     """Upgrade a specific research technology"""
     print("DEBUG: Research upgrade endpoint called")
     print(f"DEBUG: Research type: {research_type}")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
     # Validate research type
@@ -105,7 +105,7 @@ def upgrade_research(research_type):
 def get_research_points():
     """Get current research points (real-time calculation)"""
     print("DEBUG: Research points endpoint called")
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
     research_points = calculate_research_points(user_id)

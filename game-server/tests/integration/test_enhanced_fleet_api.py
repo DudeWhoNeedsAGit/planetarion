@@ -195,9 +195,13 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create test planets
-        start_planet = Planet(name='Start', x=0, y=0, z=0, user_id=user.id)
+        start_planet = Planet(name='Start', x=0, y=0, z=0, user_id=user.id, deuterium=100000)
         target_planet = Planet(name='Empty Space', x=100, y=200, z=300, user_id=None)
         db_session.add_all([start_planet, target_planet])
+        db_session.commit()
+
+        # Create research record to allow colonization (difficulty depends on coordinates)
+        db_session.add(Research(user_id=user.id, colonization_tech=5))
         db_session.commit()
 
         # Create fleet with colony ship
@@ -243,8 +247,12 @@ class TestEnhancedFleetAPI:
         db_session.commit()
 
         # Create test planet
-        start_planet = Planet(name='Start', x=0, y=0, z=0, user_id=user.id)
+        start_planet = Planet(name='Start', x=0, y=0, z=0, user_id=user.id, deuterium=100000)
         db_session.add(start_planet)
+        db_session.commit()
+
+        # Create research record to allow colonization (far coordinates can be higher difficulty)
+        db_session.add(Research(user_id=user.id, colonization_tech=5))
         db_session.commit()
 
         # Create fleet with colony ship

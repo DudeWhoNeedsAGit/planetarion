@@ -97,41 +97,48 @@ const CoordinateUtils = {
   }
 };
 
-function GalaxyMap({ user, planets, onClose }) {
-  const { showSuccess, showError, showInfo } = useToast();
+const DEFAULT_GALAXY_RANGE = 2000;
+const WORLD_SCALE = 0.1; // convert coordinate units -> pixels (higher = more spread out)
+
+function GalaxyMap({ user, planets, onClose, onNavigateSection }) {
+  const { showSuccess, showError } = useToast();
   const [systems, setSystems] = useState([]);
   const [selectedSystem, setSelectedSystem] = useState(null);
   const [loading, setLoading] = useState(true); // Start with loading true
   const [error, setError] = useState(null);
   const [galaxyLoaded, setGalaxyLoaded] = useState(false);
+  const [galaxyRange, setGalaxyRange] = useState(DEFAULT_GALAXY_RANGE);
   const [zoom, setZoom] = useState(1);
   const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
   const [showGrid, setShowGrid] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
+  // Stabilize background starfield so it doesn't "flicker" on re-renders (e.g. while panning/zooming).
+  const starfield = React.useMemo(() => {
+    const stars = Array.from({ length: 200 }, (_, i) => ({
+      key: `star-${i}`,
+      sizeClass: i % 10 === 0 ? 'w-1 h-1' : i % 5 === 0 ? 'w-0.5 h-0.5' : 'w-px h-px',
+      left: Math.random() * 100,
+      top: Math.random() * 100,
+      twinkleSeconds: 2 + Math.random() * 3,
+      delaySeconds: Math.random() * 3
+    }));
+    const particles = Array.from({ length: 30 }, (_, i) => ({
+      key: `particle-${i}`,
+      left: Math.random() * 100,
+      top: Math.random() * 100,
+      floatSeconds: 10 + Math.random() * 20,
+      delaySeconds: Math.random() * 10
+    }));
+    return { stars, particles };
+  }, []);
+
   // Get user's home planet coordinates as center
-  const homePlanet = planets.find(p => p.user_id == user.id); // Use loose equality for type safety
+  const homePlanet = (planets || []).find(p => p.user_id == user.id) || (planets || [])[0]; // fallback if user_id isn't present
   const centerX = homePlanet?.x || 100; // Default to 100 instead of 0
   const centerY = homePlanet?.y || 200;
   const centerZ = homePlanet?.z || 300;
-
-
-
-  console.log('Galaxy Map Debug:', {
-    userId: user.id,
-    userIdType: typeof user.id,
-    planetsCount: planets.length,
-    planets: planets.map(p => ({
-      id: p.id,
-      user_id: p.user_id,
-      user_id_type: typeof p.user_id,
-      coordinates: p.coordinates || `${p.x}:${p.y}:${p.z}`
-    })),
-    homePlanet: homePlanet ? `${homePlanet.x}:${homePlanet.y}:${homePlanet.z}` : 'Not found',
-    center: `${centerX}:${centerY}:${centerZ}`,
-    apiUrl: `/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`
-  });
 
   useEffect(() => {
     // Load galaxy data once when component mounts
@@ -153,83 +160,34 @@ function GalaxyMap({ user, planets, onClose }) {
     try {
       setLoading(true);
       setError(null);
+      // Let the backend choose the default range based on research unless overridden.
+      const params = galaxyRange ? { range: galaxyRange } : {};
+      const res = await axios.get(`/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`, { params });
 
-      console.log('🌌 Fetching complete galaxy data once:', `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`);
-
-      // Get JWT token from localStorage (following fleet test pattern)
-      const token = localStorage.getItem('token');
-      console.log('DEBUG: JWT token present for galaxy API:', !!token);
-
-      const response = await fetch(`http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
-      });
-
-      console.log('DEBUG: Galaxy API response status:', response.status);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const nextSystems = Array.isArray(res.data?.systems) ? res.data.systems : [];
+      setSystems(nextSystems);
+      const serverRange = res.data?.meta?.range;
+      if (typeof serverRange === 'number' && !Number.isNaN(serverRange) && serverRange > 0) {
+        setGalaxyRange(serverRange);
       }
-
-      const data = await response.json();
-      console.log('✅ Complete galaxy data loaded successfully:', `${data.length} systems`);
-      setSystems(data);
       setGalaxyLoaded(true);
     } catch (error) {
-      console.error('❌ Error fetching galaxy data:', {
-        message: error.message,
-        status: error.status,
-        url: `http://localhost:5000/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`
-      });
-
+      console.error('❌ Error fetching galaxy data:', error);
       setError('Failed to load galaxy data');
-
-      // Add fallback data for testing (following fleet pattern)
-      console.log('🔧 Using fallback test data with mix of explored/unexplored systems');
-      setSystems([
-        { x: centerX + 10, y: centerY + 20, z: centerZ + 30, explored: false, planets: 0, owner_id: null },
-        { x: centerX - 15, y: centerY - 25, z: centerZ - 35, explored: true, planets: 2, owner_id: user.id },
-        { x: centerX + 40, y: centerY + 50, z: centerZ + 60, explored: false, planets: 0, owner_id: null },
-        { x: centerX - 30, y: centerY + 15, z: centerZ - 20, explored: false, planets: 0, owner_id: null },
-        { x: centerX + 25, y: centerY - 35, z: centerZ + 45, explored: true, planets: 1, owner_id: null }
-      ]);
-      setGalaxyLoaded(true);
     } finally {
       setLoading(false);
     }
   };
 
   const handleExploreSystem = async (system) => {
-    if (system.explored) {
-      // Show system details
-      setSelectedSystem(system);
-      return;
-    }
+    if (system.explored) return;
 
     // Send exploration fleet
     setLoading(true);
     try {
-      // Get JWT token from localStorage (following fleet pattern)
-      const token = localStorage.getItem('token');
-      console.log('DEBUG: JWT token present for fleet API:', !!token);
-
       // Find a fleet to send (simplified - use first available)
-      const fleetResponse = await fetch('http://localhost:5000/api/fleet', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
-      });
-
-      if (!fleetResponse.ok) {
-        throw new Error(`HTTP ${fleetResponse.status}: ${fleetResponse.statusText}`);
-      }
-
-      const fleetData = await fleetResponse.json();
+      const fleetResponse = await axios.get('/api/fleet');
+      const fleetData = Array.isArray(fleetResponse.data) ? fleetResponse.data : [];
       const availableFleet = fleetData.find(f => f.status === 'stationed');
 
       if (!availableFleet) {
@@ -237,26 +195,17 @@ function GalaxyMap({ user, planets, onClose }) {
         return;
       }
 
-      const sendResponse = await fetch('http://localhost:5000/api/fleet/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
-        body: JSON.stringify({
-          fleet_id: availableFleet.id,
-          mission: 'explore',
-          target_x: system.x,
-          target_y: system.y,
-          target_z: system.z
-        })
+      await axios.post('/api/fleet/send', {
+        fleet_id: availableFleet.id,
+        mission: 'explore',
+        target_x: system.x,
+        target_y: system.y,
+        target_z: system.z
       });
 
-      if (!sendResponse.ok) {
-        throw new Error(`HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
-      }
-
       showSuccess(`🚀 Exploration fleet sent to ${system.x}:${system.y}:${system.z}!`, 4000);
+      // Refresh markers after sending exploration.
+      await fetchNearbySystems();
     } catch (error) {
       console.error('Error sending exploration fleet:', error);
       showError('Failed to send exploration fleet. Please try again.');
@@ -309,24 +258,9 @@ function GalaxyMap({ user, planets, onClose }) {
 
     setLoading(true);
     try {
-      // Get JWT token from localStorage (following fleet pattern)
-      const token = localStorage.getItem('token');
-      console.log('DEBUG: JWT token present for colonization API:', !!token);
-
       // Find a fleet with colony ship
-      const fleetResponse = await fetch('http://localhost:5000/api/fleet', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
-      });
-
-      if (!fleetResponse.ok) {
-        throw new Error(`HTTP ${fleetResponse.status}: ${fleetResponse.statusText}`);
-      }
-
-      const fleetData = await fleetResponse.json();
+      const fleetResponse = await axios.get('/api/fleet');
+      const fleetData = Array.isArray(fleetResponse.data) ? fleetResponse.data : [];
       const colonyFleet = fleetData.find(f =>
         f.status === 'stationed' && f.ships.colony_ship > 0
       );
@@ -336,28 +270,15 @@ function GalaxyMap({ user, planets, onClose }) {
         return;
       }
 
-      const sendResponse = await fetch('http://localhost:5000/api/fleet/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
-        body: JSON.stringify({
-          fleet_id: colonyFleet.id,
-          mission: 'colonize',
-          target_x: planet.x,
-          target_y: planet.y,
-          target_z: planet.z
-        })
+      const sendResponse = await axios.post('/api/fleet/send', {
+        fleet_id: colonyFleet.id,
+        mission: 'colonize',
+        target_x: planet.x,
+        target_y: planet.y,
+        target_z: planet.z
       });
 
-      if (!sendResponse.ok) {
-        const errorData = await sendResponse.json();
-        throw new Error(errorData.error || `HTTP ${sendResponse.status}: ${sendResponse.statusText}`);
-      }
-
-      const result = await sendResponse.json();
-      console.log('✅ Colonization fleet sent successfully:', result);
+      const result = sendResponse.data || {};
 
       // Show success message with ETA
       const etaSeconds = result.fleet?.eta || 0;
@@ -385,8 +306,8 @@ function GalaxyMap({ user, planets, onClose }) {
 
   // Calculate system position for grid display
   const getSystemPosition = (system) => {
-    const relativeX = (system.x - centerX) * zoom + viewOffset.x;
-    const relativeY = (system.y - centerY) * zoom + viewOffset.y;
+    const relativeX = (system.x - centerX) * WORLD_SCALE * zoom + viewOffset.x;
+    const relativeY = (system.y - centerY) * WORLD_SCALE * zoom + viewOffset.y;
     return { x: relativeX, y: relativeY };
   };
 
@@ -433,13 +354,14 @@ function GalaxyMap({ user, planets, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-6xl w-full h-5/6 flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" data-testid="galaxy-modal">
+      <div className="bg-gray-800 rounded-lg p-6 max-w-6xl w-full h-5/6 flex flex-col" data-testid="galaxy-modal-content">
         {/* Header */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-white">Galaxy Map</h2>
           <button
             onClick={onClose}
+            data-testid="galaxy-close"
             className="text-gray-400 hover:text-white text-xl"
           >
             ✕
@@ -449,7 +371,7 @@ function GalaxyMap({ user, planets, onClose }) {
         {/* Controls */}
         <div className="flex justify-between items-center mb-4">
           <div className="text-sm text-gray-300">
-            Center: {centerX}:{centerY}:{centerZ} | Zoom: {Math.round(zoom * 100)}% | Range: {Math.round(50 / zoom)} units
+            Center: {centerX}:{centerY}:{centerZ} | Zoom: {Math.round(zoom * 100)}% | Range: {galaxyRange} units
           </div>
           <div className="flex items-center space-x-2">
             <button
@@ -537,17 +459,15 @@ function GalaxyMap({ user, planets, onClose }) {
 
             {/* Animated Starfield */}
             <div className="absolute inset-0">
-              {Array.from({ length: 200 }, (_, i) => (
+              {starfield.stars.map((s) => (
                 <div
-                  key={i}
-                  className={`absolute rounded-full bg-white ${
-                    i % 10 === 0 ? 'w-1 h-1' : i % 5 === 0 ? 'w-0.5 h-0.5' : 'w-px h-px'
-                  }`}
+                  key={s.key}
+                  className={`absolute rounded-full bg-white ${s.sizeClass}`}
                   style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    animation: `twinkle ${2 + Math.random() * 3}s infinite`,
-                    animationDelay: `${Math.random() * 3}s`
+                    left: `${s.left}%`,
+                    top: `${s.top}%`,
+                    animation: `twinkle ${s.twinkleSeconds}s infinite`,
+                    animationDelay: `${s.delaySeconds}s`
                   }}
                 />
               ))}
@@ -555,15 +475,15 @@ function GalaxyMap({ user, planets, onClose }) {
 
             {/* Floating Particles */}
             <div className="absolute inset-0">
-              {Array.from({ length: 30 }, (_, i) => (
+              {starfield.particles.map((p) => (
                 <div
-                  key={`particle-${i}`}
+                  key={p.key}
                   className="absolute w-1 h-1 bg-white rounded-full opacity-20"
                   style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    animation: `float ${10 + Math.random() * 20}s infinite linear`,
-                    animationDelay: `${Math.random() * 10}s`
+                    left: `${p.left}%`,
+                    top: `${p.top}%`,
+                    animation: `float ${p.floatSeconds}s infinite linear`,
+                    animationDelay: `${p.delaySeconds}s`
                   }}
                 />
               ))}
@@ -586,8 +506,8 @@ function GalaxyMap({ user, planets, onClose }) {
           {/* Coordinate Labels */}
           <div data-test="coords" className="absolute top-2 left-2 text-xs text-white font-mono bg-black bg-opacity-70 px-3 py-2 rounded-lg border border-gray-600 shadow-lg">
             <div className="font-semibold text-blue-300">Coordinates:</div>
-            <div className="text-yellow-300">X: {Math.round(centerX - viewOffset.x / zoom)}</div>
-            <div className="text-green-300">Y: {Math.round(centerY - viewOffset.y / zoom)}</div>
+            <div className="text-yellow-300">X: {Math.round(centerX - viewOffset.x / (zoom * WORLD_SCALE))}</div>
+            <div className="text-green-300">Y: {Math.round(centerY - viewOffset.y / (zoom * WORLD_SCALE))}</div>
             <div className="text-purple-300">Z: {centerZ}</div>
           </div>
 
@@ -602,8 +522,11 @@ function GalaxyMap({ user, planets, onClose }) {
                 // Determine system ownership status
                 // system.planets is a number (count), not an array
                 const hasColonies = system.planets && system.planets > 0;
-                const isOwnedByUser = system.planets && system.planets > 0 && system.owner_id == user.id;
-                const isEnemyColony = hasColonies && !isOwnedByUser;
+                const relation = system.relation || (system.owner_id == user.id ? 'self' : (hasColonies ? 'enemy' : 'unowned'));
+                const isOwnedByUser = relation === 'self';
+                const isAllyColony = relation === 'ally';
+                const isPirateColony = relation === 'pirates';
+                const isEnemyColony = hasColonies && !isOwnedByUser && !isAllyColony;
 
                 // Enhanced system marker with planet image background
                 let borderClass = '';
@@ -614,6 +537,12 @@ function GalaxyMap({ user, planets, onClose }) {
                   if (isOwnedByUser) {
                     borderClass = 'border-green-400 hover:border-green-300';
                     markerIcon = '🏠';
+                  } else if (isPirateColony) {
+                    borderClass = 'border-orange-400 hover:border-orange-300';
+                    markerIcon = '🏴‍☠️';
+                  } else if (isAllyColony) {
+                    borderClass = 'border-purple-400 hover:border-purple-300';
+                    markerIcon = '🤝';
                   } else if (isEnemyColony) {
                     borderClass = 'border-red-400 hover:border-red-300';
                     markerIcon = '⚔️';
@@ -639,6 +568,7 @@ function GalaxyMap({ user, planets, onClose }) {
                     {/* Planet marker */}
                     <div
                       ref={(el) => el && EventHandlingSystem.setupSystemMarkerEvents(el)}
+                      data-test-marker="system-marker"
                       className={`system-marker w-16 h-16 rounded-full border-2 cursor-pointer transition-all duration-200 flex items-center justify-center text-xs font-bold ${borderClass} ${!system.explored ? 'opacity-60' : ''}`}
                       style={{
                         zIndex: system.explored ? 10 : 5,
@@ -647,7 +577,11 @@ function GalaxyMap({ user, planets, onClose }) {
                         backgroundPosition: 'center',
                         backgroundRepeat: 'no-repeat'
                       }}
-                      onClick={() => handleExploreSystem(system)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedSystem(system);
+                      }}
                       title={`${system.x}:${system.y}:${system.z} - ${system.explored ? `${system.planets} planets` : 'Unexplored'}${isOwnedByUser ? ' (Your Colony)' : isEnemyColony ? ' (Enemy Colony)' : ''}`}
                     >
                       <div className="text-center">
@@ -693,8 +627,16 @@ function GalaxyMap({ user, planets, onClose }) {
                 <span>Your Colonies</span>
               </div>
               <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-purple-600 rounded-full"></div>
+                <span>Alliance</span>
+              </div>
+              <div className="flex items-center space-x-2">
                 <div className="w-3 h-3 bg-red-600 rounded-full"></div>
                 <span>Enemy Colonies</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-orange-600 rounded-full"></div>
+                <span>Pirate Camps</span>
               </div>
               <div className="flex items-center space-x-2">
                 <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
@@ -715,6 +657,12 @@ function GalaxyMap({ user, planets, onClose }) {
             onClose={() => setSelectedSystem(null)}
             onColonize={handleColonizePlanet}
             loading={loading}
+            userId={user?.id}
+            centerX={centerX}
+            centerY={centerY}
+            centerZ={centerZ}
+            onNavigateSection={onNavigateSection}
+            onExplore={handleExploreSystem}
           />
         )}
       </div>
@@ -722,71 +670,31 @@ function GalaxyMap({ user, planets, onClose }) {
   );
 }
 
-// Enhanced Planet Card Component with Colonization Indicators
-function PlanetCard({ planet, onColonize, loading, centerX, centerY, centerZ }) {
-  // Calculate colonization difficulty
-  const colonizationDifficulty = (() => {
-    if (!planet || planet.user_id) return null;
+function PlanetCard({
+  planet,
+  loading,
+  centerX,
+  centerY,
+  centerZ,
+  userId,
+  onAttack = () => {},
+  onSpy = () => {},
+  onRecycle = () => {},
+  onQuickColonize,
+  onColonize = () => {},
+}) {
+  const isOwnedByUser = planet?.user_id != null && planet.user_id === userId;
+  const isUnowned = planet?.user_id == null;
+  const isEnemy = planet?.user_id != null && planet.user_id !== userId;
 
-    // Calculate distance from origin (0,0,0)
-    const distanceFromOrigin = Math.sqrt(
-      Math.pow(planet.x || 0, 2) +
-      Math.pow(planet.y || 0, 2) +
-      Math.pow(planet.z || 0, 2)
-    ) / 3;
-
-    // Difficulty formula: min(5, max(1, floor(distance / 200)))
-    const difficulty = Math.min(5, Math.max(1, Math.floor(distanceFromOrigin / 200)));
-    return difficulty;
-  })();
-
-  // Check if user can colonize (placeholder - should come from user research data)
-  const userColonizationLevel = 3; // Placeholder - should come from user research data
-  const canColonize = colonizationDifficulty && userColonizationLevel >= colonizationDifficulty;
-
-  // Generate mock traits for demonstration (in real implementation, this would come from API)
-  const mockTraits = planet.user_id ? [] : [
-    { name: 'Rich Metal', bonus: 25 },
-    { name: 'Crystal Rich', bonus: 15 }
-  ];
-
-  // Get difficulty color and icon
-  const getDifficultyDisplay = (difficulty) => {
-    if (!difficulty) return null;
-
-    const colors = {
-      1: { bg: 'bg-green-600', text: 'text-green-300', icon: '⭐' },
-      2: { bg: 'bg-blue-600', text: 'text-blue-300', icon: '⭐⭐' },
-      3: { bg: 'bg-yellow-600', text: 'text-yellow-300', icon: '⭐⭐⭐' },
-      4: { bg: 'bg-orange-600', text: 'text-orange-300', icon: '⭐⭐⭐⭐' },
-      5: { bg: 'bg-red-600', text: 'text-red-300', icon: '⭐⭐⭐⭐⭐' }
-    };
-
-    const color = colors[difficulty] || colors[1];
-    return { ...color, difficulty };
-  };
-
-  const difficultyDisplay = getDifficultyDisplay(colonizationDifficulty);
+  const debris = planet?.debris || { metal: 0, crystal: 0, deuterium: 0 };
+  const debrisTotal = (debris.metal || 0) + (debris.crystal || 0) + (debris.deuterium || 0);
 
   return (
-    <div className={`bg-gray-600 rounded-lg p-4 border-2 transition-all duration-200 ${
-      planet.user_id
-        ? 'border-blue-500 bg-gray-600'
-        : canColonize
-          ? 'border-green-500 bg-gray-700 hover:bg-gray-650'
-          : 'border-red-500 bg-gray-700 opacity-75'
-    }`}>
-      {/* Planet Header */}
-      <div className="flex justify-between items-start mb-3">
+    <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
+      <div className="flex justify-between items-start gap-4">
         <div className="flex-1">
-          <h4 className="text-white font-bold text-lg flex items-center">
-            🪐 {planet.name}
-            {difficultyDisplay && (
-              <span className={`ml-2 px-2 py-1 text-xs rounded ${difficultyDisplay.bg} ${difficultyDisplay.text}`}>
-                {difficultyDisplay.icon} Difficulty {difficultyDisplay.difficulty}
-              </span>
-            )}
-          </h4>
+          <div className="text-white font-bold text-lg">🪐 {planet.name}</div>
           <div className="text-sm text-gray-300">
             {planet.coordinates || `${planet.x}:${planet.y}:${planet.z}`}
           </div>
@@ -796,134 +704,66 @@ function PlanetCard({ planet, onColonize, loading, centerX, centerY, centerZ }) 
             ))} units
           </div>
         </div>
-        <div className="text-right ml-4">
-          {planet.owner_name ? (
-            <span className="text-blue-400 text-sm font-medium px-2 py-1 bg-blue-900 rounded">
-              Owned by {planet.owner_name}
-            </span>
-          ) : (
-            <span className="text-green-400 text-sm font-medium px-2 py-1 bg-green-900 rounded">
-              Unowned
+
+        <div className="text-right">
+          {isUnowned && (
+            <span className="text-green-300 text-xs font-medium px-2 py-1 bg-green-900 rounded">Unowned</span>
+          )}
+          {isOwnedByUser && (
+            <span className="text-blue-300 text-xs font-medium px-2 py-1 bg-blue-900 rounded">Your planet</span>
+          )}
+          {isEnemy && (
+            <span className="text-red-300 text-xs font-medium px-2 py-1 bg-red-900 rounded">
+              {planet.owner_name ? `Enemy: ${planet.owner_name}` : 'Enemy'}
             </span>
           )}
         </div>
       </div>
 
-      {/* Colonization Requirements */}
-      {!planet.user_id && colonizationDifficulty && (
-        <div className="mb-3 p-3 bg-gray-800 rounded border">
-          <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
-            🚀 Colonization Requirements
-          </h5>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400">Difficulty:</span>
-              <span className={`font-bold ${canColonize ? 'text-green-400' : 'text-red-400'}`}>
-                {colonizationDifficulty}/5
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400">Your Level:</span>
-              <span className="text-blue-400 font-bold">{userColonizationLevel}</span>
-            </div>
-          </div>
-          {!canColonize && (
-            <div className="mt-2 text-xs text-red-400 bg-red-900 bg-opacity-50 p-2 rounded">
-              ⚠️ Requires colonization technology level {colonizationDifficulty}
-            </div>
-          )}
+      {debrisTotal > 0 && (
+        <div className="mt-3 text-xs text-gray-200 bg-gray-800 border border-gray-600 rounded p-2">
+          Debris: {debris.metal.toLocaleString()} metal, {debris.crystal.toLocaleString()} crystal, {debris.deuterium.toLocaleString()} deut
         </div>
       )}
 
-      {/* Planet Traits */}
-      {mockTraits.length > 0 && (
-        <div className="mb-3">
-          <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
-            🎯 Planet Traits:
-          </h5>
-          <div className="flex flex-wrap gap-1">
-            {mockTraits.map((trait, index) => (
-              <span key={index} className="px-2 py-1 bg-purple-600 text-white text-xs rounded flex items-center">
-                {trait.name} (+{trait.bonus}%)
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Resources */}
-      <div className="mb-3">
-        <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
-          💎 Resources:
-        </h5>
-        <div className="grid grid-cols-3 gap-2 text-sm">
-          <div className="bg-gray-700 p-2 rounded text-center border border-yellow-600">
-            <div className="text-yellow-400 font-bold text-lg">
-              {planet.metal?.toLocaleString() || 0}
-            </div>
-            <div className="text-gray-400 text-xs">Metal</div>
-          </div>
-          <div className="bg-gray-700 p-2 rounded text-center border border-blue-600">
-            <div className="text-blue-400 font-bold text-lg">
-              {planet.crystal?.toLocaleString() || 0}
-            </div>
-            <div className="text-gray-400 text-xs">Crystal</div>
-          </div>
-          <div className="bg-gray-700 p-2 rounded text-center border border-green-600">
-            <div className="text-green-400 font-bold text-lg">
-              {planet.deuterium?.toLocaleString() || 0}
-            </div>
-            <div className="text-gray-400 text-xs">Deuterium</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Structures */}
-      {(planet.metal_mine > 0 || planet.crystal_mine > 0) && (
-        <div className="mb-3">
-          <h5 className="text-gray-300 text-sm font-medium mb-2 flex items-center">
-            🏭 Structures:
-          </h5>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
-              <span className="text-gray-400">Metal Mine:</span>
-              <span className="text-yellow-400 font-bold">Lv.{planet.metal_mine || 0}</span>
-            </div>
-            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
-              <span className="text-gray-400">Crystal Mine:</span>
-              <span className="text-blue-400 font-bold">Lv.{planet.crystal_mine || 0}</span>
-            </div>
-            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
-              <span className="text-gray-400">Deut. Synth:</span>
-              <span className="text-green-400 font-bold">Lv.{planet.deuterium_synthesizer || 0}</span>
-            </div>
-            <div className="flex justify-between items-center bg-gray-700 p-2 rounded">
-              <span className="text-gray-400">Solar Plant:</span>
-              <span className="text-orange-400 font-bold">Lv.{planet.solar_plant || 0}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="flex justify-end space-x-2 pt-2 border-t border-gray-500">
-        {!planet.user_id && (
+      <div className="flex justify-end gap-2 mt-3">
+        {debrisTotal > 0 && (
           <button
-            onClick={() => onColonize(planet)}
-            className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium transition-colors flex items-center"
+            onClick={() => onRecycle(planet)}
+            className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm"
             disabled={loading}
           >
-            🚀 {loading ? 'Colonizing...' : 'Colonize Planet'}
+            Send recyclers
           </button>
         )}
-        {planet.user_id && planet.user_id !== 'current_user_id' && (
-          <button className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-medium transition-colors flex items-center">
-            ⚔️ Attack
+
+        {isUnowned && (
+          <button
+            onClick={() => (onQuickColonize ? onQuickColonize(planet) : onColonize(planet))}
+            className="px-3 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm"
+            disabled={loading}
+          >
+            Colonize
           </button>
         )}
-        {planet.user_id && planet.user_id === 'current_user_id' && (
-          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-medium transition-colors flex items-center">
-            📊 View Details
+
+        {isEnemy && (
+          <button
+            onClick={() => onSpy(planet)}
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm"
+            disabled={loading}
+          >
+            Spy
+          </button>
+        )}
+
+        {isEnemy && (
+          <button
+            onClick={() => onAttack(planet)}
+            className="px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm"
+            disabled={loading}
+          >
+            Attack
           </button>
         )}
       </div>
@@ -936,9 +776,10 @@ function SystemStatistics({ system, planets }) {
   const totalPlanets = planets.length;
   const ownedPlanets = planets.filter(p => p.user_id).length;
   const unownedPlanets = totalPlanets - ownedPlanets;
-  const totalResources = planets.reduce((sum, p) =>
-    sum + (p.metal || 0) + (p.crystal || 0) + (p.deuterium || 0), 0
-  );
+  const totalDebris = planets.reduce((sum, p) => {
+    const d = p?.debris || {};
+    return sum + (d.metal || 0) + (d.crystal || 0) + (d.deuterium || 0);
+  }, 0);
 
   return (
     <div className="bg-gray-700 rounded-lg p-4 mb-4 border border-gray-600">
@@ -959,8 +800,8 @@ function SystemStatistics({ system, planets }) {
           <div className="text-gray-400 text-xs">Available</div>
         </div>
         <div className="text-center bg-gray-800 p-3 rounded">
-          <div className="text-2xl font-bold text-yellow-400">{totalResources.toLocaleString()}</div>
-          <div className="text-gray-400 text-xs">Total Resources</div>
+          <div className="text-2xl font-bold text-purple-300">{totalDebris.toLocaleString()}</div>
+          <div className="text-gray-400 text-xs">Debris Total</div>
         </div>
       </div>
     </div>
@@ -968,14 +809,8 @@ function SystemStatistics({ system, planets }) {
 }
 
 // Enhanced System Details Component
-function SystemDetails({ system, onClose, onColonize, loading }) {
+function SystemDetails({ system, onClose, onColonize, loading, userId, centerX, centerY, centerZ, onNavigateSection, onExplore }) {
   const [planets, setPlanets] = useState([]);
-
-  // Get user's home coordinates for distance calculation
-  const homePlanet = planets.find(p => p.user_id === 'current_user_id');
-  const centerX = homePlanet?.x || 100;
-  const centerY = homePlanet?.y || 200;
-  const centerZ = homePlanet?.z || 300;
 
   useEffect(() => {
     fetchSystemPlanets();
@@ -983,40 +818,21 @@ function SystemDetails({ system, onClose, onColonize, loading }) {
 
   const fetchSystemPlanets = async () => {
     try {
-      console.log('🌌 Fetching system planets:', `http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`);
-
-      // Get JWT token from localStorage (following fleet test pattern)
-      const token = localStorage.getItem('token');
-      console.log('DEBUG: JWT token present for system planets API:', !!token);
-
-      const response = await fetch(`http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
-      });
-
-      console.log('DEBUG: System planets API response status:', response.status);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('✅ System planets fetched successfully:', data);
-      setPlanets(data);
+      const res = await axios.get(`/api/galaxy/system/${system.x}/${system.y}/${system.z}`);
+      setPlanets(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
-      console.error('❌ Error fetching system planets:', {
-        message: error.message,
-        status: error.status,
-        url: `http://localhost:5000/api/galaxy/system/${system.x}/${system.y}/${system.z}`
-      });
-
-      // Add fallback data for testing
-      console.log('🔧 Using fallback empty planets data');
+      console.error('❌ Error fetching system planets:', error);
       setPlanets([]);
     }
+  };
+
+  const goToFleetsWithPreset = (preset) => {
+    try {
+      localStorage.setItem('fleetSendPreset', JSON.stringify(preset));
+    } catch (e) {
+      console.warn('Failed to set fleetSendPreset:', e);
+    }
+    if (typeof onNavigateSection === 'function') onNavigateSection('fleets');
   };
 
   return (
@@ -1053,6 +869,21 @@ function SystemDetails({ system, onClose, onColonize, loading }) {
       {/* System Statistics */}
       <SystemStatistics system={system} planets={planets} />
 
+      {/* Exploration CTA for unexplored systems */}
+      {!system.explored && (
+        <div className="mb-4 bg-gray-900 border border-gray-600 rounded p-3">
+          <div className="text-gray-200 font-medium mb-2">Unexplored system</div>
+          <div className="text-gray-400 text-sm mb-3">Send an exploration fleet to reveal planets in this system.</div>
+          <button
+            onClick={() => onExplore?.(system)}
+            disabled={loading}
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white rounded text-sm"
+          >
+            🚀 Send exploration fleet
+          </button>
+        </div>
+      )}
+
       {/* Planets List */}
       <div>
         <h4 className="text-white font-bold mb-4 flex items-center">
@@ -1076,6 +907,11 @@ function SystemDetails({ system, onClose, onColonize, loading }) {
                 centerX={centerX}
                 centerY={centerY}
                 centerZ={centerZ}
+                userId={userId}
+                onAttack={(p) => goToFleetsWithPreset({ mission: 'attack', target_planet_id: p.id })}
+                onSpy={(p) => goToFleetsWithPreset({ mission: 'espionage', target_planet_id: p.id })}
+                onRecycle={(p) => goToFleetsWithPreset({ mission: 'recycle', target_planet_id: p.id })}
+                onQuickColonize={(p) => goToFleetsWithPreset({ mission: 'colonize', target_planet_id: p.id, target_x: p.x, target_y: p.y, target_z: p.z })}
               />
             ))}
           </div>

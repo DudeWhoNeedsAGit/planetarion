@@ -17,9 +17,11 @@ function Dashboard({ user, onLogout }) {
   const [selectedPlanet, setSelectedPlanet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
+  const [ticking, setTicking] = useState(false);
   const [pollingInterval, setPollingInterval] = useState(null);
   const [chatMinimized, setChatMinimized] = useState(false);
   const { showSuccess, showError } = useToast();
+  const showTickButton = process.env.REACT_APP_SHOW_TICK_BUTTON === 'true';
 
   useEffect(() => {
     fetchPlanets(); // Initial fetch
@@ -60,6 +62,25 @@ function Dashboard({ user, onLogout }) {
       console.error('Error fetching planets:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRunTick = async () => {
+    setTicking(true);
+    try {
+      await axios.post('/api/tick');
+      await fetchPlanets();
+      // Notify other screens (FleetManagement, Combat, etc.) to refresh.
+      try {
+        window.dispatchEvent(new CustomEvent('planetarion:tick'));
+      } catch (e) {
+        // ignore
+      }
+      showSuccess('Tick executed');
+    } catch (error) {
+      showError(error.response?.data?.error || 'Tick failed');
+    } finally {
+      setTicking(false);
     }
   };
 
@@ -126,6 +147,20 @@ function Dashboard({ user, onLogout }) {
           metal: Math.floor(900 * costMultiplier),
           crystal: Math.floor(360 * costMultiplier),
           deuterium: Math.floor(180 * costMultiplier)
+        };
+      case 'research_lab':
+        return {
+          metal: Math.floor(200 * costMultiplier),
+          crystal: Math.floor(100 * costMultiplier),
+          deuterium: Math.floor(50 * costMultiplier)
+        };
+      case 'metal_storage':
+      case 'crystal_storage':
+      case 'deuterium_tank':
+        return {
+          metal: Math.floor(100 * costMultiplier),
+          crystal: Math.floor(50 * costMultiplier),
+          deuterium: 0
         };
       default:
         return { metal: 0, crystal: 0, deuterium: 0 };
@@ -312,7 +347,8 @@ function Dashboard({ user, onLogout }) {
     const energyConsumption = (
       planet.structures.metal_mine * 10 +
       planet.structures.crystal_mine * 10 +
-      planet.structures.deuterium_synthesizer * 20
+      planet.structures.deuterium_synthesizer * 20 +
+      (planet.structures.research_lab || 0) * 15
     );
 
     const energyRatio = energyConsumption > 0 ? energyProduction / energyConsumption : 1;
@@ -335,7 +371,8 @@ function Dashboard({ user, onLogout }) {
     const currentConsumption = (
       planet.structures.metal_mine * 10 +
       planet.structures.crystal_mine * 10 +
-      planet.structures.deuterium_synthesizer * 20
+      planet.structures.deuterium_synthesizer * 20 +
+      (planet.structures.research_lab || 0) * 15
     );
 
     let additionalConsumption = 0;
@@ -343,6 +380,8 @@ function Dashboard({ user, onLogout }) {
       additionalConsumption = 10;
     } else if (buildingType === 'deuterium_synthesizer') {
       additionalConsumption = 20;
+    } else if (buildingType === 'research_lab') {
+      additionalConsumption = 15;
     }
 
     const newConsumption = currentConsumption + additionalConsumption;
@@ -390,10 +429,14 @@ function Dashboard({ user, onLogout }) {
   const renderSection = () => {
     switch (activeSection) {
       case 'overview':
-        return <Overview user={user} planets={planets} />;
+        return (
+          <div data-testid="section-overview">
+            <Overview user={user} planets={planets} />
+          </div>
+        );
       case 'planets':
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" data-testid="section-planets">
             {/* Planet Selection */}
             <div className="mb-6">
               <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
@@ -440,29 +483,44 @@ function Dashboard({ user, onLogout }) {
 
             {selectedPlanet && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Resources */}
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h3 className="text-xl font-bold mb-4 text-white">Resources</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-metal">Metal:</span>
-                      <span className="text-metal font-bold">
-                        {selectedPlanet.resources.metal.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-crystal">Crystal:</span>
-                      <span className="text-crystal font-bold">
-                        {selectedPlanet.resources.crystal.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-deuterium">Deuterium:</span>
-                      <span className="text-deuterium font-bold">
-                        {selectedPlanet.resources.deuterium.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
+	                {/* Resources */}
+	                <div className="bg-gray-800 rounded-lg p-6">
+	                  <h3 className="text-xl font-bold mb-4 text-white">Resources</h3>
+	                  <div className="space-y-3">
+	                    <div className="flex justify-between items-center">
+	                      <span className="text-metal">Metal:</span>
+	                      <span className="text-metal font-bold">
+	                        {selectedPlanet.resources.metal.toLocaleString()}
+	                        {selectedPlanet.storage?.metal != null && (
+	                          <span className="text-gray-400 text-xs font-normal ml-2">
+	                            / {selectedPlanet.storage.metal.toLocaleString()}
+	                          </span>
+	                        )}
+	                      </span>
+	                    </div>
+	                    <div className="flex justify-between items-center">
+	                      <span className="text-crystal">Crystal:</span>
+	                      <span className="text-crystal font-bold">
+	                        {selectedPlanet.resources.crystal.toLocaleString()}
+	                        {selectedPlanet.storage?.crystal != null && (
+	                          <span className="text-gray-400 text-xs font-normal ml-2">
+	                            / {selectedPlanet.storage.crystal.toLocaleString()}
+	                          </span>
+	                        )}
+	                      </span>
+	                    </div>
+	                    <div className="flex justify-between items-center">
+	                      <span className="text-deuterium">Deuterium:</span>
+	                      <span className="text-deuterium font-bold">
+	                        {selectedPlanet.resources.deuterium.toLocaleString()}
+	                        {selectedPlanet.storage?.deuterium != null && (
+	                          <span className="text-gray-400 text-xs font-normal ml-2">
+	                            / {selectedPlanet.storage.deuterium.toLocaleString()}
+	                          </span>
+	                        )}
+	                      </span>
+	                    </div>
+	                  </div>
 
                   {/* Production Rates */}
                   <div className="mt-6">
@@ -532,16 +590,20 @@ function Dashboard({ user, onLogout }) {
                   })()}
 
                   <div className="space-y-4">
-                    {[
-                      { key: 'metal_mine', name: 'Metal Mine', icon: '⛏️' },
-                      { key: 'crystal_mine', name: 'Crystal Mine', icon: '💎' },
-                      { key: 'deuterium_synthesizer', name: 'Deuterium Synthesizer', icon: '⚡' },
-                      { key: 'solar_plant', name: 'Solar Plant', icon: '☀️' },
-                      { key: 'fusion_reactor', name: 'Fusion Reactor', icon: '🔥' }
-                    ].map(building => {
-                      const currentLevel = selectedPlanet.structures[building.key];
-                      const energyStats = calculateEnergyStats(selectedPlanet);
-                      const energyImpact = calculateUpgradeEnergyImpact(building.key, currentLevel, selectedPlanet);
+                      {[
+                        { key: 'metal_mine', name: 'Metal Mine', icon: '⛏️' },
+                        { key: 'crystal_mine', name: 'Crystal Mine', icon: '💎' },
+                        { key: 'deuterium_synthesizer', name: 'Deuterium Synthesizer', icon: '⚡' },
+                        { key: 'solar_plant', name: 'Solar Plant', icon: '☀️' },
+                        { key: 'fusion_reactor', name: 'Fusion Reactor', icon: '🔥' },
+                        { key: 'research_lab', name: 'Research Lab', icon: '🔬' },
+                        { key: 'metal_storage', name: 'Metal Storage', icon: '🏪' },
+                        { key: 'crystal_storage', name: 'Crystal Storage', icon: '🏪' },
+                        { key: 'deuterium_tank', name: 'Deuterium Tank', icon: '🧪' }
+                      ].map(building => {
+                        const currentLevel = selectedPlanet.structures[building.key];
+                        const energyStats = calculateEnergyStats(selectedPlanet);
+                        const energyImpact = calculateUpgradeEnergyImpact(building.key, currentLevel, selectedPlanet);
 
                       // Enhanced production calculations with energy awareness
                       const isProductionBuilding = ['metal_mine', 'crystal_mine', 'deuterium_synthesizer'].includes(building.key);
@@ -702,12 +764,20 @@ function Dashboard({ user, onLogout }) {
           </div>
         );
       case 'fleets':
-        return <FleetManagement user={user} planets={planets} />;
+        return (
+          <div data-testid="section-fleets">
+            <FleetManagement user={user} planets={planets} />
+          </div>
+        );
       case 'combat':
-        return <CombatDashboard user={user} />;
+        return (
+          <div data-testid="section-combat">
+            <CombatDashboard user={user} onNavigateSection={setActiveSection} />
+          </div>
+        );
       case 'wheel':
         return (
-          <div className="max-w-md mx-auto">
+          <div className="max-w-md mx-auto" data-testid="section-wheel">
             <LuckyWheel
               planets={planets}
               selectedPlanet={selectedPlanet}
@@ -721,7 +791,7 @@ function Dashboard({ user, onLogout }) {
         );
       case 'research':
         return (
-          <div className="bg-gray-800 rounded-lg p-6">
+          <div className="bg-gray-800 rounded-lg p-6" data-testid="section-research">
             <h3 className="text-xl font-bold mb-4 text-white">🔬 Research Lab</h3>
             <div className="text-center text-gray-400 py-8">
               Research system coming soon! This will include technologies like:
@@ -744,7 +814,7 @@ function Dashboard({ user, onLogout }) {
               .map(([shipType, _]) => shipType);
 
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" data-testid="section-shipyard">
             {/* Shipyard Header */}
             <div className="bg-gray-800 rounded-lg p-6">
               <h3 className="text-xl font-bold mb-4 text-white">🚀 Shipyard</h3>
@@ -961,7 +1031,7 @@ function Dashboard({ user, onLogout }) {
         );
       case 'alliance':
         return (
-          <div className="bg-gray-800 rounded-lg p-6">
+          <div className="bg-gray-800 rounded-lg p-6" data-testid="section-alliance">
             <h3 className="text-xl font-bold mb-4 text-white">🤝 Alliance Center</h3>
             <div className="text-center text-gray-400 py-8">
               Alliance system coming soon! This will include:
@@ -977,7 +1047,7 @@ function Dashboard({ user, onLogout }) {
         );
       case 'messages':
         return (
-          <div className="bg-gray-800 rounded-lg p-6">
+          <div className="bg-gray-800 rounded-lg p-6" data-testid="section-messages">
             <h3 className="text-xl font-bold mb-4 text-white">💬 Messages</h3>
             <div className="text-center text-gray-400 py-8">
               Messaging system coming soon! This will include:
@@ -992,7 +1062,11 @@ function Dashboard({ user, onLogout }) {
           </div>
         );
       default:
-        return <Overview user={user} planets={planets} />;
+        return (
+          <div data-testid="section-overview">
+            <Overview user={user} planets={planets} />
+          </div>
+        );
     }
   };
 
@@ -1004,17 +1078,28 @@ function Dashboard({ user, onLogout }) {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-space-dark">
-      <header className="bg-space-blue p-4">
-        <div className="container mx-auto flex justify-between items-center">
-          <h1 className="text-3xl font-bold">🌌 Planetarion</h1>
-          <div className="flex items-center space-x-4">
-            <span className="text-white">Welcome, {user.username}!</span>
-            <button
-              onClick={onLogout}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
-            >
+	  return (
+	    <div className="min-h-screen bg-space-dark" data-testid="dashboard">
+	      <header className="bg-space-blue p-4">
+	        <div className="container mx-auto flex justify-between items-center">
+	          <h1 className="text-3xl font-bold">🌌 Planetarion</h1>
+	          <div className="flex items-center space-x-4">
+	            <span className="text-white">Welcome, {user.username}!</span>
+	            {showTickButton && (
+	              <button
+	                onClick={handleRunTick}
+	                data-testid="run-tick-button"
+	                disabled={ticking}
+	                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white px-3 py-2 rounded text-sm"
+	              >
+	                {ticking ? 'Ticking…' : 'Run tick'}
+	              </button>
+	            )}
+	            <button
+	              onClick={onLogout}
+	              data-testid="logout-button"
+	              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+	            >
               Logout
             </button>
           </div>
@@ -1027,14 +1112,15 @@ function Dashboard({ user, onLogout }) {
         {renderSection()}
       </main>
 
-      {/* Galaxy Map Modal */}
-      {activeSection === 'galaxy' && (
-        <GalaxyMap
-          user={user}
-          planets={planets}
-          onClose={() => setActiveSection('overview')}
-        />
-      )}
+	      {/* Galaxy Map Modal */}
+	      {activeSection === 'galaxy' && (
+	        <GalaxyMap
+	          user={user}
+	          planets={planets}
+	          onNavigateSection={setActiveSection}
+	          onClose={() => setActiveSection('overview')}
+	        />
+	      )}
 
       {/* Global Chat Panel */}
       <ChatPanel

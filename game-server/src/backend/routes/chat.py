@@ -156,7 +156,7 @@ def send_message():
 
     try:
         # Get current user
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         print(f"DEBUG: User ID: {current_user_id}")
 
         # Get request data
@@ -224,7 +224,7 @@ def send_system_message():
 
     try:
         # Get current user (for logging)
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         user = User.query.get(current_user_id)
 
         if not user:

@@ -1,8 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+import inspect
 from backend.database import db
-from backend.models import Planet, Fleet, TickLog
+from backend.models import Planet, Fleet, TickLog, User
 from flask import current_app
 import math
+from backend.config import get_planet_storage_caps
+
+RESPAWN_PROTECTION_MINUTES_DEFAULT = 10
 
 def run_tick():
     """Main tick function that runs every 5 seconds"""
@@ -15,11 +19,19 @@ def run_tick():
 
     # Execute normal tick operations
     resource_changes = process_resource_generation()
-    fleet_updates = process_fleet_movements(tick_start_time)
+    # Fleet arrivals/missions are processed by FleetArrivalService. We intentionally
+    # avoid mutating fleet statuses here to prevent prematurely "stationing" fleets
+    # before mission handlers run.
+    fleet_updates = []
 
     # Process arrived fleets using the FleetArrivalService
     from .fleet_arrival import FleetArrivalService
     FleetArrivalService.process_arrived_fleets()
+
+    # Process player elimination/respawn lifecycle (Phase 7).
+    # We intentionally separate "mark eliminated" from "respawn" so the respawn happens
+    # on the next tick (within 1 tick), matching the spec and keeping capture assertions stable.
+    process_player_elimination_and_respawn(tick_start_time)
 
     # Log tick completion with guard statistics
     tick_end_time = datetime.utcnow()
@@ -28,6 +40,126 @@ def run_tick():
     print(f"Tick {tick_number} completed at {tick_end_time} (Guard: {guard_corrections} corrections)")
 
     return resource_changes  # Return changes for manual tick endpoint
+
+
+def process_player_elimination_and_respawn(tick_start_time: datetime) -> None:
+    """Mark players eliminated (0 planets) and respawn them on the next tick.
+
+    Rules (MVP):
+    - A player is eliminated when they have 0 planets.
+    - On the *next* tick after elimination, they receive:
+      - a new home planet (is_home_planet=True)
+      - starter resources
+      - a stationed starter fleet
+      - a protection window (attack blocked; UI TBD)
+    """
+
+    now = datetime.utcnow()
+
+    # Mark newly eliminated users.
+    # Exclude pirates NPC user.
+    users = User.query.all()
+    for user in users:
+        if user.username == "pirates":
+            continue
+        planet_count = Planet.query.filter_by(user_id=user.id).count()
+        if planet_count == 0 and user.eliminated_at is None:
+            user.eliminated_at = now
+
+    db.session.commit()
+
+    raw_protection = current_app.config.get("RESPAWN_PROTECTION_MINUTES", RESPAWN_PROTECTION_MINUTES_DEFAULT)
+    # Some unit tests patch current_app with a MagicMock; guard against non-ints/awaitables.
+    if inspect.isawaitable(raw_protection):
+        raw_protection = None
+    try:
+        protection_minutes = int(raw_protection) if raw_protection is not None else RESPAWN_PROTECTION_MINUTES_DEFAULT
+    except (TypeError, ValueError):
+        protection_minutes = RESPAWN_PROTECTION_MINUTES_DEFAULT
+    protection_until = now + timedelta(minutes=max(0, protection_minutes))
+
+    # Respawn users that have been eliminated on a *previous* tick.
+    for user in users:
+        if user.username == "pirates":
+            continue
+        planet_count = Planet.query.filter_by(user_id=user.id).count()
+        if planet_count != 0:
+            continue
+        if user.eliminated_at is None:
+            continue
+        if user.respawned_at is not None and (user.eliminated_at <= user.respawned_at):
+            continue
+        # Ensure respawn happens on the tick *after* elimination.
+        if not (user.eliminated_at < tick_start_time):
+            continue
+
+        user.respawn_count = int(user.respawn_count or 0) + 1
+        user.respawned_at = now
+        user.protection_until = protection_until
+
+        home_planet = _create_respawn_home_planet(user, now)
+        _create_respawn_starter_fleet(user, home_planet, now)
+
+    db.session.commit()
+
+
+def _create_respawn_home_planet(user: User, now: datetime) -> Planet:
+    """Create a deterministic respawn home planet for a user (SQLite-friendly, test-stable)."""
+    base_x = 2000 + (user.id * 17) + (int(user.respawn_count or 1) * 3)
+    base_y = 2000 + (user.id * 11) + (int(user.respawn_count or 1) * 7)
+    base_z = 1000
+
+    x, y, z = base_x, base_y, base_z
+    # Ensure uniqueness (simple deterministic probing).
+    for i in range(50):
+        if Planet.query.filter_by(x=x, y=y, z=z).first() is None:
+            break
+        x += 1
+        y += 1
+        z += 0
+
+    planet = Planet(
+        name=f"{user.username.title()} Respawn {user.respawn_count}",
+        x=x,
+        y=y,
+        z=z,
+        user_id=user.id,
+        is_home_planet=True,
+        colonized_at=now,
+        metal=150_000,
+        crystal=100_000,
+        deuterium=50_000,
+        metal_mine=8,
+        crystal_mine=6,
+        deuterium_synthesizer=4,
+        solar_plant=12,
+    )
+    db.session.add(planet)
+    db.session.flush()
+    return planet
+
+
+def _create_respawn_starter_fleet(user: User, home_planet: Planet, now: datetime) -> Fleet:
+    fleet = Fleet(
+        user_id=user.id,
+        mission="stationed",
+        status="stationed",
+        start_planet_id=home_planet.id,
+        target_planet_id=home_planet.id,
+        departure_time=now,
+        arrival_time=now,
+        eta=0,
+        small_cargo=5,
+        large_cargo=2,
+        light_fighter=20,
+        heavy_fighter=10,
+        recycler=2,
+        espionage_probe=2,
+        colony_ship=1,
+    )
+    db.session.add(fleet)
+    db.session.flush()
+    return fleet
 
 def get_next_tick_number():
     """Get the next tick number"""
@@ -40,6 +172,10 @@ def process_resource_generation():
     changes = []
 
     for planet in planets:
+        before_metal = planet.metal
+        before_crystal = planet.crystal
+        before_deuterium = planet.deuterium
+
         # Calculate production rates with planet trait bonuses
         metal_rate = calculate_production_rate(planet.metal_mine, 'metal', planet)
         crystal_rate = calculate_production_rate(planet.crystal_mine, 'crystal', planet)
@@ -49,7 +185,8 @@ def process_resource_generation():
         energy_production = planet.solar_plant * 20 + planet.fusion_reactor * 50
         energy_consumption = (planet.metal_mine * 10 +
                             planet.crystal_mine * 10 +
-                            planet.deuterium_synthesizer * 20)
+                            planet.deuterium_synthesizer * 20 +
+                            (planet.research_lab or 0) * 15)
 
         # Apply energy efficiency
         energy_ratio = min(1.0, energy_production / energy_consumption) if energy_consumption > 0 else 1.0
@@ -60,16 +197,20 @@ def process_resource_generation():
         tick_crystal = max(1, int(crystal_rate * energy_ratio / 72)) if planet.crystal_mine > 0 else 0
         tick_deuterium = max(1, int(deuterium_rate * energy_ratio / 72)) if planet.deuterium_synthesizer > 0 else 0
 
-        # Update planet resources
-        planet.metal += tick_metal
-        planet.crystal += tick_crystal
-        planet.deuterium += tick_deuterium
+        # Update planet resources with storage caps (do not reduce existing resources above cap).
+        caps = get_planet_storage_caps(planet)
+        if planet.metal < caps["metal"]:
+            planet.metal = min(planet.metal + tick_metal, caps["metal"])
+        if planet.crystal < caps["crystal"]:
+            planet.crystal = min(planet.crystal + tick_crystal, caps["crystal"])
+        if planet.deuterium < caps["deuterium"]:
+            planet.deuterium = min(planet.deuterium + tick_deuterium, caps["deuterium"])
 
         changes.append({
             'planet_id': planet.id,
-            'metal_change': tick_metal,
-            'crystal_change': tick_crystal,
-            'deuterium_change': tick_deuterium
+            'metal_change': planet.metal - before_metal,
+            'crystal_change': planet.crystal - before_crystal,
+            'deuterium_change': planet.deuterium - before_deuterium
         })
 
     db.session.commit()
@@ -108,89 +249,11 @@ def process_fleet_movements(current_time):
     # Find fleets that have arrived
     arrived_fleets = Fleet.query.filter(
         Fleet.arrival_time <= current_time,
-        Fleet.status.in_(['traveling', 'returning']) |
-        Fleet.status.like('colonizing:%') |
-        Fleet.status.like('exploring:%')
+        Fleet.status.in_(['traveling', 'returning'])
     ).all()
 
     for fleet in arrived_fleets:
-        if fleet.status.startswith('colonizing:'):
-            # Handle enhanced colonization with trait bonuses
-            coords = fleet.status.split(':')[1:]  # Extract coordinates
-            x, y, z = map(int, coords)
-
-            # Double-check coordinates are still empty
-            existing_planet = Planet.query.filter_by(x=x, y=y, z=z).first()
-            if existing_planet:
-                # Coordinates occupied, fleet returns
-                fleet.status = 'returning'
-                fleet.mission = 'return'
-                fleet.arrival_time = current_time + (fleet.arrival_time - fleet.departure_time)  # Same travel time back
-                updates.append({
-                    'fleet_id': fleet.id,
-                    'event_type': 'colonization_failed',
-                    'description': f'Colonization failed - coordinates {x}:{y}:{z} already occupied'
-                })
-            else:
-                # Check colonization difficulty and user research level
-                from backend.services.planet_traits import PlanetTraitService
-                colonization_difficulty = PlanetTraitService.calculate_colonization_difficulty(x, y, z)
-
-                # Get user's research level
-                user_research_level = get_user_research_level(fleet.user_id)
-
-                if colonization_difficulty > user_research_level:
-                    # Insufficient technology, fleet returns
-                    fleet.status = 'returning'
-                    fleet.mission = 'return'
-                    fleet.arrival_time = current_time + (fleet.arrival_time - fleet.departure_time)
-                    updates.append({
-                        'fleet_id': fleet.id,
-                        'event_type': 'colonization_failed',
-                        'description': f'Colonization failed - difficulty {colonization_difficulty} requires research level {colonization_difficulty}'
-                    })
-                else:
-                    # Create new colony with enhanced starting resources based on traits
-                    colony_name = generate_colony_name(fleet.user_id, x, y, z)
-
-                    # Calculate starting resources based on planet traits
-                    starting_resources = calculate_starting_resources(x, y, z)
-
-                    colony = Planet(
-                        name=colony_name,
-                        x=x,
-                        y=y,
-                        z=z,
-                        user_id=fleet.user_id,
-                        metal=starting_resources['metal'],
-                        crystal=starting_resources['crystal'],
-                        deuterium=starting_resources['deuterium'],
-                        metal_mine=1,   # Basic structures
-                        crystal_mine=1,
-                        deuterium_synthesizer=0,
-                        solar_plant=1,
-                        fusion_reactor=0
-                    )
-                    db.session.add(colony)
-                    db.session.flush()  # Get the colony ID
-
-                    # Generate planet traits for the colony
-                    traits = PlanetTraitService.generate_planet_traits(colony)
-                    db.session.add_all(traits)
-
-                    # Update fleet
-                    fleet.status = 'stationed'
-                    fleet.target_planet_id = colony.id
-                    fleet.start_planet_id = colony.id
-
-                    trait_names = [t.trait_name for t in traits]
-                    updates.append({
-                        'fleet_id': fleet.id,
-                        'event_type': 'colonization_success',
-                        'description': f'New colony "{colony_name}" established at {x}:{y}:{z} with traits: {", ".join(trait_names)}'
-                    })
-
-        elif fleet.status == 'traveling':
+        if fleet.status == 'traveling':
             # Fleet has arrived at destination
             fleet.status = 'stationed'
             fleet.start_planet_id = fleet.target_planet_id  # Update start planet
@@ -199,12 +262,6 @@ def process_fleet_movements(current_time):
                 'event_type': 'arrival',
                 'description': f'Fleet arrived at planet {fleet.target_planet_id}'
             })
-        elif fleet.status.startswith('exploring:'):
-            # Handle exploration - delegate to FleetArrivalService for consistency
-            print(f"DEBUG: Exploration fleet {fleet.id} arrived, delegating to FleetArrivalService")
-            # Don't process here - let FleetArrivalService handle it
-            continue
-
         elif fleet.status == 'returning':
             # Fleet has returned to origin
             fleet.status = 'stationed'

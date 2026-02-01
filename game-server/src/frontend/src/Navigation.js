@@ -22,6 +22,7 @@ function Navigation({ activeSection, onSectionChange }) {
             <button
               key={item.id}
               onClick={() => onSectionChange(item.id)}
+              data-testid={`nav-${item.id}`}
               className={`flex items-center space-x-2 px-4 py-3 rounded-t-lg font-medium whitespace-nowrap transition-colors ${
                 activeSection === item.id
                   ? 'bg-space-blue text-white border-b-2 border-blue-400'

@@ -1,5 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
 import './BattleReports.css';
+
+const formatShipLabel = (key) =>
+  String(key || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (l) => l.toUpperCase());
+
+const formatNumber = (value) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString();
+};
 
 const BattleReports = ({ user }) => {
   const [reports, setReports] = useState([]);
@@ -17,22 +29,9 @@ const BattleReports = ({ user }) => {
   const fetchBattleReports = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/combat/reports?filter=${filter}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Defensive: ensure we have an array from the reports property
-        const reportsArray = Array.isArray(data.reports) ? data.reports : [];
-        setReports(reportsArray);
-      } else {
-        console.error('Failed to fetch battle reports');
-        setReports([]); // Set empty array on error
-      }
+      const response = await axios.get('/api/combat/reports', { params: { limit: 50, offset: 0 } });
+      const reportsArray = Array.isArray(response.data?.reports) ? response.data.reports : [];
+      setReports(reportsArray);
     } catch (error) {
       console.error('Error fetching battle reports:', error);
       setReports([]); // Set empty array on error
@@ -57,12 +56,27 @@ const BattleReports = ({ user }) => {
 
   const calculateTotalLosses = (lossesJson) => {
     try {
-      const losses = JSON.parse(lossesJson);
-      return Object.values(losses).reduce((total, count) => total + count, 0);
+      const losses = typeof lossesJson === 'string' ? JSON.parse(lossesJson) : (lossesJson || {});
+      return Object.values(losses).reduce((total, count) => total + (count || 0), 0);
     } catch {
       return 0;
     }
   };
+
+  const filteredReports = useMemo(() => {
+    const now = Date.now();
+    return (reports || []).filter((report) => {
+      if (!report) return false;
+      const isVictory = report?.winner?.id === user?.id;
+      if (filter === 'victories') return isVictory;
+      if (filter === 'defeats') return !isVictory;
+      if (filter === 'recent') {
+        const ts = report?.timestamp ? new Date(report.timestamp).getTime() : 0;
+        return ts > 0 && now - ts <= 24 * 60 * 60 * 1000;
+      }
+      return true;
+    });
+  }, [reports, filter, user?.id]);
 
   return (
     <div className="battle-reports">
@@ -83,13 +97,14 @@ const BattleReports = ({ user }) => {
       {loading && <div className="loading">Loading battle reports...</div>}
 
       <div className="reports-list">
-        {reports.length === 0 && !loading ? (
+        {filteredReports.length === 0 && !loading ? (
           <div className="no-reports">No battle reports found</div>
         ) : (
-          reports.map(report => (
+          filteredReports.map(report => (
             <BattleReportCard
               key={report.id}
               report={report}
+              userId={user?.id}
               onClick={() => setSelectedReport(report)}
               formatTimeAgo={formatTimeAgo}
               calculateTotalLosses={calculateTotalLosses}
@@ -99,20 +114,25 @@ const BattleReports = ({ user }) => {
       </div>
 
       {selectedReport && (
-        <BattleReportDetail
+        <BattleReportDetailModal
           report={selectedReport}
           onClose={() => setSelectedReport(null)}
           formatTimeAgo={formatTimeAgo}
           calculateTotalLosses={calculateTotalLosses}
+          userId={user?.id}
         />
       )}
     </div>
   );
 };
 
-const BattleReportCard = ({ report, onClick, formatTimeAgo, calculateTotalLosses }) => {
-  const isVictory = report.winner_id === report.attacker_id;
+const BattleReportCard = ({ report, userId, onClick, formatTimeAgo, calculateTotalLosses }) => {
+  const isVictory = report?.winner?.id === userId;
   const timeAgo = formatTimeAgo(report.timestamp);
+  const planetName = report?.planet?.name || `Planet ${report?.planet?.id || 'N/A'}`;
+  const coords = report?.planet?.coordinates ? `(${report.planet.coordinates})` : '';
+  const attackerLosses = calculateTotalLosses(report.attacker_losses);
+  const defenderLosses = calculateTotalLosses(report.defender_losses);
 
   return (
     <div
@@ -124,31 +144,27 @@ const BattleReportCard = ({ report, onClick, formatTimeAgo, calculateTotalLosses
           {isVictory ? '🏆' : '💀'}
         </div>
         <div className="battle-info">
-          <h3>{report.planet_name || `Planet ${report.planet_id}`}</h3>
-          <p>{report.attacker_name} vs {report.defender_name}</p>
+          <h3>{planetName} <span className="coords">{coords}</span></h3>
+          <p>{report?.attacker?.username || 'Unknown'} vs {report?.defender?.username || 'Unknown'}</p>
           <span className="timestamp">{timeAgo}</span>
         </div>
       </div>
 
       <div className="casualties-summary">
-        <div className="attacker-losses">
-          Attacker: {calculateTotalLosses(report.attacker_losses)} ships lost
-        </div>
-        <div className="defender-losses">
-          Defender: {calculateTotalLosses(report.defender_losses)} ships lost
-        </div>
+        <div className="attacker-losses">Attacker lost: <strong>{formatNumber(attackerLosses)}</strong></div>
+        <div className="defender-losses">Defender lost: <strong>{formatNumber(defenderLosses)}</strong></div>
       </div>
 
-      {(report.debris_metal > 0 || report.debris_crystal > 0) && (
+      {(report.debris_metal > 0 || report.debris_crystal > 0 || report.debris_deuterium > 0) && (
         <div className="debris-info">
-          Debris: {report.debris_metal} Metal, {report.debris_crystal} Crystal
+          Debris: {formatNumber(report.debris_metal)} Metal, {formatNumber(report.debris_crystal)} Crystal, {formatNumber(report.debris_deuterium)} Deut
         </div>
       )}
     </div>
   );
 };
 
-const BattleReportDetail = ({ report, onClose, formatTimeAgo, calculateTotalLosses }) => {
+export const BattleReportDetailModal = ({ report, onClose, formatTimeAgo, calculateTotalLosses, userId }) => {
   const [roundDetails, setRoundDetails] = useState([]);
 
   useEffect(() => {
@@ -162,64 +178,81 @@ const BattleReportDetail = ({ report, onClose, formatTimeAgo, calculateTotalLoss
     }
   }, [report]);
 
-  const isVictory = report.winner_id === report.attacker_id;
+  const isVictory = report?.winner?.id === userId;
+  const attackerName = report?.attacker?.username || 'Unknown';
+  const defenderName = report?.defender?.username || 'Unknown';
+  const winnerName = report?.winner?.username || 'Unknown';
+  const planetName = report?.planet?.name || 'Unknown';
+  const coords = report?.planet?.coordinates ? report.planet.coordinates : '';
 
   return (
     <div className="battle-report-detail modal">
-      <div className="modal-header">
-        <h2>Detailed Battle Report</h2>
-        <button onClick={onClose} className="close-button">×</button>
-      </div>
-
-      <div className="battle-summary">
-        <div className="participants">
-          <div className="attacker">
-            <h3>{report.attacker_name}</h3>
-            <p>Attacker</p>
+      <div className="battle-report-modal">
+        <div className="modal-header">
+          <div className="modal-title">
+            <div className="modal-title-row">
+              <span className="modal-outcome-icon">{isVictory ? '🏆' : '💀'}</span>
+              <h2>Battle Report</h2>
+            </div>
+            <div className="modal-subtitle">
+              {planetName}{coords ? ` (${coords})` : ''} • {formatTimeAgo(report.timestamp)}
+            </div>
           </div>
-          <div className="vs">VS</div>
-          <div className="defender">
-            <h3>{report.defender_name}</h3>
-            <p>Defender</p>
-          </div>
+          <button onClick={onClose} className="close-button" aria-label="Close">×</button>
         </div>
 
-        <div className="outcome">
-          <h3 className={isVictory ? 'victory-text' : 'defeat-text'}>
-            {report.winner_name} Wins!
-          </h3>
-        </div>
-      </div>
-
-      <div className="combat-rounds">
-        <h3>Combat Rounds</h3>
-        {roundDetails.length === 0 ? (
-          <p>No round details available</p>
-        ) : (
-          roundDetails.map((round, index) => (
-            <CombatRound
-              key={index}
-              round={round}
-              roundNumber={index + 1}
-            />
-          ))
-        )}
-      </div>
-
-      <div className="final-results">
-        <div className="final-losses">
-          <h4>Final Losses</h4>
-          <div className="losses-breakdown">
-            <ShipLosses losses={report.attacker_losses} label="Attacker" />
-            <ShipLosses losses={report.defender_losses} label="Defender" />
+        <div className="battle-summary">
+          <div className="summary-grid">
+            <div className="summary-card">
+              <div className="summary-label">Attacker</div>
+              <div className="summary-value">{attackerName}</div>
+              <div className="summary-meta">Ships lost: {formatNumber(calculateTotalLosses(report.attacker_losses))}</div>
+            </div>
+            <div className="summary-card">
+              <div className="summary-label">Defender</div>
+              <div className="summary-value">{defenderName}</div>
+              <div className="summary-meta">Ships lost: {formatNumber(calculateTotalLosses(report.defender_losses))}</div>
+            </div>
+            <div className="summary-card summary-card-wide">
+              <div className="summary-label">Outcome</div>
+              <div className={`summary-value ${isVictory ? 'victory-text' : 'defeat-text'}`}>{winnerName} wins</div>
+              <div className="summary-meta">
+                Debris: {formatNumber(report.debris_metal)}M / {formatNumber(report.debris_crystal)}C / {formatNumber(report.debris_deuterium)}D
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="debris-field">
-          <h4>Debris Field</h4>
-          <p>{report.debris_metal} Metal, {report.debris_crystal} Crystal</p>
-          {report.debris_recycled && (
-            <p className="recycled-notice">Already collected</p>
+        <div className="final-results">
+          <div className="final-losses">
+            <h4>Losses</h4>
+            <div className="losses-breakdown">
+              <ShipLosses losses={report.attacker_losses} label="Attacker" />
+              <ShipLosses losses={report.defender_losses} label="Defender" />
+            </div>
+          </div>
+
+          <div className="debris-field">
+            <h4>Debris Field</h4>
+            <p>{formatNumber(report.debris_metal)} Metal, {formatNumber(report.debris_crystal)} Crystal, {formatNumber(report.debris_deuterium)} Deut</p>
+            {report.debris_recycled && (
+              <p className="recycled-notice">Already collected</p>
+            )}
+          </div>
+        </div>
+
+        <div className="combat-rounds">
+          <h3>Combat Rounds</h3>
+          {roundDetails.length === 0 ? (
+            <p className="empty-hint">No round details available</p>
+          ) : (
+            roundDetails.map((round, index) => (
+              <CombatRound
+                key={index}
+                round={round}
+                roundNumber={index + 1}
+              />
+            ))
           )}
         </div>
       </div>
@@ -258,21 +291,31 @@ const CombatRound = ({ round, roundNumber }) => {
 const ShipLosses = ({ losses, label }) => {
   let parsedLosses = {};
   try {
-    parsedLosses = JSON.parse(losses);
+    parsedLosses = typeof losses === 'string' ? JSON.parse(losses) : (losses || {});
   } catch {
-    return <div>{label}: Unable to parse losses</div>;
+    return <div className="ship-losses">{label}: Unable to parse losses</div>;
   }
+
+  const rows = Object.entries(parsedLosses)
+    .filter(([, count]) => (count || 0) > 0)
+    .sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  const total = rows.reduce((sum, [, count]) => sum + (count || 0), 0);
 
   return (
     <div className="ship-losses">
-      <h5>{label} Losses:</h5>
-      {Object.entries(parsedLosses).map(([shipType, count]) => (
-        count > 0 && (
-          <div key={shipType} className="loss-item">
-            {shipType}: {count}
-          </div>
-        )
-      ))}
+      <h5>{label} Losses <span className="loss-total">({formatNumber(total)})</span></h5>
+      {rows.length === 0 ? (
+        <div className="loss-item muted">No losses</div>
+      ) : (
+        <div className="loss-table">
+          {rows.map(([shipType, count]) => (
+            <div key={shipType} className="loss-row">
+              <div className="loss-ship">{formatShipLabel(shipType)}</div>
+              <div className="loss-count">{formatNumber(count)}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

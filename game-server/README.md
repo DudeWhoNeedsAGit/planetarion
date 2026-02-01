@@ -1,6 +1,6 @@
 # 🌌 Planetarion Game Server
 
-A complete full-stack space strategy game inspired by classic browser-based games like OGame and Ikariam. This monorepo contains a Flask backend API, React frontend with Tailwind CSS, PostgreSQL database, and comprehensive game mechanics including resource management, fleet operations, and real-time updates.
+A complete full-stack space strategy game inspired by classic browser-based games like OGame and Ikariam. This repo contains a Flask backend API and a React frontend with Tailwind CSS. For local iteration we primarily use a fast SQLite workflow (snapshot/restore); Docker/PostgreSQL remains available for heavier environments.
 
 ## 📋 Table of Contents
 
@@ -34,38 +34,20 @@ The game features automatic resource generation, fleet movement calculations, an
 
 ```
 planetarion/
-├── backend/                 # Flask API Server
-│   ├── app.py              # Main Flask application
-│   ├── models.py           # SQLAlchemy database models
-│   ├── database.py         # Database connection and session management
-│   ├── routes/             # API route handlers
-│   │   ├── auth.py         # Authentication endpoints
-│   │   ├── users.py        # User management
-│   │   ├── planets.py      # Basic planet CRUD (admin/public)
-│   │   ├── planet_user.py  # User-authenticated planet operations
-│   │   ├── fleet.py        # Fleet management and operations
-│   │   └── shipyard.py     # Ship building and construction
-│   ├── services/           # Business logic
-│   │   └── tick.py         # Resource generation system
-│   ├── instance/           # SQLite test database storage
-│   ├── scripts/            # Utility scripts for development
-│   ├── .env               # Environment variables
-│   └── requirements.txt    # Python dependencies
-├── frontend/               # React Application
-│   ├── src/
-│   │   ├── App.js          # Main application component
-│   │   ├── Dashboard.js    # Main game interface
-│   │   ├── Login.js        # Authentication component
-│   │   ├── Register.js     # User registration
-│   │   ├── Overview.js     # Empire overview
-│   │   ├── FleetManagement.js # Fleet operations
-│   │   └── Navigation.js   # Navigation component
-│   ├── public/             # Static assets
-│   └── package.json        # Node.js dependencies
-├── database/               # Database migrations
-├── docker-compose.yml      # Container orchestration
-├── test_system.py         # Comprehensive test suite
-└── README.md              # This file
+├── src/backend/            # Flask API server (package: backend)
+│   ├── app.py              # Flask app factory + routes registration
+│   ├── config.py           # Env-driven config (tick + travel speed)
+│   ├── models.py           # SQLAlchemy models
+│   ├── routes/             # Flask blueprints (auth, fleet, shipyard, combat, admin, ...)
+│   └── services/           # Core mechanics (tick, fleet arrival/state machine, combat, ...)
+├── src/frontend/           # React app + Playwright
+│   ├── src/                # UI components (Dashboard/Fleet/Galaxy/Combat/...)
+│   └── tests/e2e/          # Playwright E2E tests
+├── tests/                  # Python unit + integration tests
+├── scripts/                # Local utilities (populate DB, setup snapshots)
+├── instance/               # SQLite DB files (test/dev)
+├── Makefile                # Single entrypoint for tests + local dev
+└── README.md
 ```
 
 ## 🛠️ Technology Stack
@@ -107,8 +89,9 @@ planetarion/
 - ✅ **Resource System**: Metal, Crystal, Deuterium mining
 - ✅ **Building Upgrades**: Mines, power plants, research labs
 - ✅ **Fleet Operations**: Ship construction and movement
-- ✅ **Real-time Updates**: Automatic resource generation every 5 seconds
-- ✅ **Tick System**: High-frequency resource production (5-second intervals)
+- ✅ **Tick System**: Resource generation + fleet arrival processing
+- ✅ **Combat + Debris + Recycling**: Battles generate debris; recyclers collect and return resources
+- ✅ **Espionage (MVP)**: Probe missions create spy reports
 
 ### User Interface
 - ✅ **Responsive Design**: Works on desktop and mobile
@@ -130,33 +113,27 @@ planetarion/
 
 ### Prerequisites
 - Python 3.11+ with pip
-- Node.js 18+ with npm (optional, for frontend development)
+- Node.js 18+ with npm (frontend + Playwright)
 - Git
 
-### One-Command Setup
+### Local test environment (recommended for gameplay iteration)
+
 ```bash
-git clone https://github.com/DudeWhoNeedsAGit/planetarion.git
-cd planetarion/game-server/backend
-pip install -r requirements.txt
-python app.py
+cd game-server
+make test-env-tick
 ```
 
 ### Access Points
-- **Full Game**: http://localhost:5001 (login + dashboard)
-- **Backend API**: http://localhost:5001/api/*
-- **Database**: SQLite (automatic setup)
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:5000
+- **SQLite DB**: `instance/test_e2e.db`
 
-### Alternative: Development Setup
+### Reset and scenario helpers (fast)
+
 ```bash
-# Backend
-cd game-server/backend
-pip install -r requirements.txt
-python app.py
-
-# Frontend (optional, in separate terminal)
-cd game-server/frontend
-npm install
-npm run build
+cd game-server
+make test-env-reset
+make scenario-two-player-reset
 ```
 
 ## 📦 Installation
@@ -186,44 +163,22 @@ npm run build
 
 ### Option 2: Local Development
 
-#### Backend Setup
+Use the Makefile targets instead of running services manually:
+
 ```bash
-# Create virtual environment
-cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set environment variables
-export DATABASE_URL=postgresql://planetarion_user:planetarion_password@localhost:5432/planetarion
-export FLASK_ENV=development
-export SECRET_KEY=your-secret-key-here
-
-# Run the application
-python app.py
+cd game-server
+make test-env          # backend+frontend, manual play
+make test-env-tick     # same, but with auto-ticks
+make e2e-ui            # local UI + Playwright
+make unit              # Python unit tests
+make integration       # Python integration tests
+make supertest         # JS integration tests (supertest against running backend)
+make all               # full battery
 ```
 
-#### Frontend Setup
-```bash
-cd frontend
-npm install
-npm start
-```
-
-#### Database Setup
-```bash
-# Create database
-createdb planetarion
-createuser planetarion_user
-psql -c "ALTER USER planetarion_user PASSWORD 'planetarion_password';"
-psql -c "GRANT ALL PRIVILEGES ON DATABASE planetarion TO planetarion_user;"
-
-# Run migrations
-cd backend
-flask db upgrade
-```
+Notes:
+- The local DB reset uses snapshot/restore for speed.
+- Some heavy legacy JS suites are intentionally gated behind env vars.
 
 ## 📁 Project Structure
 
@@ -905,6 +860,14 @@ cd frontend && npm update
 ```
 
 ## 🧪 Testing
+
+### Quick commands (gameplay loop focused)
+
+```bash
+cd game-server
+make test-a   # Table A backend golden-path (two-player)
+make e2e-c    # Table C Playwright “full loop”
+```
 
 ### Automated Test Suite
 

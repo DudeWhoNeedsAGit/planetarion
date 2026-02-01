@@ -261,14 +261,15 @@ class PlanetTraitService:
         Returns:
             Difficulty level (1-5)
         """
-        import random
-
         # Base difficulty based on distance from origin
         distance = (abs(x) + abs(y) + abs(z)) / 3
         base_difficulty = min(5, max(1, int(distance / 200)))
 
-        # Add some randomness
-        difficulty_modifier = random.randint(-1, 1)
+        # Deterministic coordinate-based variation (-1, 0, +1).
+        # This avoids non-deterministic gameplay and keeps tests stable.
+        difficulty_modifier = (
+            ((x * 73856093) ^ (y * 19349663) ^ (z * 83492791)) % 3
+        ) - 1
         final_difficulty = max(1, min(5, base_difficulty + difficulty_modifier))
 
         return final_difficulty

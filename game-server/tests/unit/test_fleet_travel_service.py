@@ -127,7 +127,7 @@ class TestFleetTravelService:
         fleet.battlecruiser = 0
 
         speed = FleetTravelService.calculate_fleet_speed(fleet)
-        assert speed == 150000  # Default speed (5000 * 30)
+        assert speed == 0
 
     def test_calculate_fleet_speed_none_fleet(self):
         """Test fleet speed calculation with None fleet"""
@@ -281,7 +281,7 @@ class TestFleetTravelService:
                 info = FleetTravelService.calculate_travel_info(fleet)
 
                 assert info is not None
-                assert info['target_coordinates'] == '100.0:200.0:300.0'  # Formatted as floats
+                assert info['target_coordinates'] == '100:200:300'
                 assert info['is_coordinate_based'] == True
                 assert info['fleet_speed'] == 75000  # Colony ship speed (2500 * 30)
 
@@ -420,7 +420,7 @@ class TestFleetTravelService:
 
                 assert info is not None
                 assert info['progress_percentage'] >= 100.0
-                assert info['current_position'] == '10.0:0.0:0.0'  # Should be at target
+                assert info['current_position'] == '10:0:0'  # Should be at target
 
     @freeze_time("2025-01-01 12:00:00")
     def test_current_position_interpolation(self, app):
@@ -566,4 +566,4 @@ class TestFleetTravelServiceIntegration:
                 assert info['total_duration_hours'] > 0
                 assert 0 <= info['progress_percentage'] <= 100
                 assert ':' in info['current_position']
-                assert info['fleet_speed'] == 105000  # Large cargo speed (slowest in fleet: large_cargo=3500 * 30, cruiser=3500 * 30)
+                assert info['fleet_speed'] == 150000  # Small cargo speed (slowest in this fleet: 5000 * 30)

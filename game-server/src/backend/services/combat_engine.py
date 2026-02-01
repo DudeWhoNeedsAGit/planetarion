@@ -16,42 +16,14 @@ import math
 from datetime import datetime
 from backend.database import db
 from backend.models import Fleet, Planet, CombatReport, DebrisField, User, TickLog
+from backend.config import COMBAT_SHIP_STATS
 
 
 class CombatEngine:
     """Core combat calculation engine"""
 
     # Ship combat statistics
-    SHIP_STATS = {
-        'small_cargo': {
-            'hull': 4000, 'shield': 10, 'weapon': 5, 'speed': 5000,
-            'cargo': 5000, 'fuel': 10
-        },
-        'large_cargo': {
-            'hull': 12000, 'shield': 25, 'weapon': 5, 'speed': 7500,
-            'cargo': 25000, 'fuel': 50
-        },
-        'light_fighter': {
-            'hull': 4000, 'shield': 10, 'weapon': 50, 'speed': 12500,
-            'cargo': 50, 'fuel': 20
-        },
-        'heavy_fighter': {
-            'hull': 10000, 'shield': 25, 'weapon': 150, 'speed': 10000,
-            'cargo': 100, 'fuel': 75
-        },
-        'cruiser': {
-            'hull': 27000, 'shield': 50, 'weapon': 400, 'speed': 15000,
-            'cargo': 800, 'fuel': 300
-        },
-        'battleship': {
-            'hull': 60000, 'shield': 200, 'weapon': 1000, 'speed': 10000,
-            'cargo': 1500, 'fuel': 500
-        },
-        'colony_ship': {
-            'hull': 30000, 'shield': 100, 'weapon': 50, 'speed': 2500,
-            'cargo': 7500, 'fuel': 1000
-        }
-    }
+    SHIP_STATS = COMBAT_SHIP_STATS
 
     # Rapid fire bonuses (attacker:defender ratio)
     RAPID_FIRE = {
@@ -89,7 +61,7 @@ class CombatEngine:
         # Calculate final losses
         attacker_losses = CombatEngine._calculate_losses(attacker_fleet, attacker_ships)
         defender_losses = CombatEngine._calculate_losses(defender_fleet, defender_ships)
-        debris = CombatEngine._calculate_debris(attacker_fleet, defender_fleet)
+        debris = CombatEngine._calculate_debris_from_losses(attacker_losses, defender_losses)
 
         result = {
             'winner': winner,
@@ -238,8 +210,8 @@ class CombatEngine:
         return losses
 
     @staticmethod
-    def _calculate_debris(attacker_fleet, defender_fleet):
-        """Calculate debris from destroyed ships"""
+    def _calculate_debris_from_losses(attacker_losses, defender_losses):
+        """Calculate debris from destroyed ships using loss dictionaries"""
         total_metal = 0
         total_crystal = 0
 
@@ -255,13 +227,13 @@ class CombatEngine:
             'colony_ship': {'metal': 10000, 'crystal': 20000}
         }
 
-        for ship_type, count in CombatEngine._calculate_losses(attacker_fleet, CombatEngine._fleet_to_combat_ships(attacker_fleet)).items():
+        for ship_type, count in (attacker_losses or {}).items():
             if count > 0 and ship_type in ship_costs:
                 cost = ship_costs[ship_type]
                 total_metal += int(count * cost['metal'] * 0.3)
                 total_crystal += int(count * cost['crystal'] * 0.3)
 
-        for ship_type, count in CombatEngine._calculate_losses(defender_fleet, CombatEngine._fleet_to_combat_ships(defender_fleet)).items():
+        for ship_type, count in (defender_losses or {}).items():
             if count > 0 and ship_type in ship_costs:
                 cost = ship_costs[ship_type]
                 total_metal += int(count * cost['metal'] * 0.3)
@@ -273,6 +245,14 @@ class CombatEngine:
     def process_combat_result(combat_result, attacker_fleet, defender_fleet, planet):
         """Process the results of a combat engagement"""
         print("DEBUG: Processing combat result")
+
+        def _maybe_rename_captured_planet(*, previous_owner_username: str | None, attacker_username: str):
+            # Normalize NPC/testing names to something that feels like a real captured colony.
+            # Examples today: "Pirate Camp ...", "Enemy Base ...".
+            name = (planet.name or "").strip()
+            lower = name.lower()
+            if previous_owner_username == "pirates" or lower.startswith("pirate camp") or lower.startswith("enemy base"):
+                planet.name = f"{attacker_username} Outpost {planet.x}:{planet.y}:{planet.z}"
 
         # Update fleet combat statistics
         if combat_result['winner'] == 'attacker':
@@ -295,6 +275,50 @@ class CombatEngine:
             if losses > 0:
                 current_count = getattr(defender_fleet, ship_type, 0)
                 setattr(defender_fleet, ship_type, max(0, current_count - losses))
+
+        # Conquest rule (Option A): if the attacker wins AND the defender fleet is eliminated,
+        # transfer planet ownership to the attacker.
+        if combat_result.get('winner') == 'attacker':
+            previous_owner_username = getattr(getattr(planet, "owner", None), "username", None)
+            attacker_username = getattr(getattr(attacker_fleet, "owner", None), "username", f"user_{attacker_fleet.user_id}")
+            ship_fields = [
+                'small_cargo', 'large_cargo', 'light_fighter', 'heavy_fighter',
+                'cruiser', 'battleship', 'colony_ship', 'recycler', 'espionage_probe',
+                'bomber', 'destroyer', 'deathstar', 'battlecruiser'
+            ]
+            defender_remaining = sum(int(getattr(defender_fleet, f, 0) or 0) for f in ship_fields)
+            if defender_remaining == 0:
+                planet.user_id = attacker_fleet.user_id
+                _maybe_rename_captured_planet(previous_owner_username=previous_owner_username, attacker_username=attacker_username)
+
+            # Pirate loot: if the defender is the pirate NPC, steal a percentage of resources.
+            try:
+                pirate_user = User.query.filter_by(username="pirates").first()
+                if pirate_user and getattr(defender_fleet, "user_id", None) == pirate_user.id:
+                    origin = Planet.query.get(getattr(attacker_fleet, "start_planet_id", None))
+                    if origin:
+                        loot_metal = int((planet.metal or 0) * 0.25)
+                        loot_crystal = int((planet.crystal or 0) * 0.25)
+                        loot_deuterium = int((planet.deuterium or 0) * 0.25)
+
+                        planet.metal = max(0, (planet.metal or 0) - loot_metal)
+                        planet.crystal = max(0, (planet.crystal or 0) - loot_crystal)
+                        planet.deuterium = max(0, (planet.deuterium or 0) - loot_deuterium)
+
+                        origin.metal += loot_metal
+                        origin.crystal += loot_crystal
+                        origin.deuterium += loot_deuterium
+
+                        db.session.add(TickLog(
+                            tick_number=0,
+                            planet_id=origin.id,
+                            fleet_id=getattr(attacker_fleet, 'id', None),
+                            event_type='pirate_loot',
+                            event_description=f'Looted pirates: +{loot_metal} metal, +{loot_crystal} crystal, +{loot_deuterium} deut'
+                        ))
+            except Exception:
+                # Loot is non-critical; avoid breaking combat resolution.
+                pass
 
         # Create debris field
         if combat_result['debris']['metal'] > 0 or combat_result['debris']['crystal'] > 0:
@@ -323,10 +347,15 @@ class CombatEngine:
         db.session.add(battle_report)
 
         # Create tick log entry
+        attacker_username = getattr(getattr(attacker_fleet, 'owner', None), 'username', f'user_{attacker_fleet.user_id}')
+        defender_username = getattr(getattr(defender_fleet, 'owner', None), 'username', f'user_{defender_fleet.user_id}')
+        winner_username = getattr(getattr(battle_report, 'winner', None), 'username', f'user_{winner_id}')
         tick_log = TickLog(
+            tick_number=0,
             planet_id=planet.id,
+            fleet_id=getattr(attacker_fleet, 'id', None),
             event_type='combat',
-            event_description=f'Combat between {attacker_fleet.user.username} and {defender_fleet.user.username}. Winner: {battle_report.winner.username}'
+            event_description=f'Combat between {attacker_username} and {defender_username}. Winner: {winner_username}'
         )
         db.session.add(tick_log)
 
@@ -359,13 +388,22 @@ class CombatEngine:
         # Update fleet combat statistics
         if combat_result.get('planet_captured', False):
             fleet.combat_victories += 1
+            previous_owner_username = getattr(getattr(planet, "owner", None), "username", None)
+            attacker_username = getattr(getattr(fleet, "owner", None), "username", f"user_{fleet.user_id}")
             planet.user_id = fleet.user_id  # Transfer ownership
+            name = (planet.name or "").strip()
+            lower = name.lower()
+            if previous_owner_username == "pirates" or lower.startswith("pirate camp") or lower.startswith("enemy base"):
+                planet.name = f"{attacker_username} Outpost {planet.x}:{planet.y}:{planet.z}"
 
             # Create tick log entry
+            attacker_username = getattr(getattr(fleet, 'owner', None), 'username', f'user_{fleet.user_id}')
             tick_log = TickLog(
+                tick_number=0,
                 planet_id=planet.id,
+                fleet_id=fleet.id,
                 event_type='planet_capture',
-                event_description=f'Planet {planet.name} captured by {fleet.user.username}'
+                event_description=f'Planet {planet.name} captured by {attacker_username}'
             )
             db.session.add(tick_log)
 
