@@ -105,6 +105,7 @@ function GalaxyMap({ user, planets, onClose, onNavigateSection }) {
   const [systems, setSystems] = useState([]);
   const [selectedSystem, setSelectedSystem] = useState(null);
   const [loading, setLoading] = useState(true); // Start with loading true
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [galaxyLoaded, setGalaxyLoaded] = useState(false);
   const [galaxyRange, setGalaxyRange] = useState(DEFAULT_GALAXY_RANGE);
@@ -140,6 +141,16 @@ function GalaxyMap({ user, planets, onClose, onNavigateSection }) {
   const centerY = homePlanet?.y || 200;
   const centerZ = homePlanet?.z || 300;
 
+  const viewCenterX = React.useMemo(() => {
+    return Math.round(centerX - viewOffset.x / (zoom * WORLD_SCALE));
+  }, [centerX, viewOffset.x, zoom]);
+
+  const viewCenterY = React.useMemo(() => {
+    return Math.round(centerY - viewOffset.y / (zoom * WORLD_SCALE));
+  }, [centerY, viewOffset.y, zoom]);
+
+  const lastFetchCenterRef = React.useRef({ x: centerX, y: centerY, z: centerZ });
+
   useEffect(() => {
     // Load galaxy data once when component mounts
     if (!galaxyLoaded) {
@@ -148,21 +159,46 @@ function GalaxyMap({ user, planets, onClose, onNavigateSection }) {
 
     // Set up polling for real-time galaxy updates
     const interval = setInterval(() => {
-      if (!loading) {
-        fetchNearbySystems();
+      if (galaxyLoaded && !loading && !refreshing && !isDragging) {
+        fetchNearbySystems({ background: true });
       }
     }, 10000); // Poll every 10 seconds
 
     return () => clearInterval(interval);
-  }, [galaxyLoaded, loading]); // Include dependencies
+  }, [galaxyLoaded, loading, refreshing, isDragging]); // Include dependencies
 
-  const fetchNearbySystems = async () => {
+  useEffect(() => {
+    if (!galaxyLoaded) return;
+    if (isDragging) return;
+    // When the user pans far enough that the viewport center moved, refresh the marker dataset.
+    const last = lastFetchCenterRef.current;
+    const dx = Math.abs((last?.x ?? 0) - viewCenterX);
+    const dy = Math.abs((last?.y ?? 0) - viewCenterY);
+    if (dx > 250 || dy > 250) {
+      fetchNearbySystems({ background: true, overrideCenter: { x: viewCenterX, y: viewCenterY, z: centerZ } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewCenterX, viewCenterY, isDragging, galaxyLoaded]);
+
+  useEffect(() => {
+    if (!galaxyLoaded) return;
+    fetchNearbySystems({ background: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [galaxyRange]);
+
+  const fetchNearbySystems = async ({ background = false, overrideCenter = null } = {}) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (background) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+        setError(null);
+      }
+
+      const center = overrideCenter || { x: viewCenterX, y: viewCenterY, z: centerZ };
       // Let the backend choose the default range based on research unless overridden.
       const params = galaxyRange ? { range: galaxyRange } : {};
-      const res = await axios.get(`/api/galaxy/nearby/${centerX}/${centerY}/${centerZ}`, { params });
+      const res = await axios.get(`/api/galaxy/nearby/${center.x}/${center.y}/${center.z}`, { params });
 
       const nextSystems = Array.isArray(res.data?.systems) ? res.data.systems : [];
       setSystems(nextSystems);
@@ -171,11 +207,16 @@ function GalaxyMap({ user, planets, onClose, onNavigateSection }) {
         setGalaxyRange(serverRange);
       }
       setGalaxyLoaded(true);
+      lastFetchCenterRef.current = { x: center.x, y: center.y, z: center.z };
     } catch (error) {
       console.error('❌ Error fetching galaxy data:', error);
       setError('Failed to load galaxy data');
     } finally {
-      setLoading(false);
+      if (background) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -371,7 +412,8 @@ function GalaxyMap({ user, planets, onClose, onNavigateSection }) {
         {/* Controls */}
         <div className="flex justify-between items-center mb-4">
           <div className="text-sm text-gray-300">
-            Center: {centerX}:{centerY}:{centerZ} | Zoom: {Math.round(zoom * 100)}% | Range: {galaxyRange} units
+            Center: {viewCenterX}:{viewCenterY}:{centerZ} | Zoom: {Math.round(zoom * 100)}% | Range: {galaxyRange} units
+            {refreshing && <span className="ml-2 text-xs text-blue-300">(updating…)</span>}
           </div>
           <div className="flex items-center space-x-2">
             <button
@@ -406,7 +448,7 @@ function GalaxyMap({ user, planets, onClose, onNavigateSection }) {
         </div>
 
         {/* Loading State */}
-        {loading && (
+        {loading && !galaxyLoaded && (
           <div className="flex-1 bg-gray-900 rounded-lg flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
@@ -434,7 +476,7 @@ function GalaxyMap({ user, planets, onClose, onNavigateSection }) {
         )}
 
         {/* Map Container */}
-        {!loading && !error && (
+        {(!loading || galaxyLoaded) && !error && (
           <div
             className={`flex-1 bg-gray-900 rounded-lg overflow-hidden relative galaxy-background ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             onMouseDown={handleMouseDown}

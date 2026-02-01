@@ -1,6 +1,68 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 
 function Overview({ user, planets }) {
+  const [activity, setActivity] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+
+  const mergeActivity = (prev, next) => {
+    const byId = new Map();
+    (Array.isArray(prev) ? prev : []).forEach((e) => {
+      if (e && e.id != null) byId.set(e.id, e);
+    });
+    (Array.isArray(next) ? next : []).forEach((e) => {
+      if (e && e.id != null && !byId.has(e.id)) byId.set(e.id, e);
+    });
+    return Array.from(byId.values()).sort((a, b) => {
+      const ta = new Date(a.timestamp || 0).getTime();
+      const tb = new Date(b.timestamp || 0).getTime();
+      if (tb !== ta) return tb - ta;
+      return (b.id || 0) - (a.id || 0);
+    });
+  };
+
+  const fetchActivity = async () => {
+    setActivityLoading(true);
+    try {
+      const res = await axios.get('/api/tick/logs', { params: { limit: 20, offset: 0 } });
+      const logs = Array.isArray(res.data?.logs) ? res.data.logs : [];
+      setActivity((prev) => mergeActivity(prev, logs));
+    } catch (e) {
+      // Non-fatal: keep whatever we already have.
+      console.warn('Failed to fetch activity logs:', e);
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchActivity();
+    const onTick = () => fetchActivity();
+    window.addEventListener('planetarion:tick', onTick);
+    return () => window.removeEventListener('planetarion:tick', onTick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const activityItems = useMemo(() => {
+    return (activity || []).slice(0, 10).map((log) => {
+      const type = (log?.event_type || '').toLowerCase();
+      let icon = '📝';
+      if (type.includes('combat')) icon = '⚔️';
+      else if (type.includes('planet_capture') || type.includes('colon')) icon = '🪐';
+      else if (type.includes('recycle')) icon = '♻️';
+      else if (type.includes('pirate')) icon = '🏴‍☠️';
+      else if (type.includes('espion')) icon = '🕵️';
+      else if (type.includes('fleet')) icon = '🚀';
+
+      return {
+        id: log.id,
+        icon,
+        description: log.event_description || log.event_type || 'Activity',
+        timestamp: log.timestamp || null,
+      };
+    });
+  }, [activity]);
+
   const totalResources = planets.reduce((sum, planet) => ({
     metal: sum.metal + planet.resources.metal,
     crystal: sum.crystal + planet.resources.crystal,
@@ -160,16 +222,25 @@ function Overview({ user, planets }) {
       <div className="bg-gray-800 rounded-lg p-6">
         <h3 className="text-xl font-bold mb-4 text-white">Recent Activity</h3>
         <div className="space-y-3">
-          <div className="flex items-center space-x-3 p-3 bg-gray-700 rounded">
-            <span className="text-green-400">✅</span>
-            <div>
-              <p className="text-white">Empire initialized successfully</p>
-              <p className="text-gray-400 text-sm">Just now</p>
+          {activityItems.length === 0 ? (
+            <div className="text-center text-gray-400 py-4" data-testid="overview-activity-empty">
+              {activityLoading ? 'Loading activity…' : 'No recent activity yet. Explore, fight, and colonize to generate events.'}
             </div>
-          </div>
-          <div className="text-center text-gray-400 py-4">
-            More activity will appear here as you play the game
-          </div>
+          ) : (
+            <div className="space-y-3" data-testid="overview-activity-list">
+              {activityItems.map((item) => (
+                <div key={item.id} className="flex items-center space-x-3 p-3 bg-gray-700 rounded" data-testid="overview-activity-item">
+                  <span className="text-xl">{item.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white truncate">{item.description}</p>
+                    <p className="text-gray-400 text-sm">
+                      {item.timestamp ? new Date(item.timestamp).toLocaleString() : '—'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

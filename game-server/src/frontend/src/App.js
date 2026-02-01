@@ -40,7 +40,7 @@ function AppContent() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [loading, setLoading] = useState(true);
-  const { toasts, removeToast } = useToast();
+  const { toasts, removeToast, showError, showInfo } = useToast();
 
   useEffect(() => {
     checkAuthStatus();
@@ -62,8 +62,24 @@ function AppContent() {
         setUser(response.data);
         setCurrentView('dashboard');
       } catch (error) {
-        localStorage.removeItem('token');
-        setCurrentView('login');
+        const status = error.response?.status;
+        if (status === 401) {
+          localStorage.removeItem('token');
+          setUser(null);
+          setCurrentView('login');
+          showError('Session expired. Please log in again.');
+        } else {
+          // Backend down / transient failure: keep token so we can recover after a restart.
+          showInfo('Backend unreachable. Retrying…');
+          try {
+            await new Promise((r) => setTimeout(r, 1500));
+            const retry = await axios.get('/api/auth/me');
+            setUser(retry.data);
+            setCurrentView('dashboard');
+          } catch (e2) {
+            setCurrentView('login');
+          }
+        }
       }
     } else {
       setCurrentView('login');
@@ -110,11 +126,21 @@ function AppContent() {
   }
 
   if (currentView === 'login') {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <>
+        <Login onLogin={handleLogin} />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
+    );
   }
 
   if (currentView === 'register') {
-    return <Register onRegister={handleRegister} />;
+    return (
+      <>
+        <Register onRegister={handleRegister} />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
+    );
   }
 
   return (

@@ -442,31 +442,54 @@ function Dashboard({ user, onLogout }) {
               <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
                 🪐 Your Planets ({planets.length})
               </h2>
-              <div className="flex space-x-4 overflow-x-auto">
-                {planets.map(planet => {
-                  const isHomePlanet = planet.is_home_planet;
-                  const isColony = !isHomePlanet;
-
-                  return (
-                    <button
-                      key={planet.id}
-                      onClick={() => setSelectedPlanet(planet)}
-                      className={`px-4 py-2 rounded whitespace-nowrap transition-all duration-200 ${
-                        selectedPlanet?.id === planet.id
-                          ? 'bg-blue-600 text-white shadow-lg scale-105'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:scale-102'
-                      } ${isHomePlanet ? 'ring-2 ring-yellow-400' : 'ring-2 ring-green-400'}`}
-                      title={isHomePlanet ? '🏠 Home Planet' : '🌍 Colony'}
-                    >
-                      <span className="flex items-center space-x-2">
-                        <span>{isHomePlanet ? '🏠' : '🌍'}</span>
-                        <span>{planet.name}</span>
-                        <span className="text-xs opacity-75">({planet.x}:{planet.y}:{planet.z})</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              {planets.length > 6 ? (
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <label className="block text-sm text-gray-300 mb-2">Select planet</label>
+                  <select
+                    className="w-full p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    data-testid="planet-selector-dropdown"
+                    value={selectedPlanet?.id ?? ''}
+                    onChange={(e) => {
+                      const id = parseInt(e.target.value, 10);
+                      const p = planets.find((pl) => pl.id === id);
+                      if (p) setSelectedPlanet(p);
+                    }}
+                  >
+                    {planets.map((planet) => (
+                      <option key={planet.id} value={planet.id}>
+                        {(planet.is_home_planet ? '🏠 ' : '🌍 ') + planet.name} ({planet.x}:{planet.y}:{planet.z})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-2 text-xs text-gray-400">
+                    Tip: You have {planets.length} planets — use the dropdown to switch quickly.
+                  </div>
+                </div>
+              ) : (
+                <div className="flex space-x-4 overflow-x-auto overflow-y-hidden max-w-full pb-1" data-testid="planet-selector-buttons">
+                  {planets.map(planet => {
+                    const isHomePlanet = planet.is_home_planet;
+                    return (
+                      <button
+                        key={planet.id}
+                        onClick={() => setSelectedPlanet(planet)}
+                        className={`px-4 py-2 rounded whitespace-nowrap transition-colors duration-150 ${
+                          selectedPlanet?.id === planet.id
+                            ? 'bg-blue-600 text-white shadow-lg'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        } ${isHomePlanet ? 'ring-2 ring-yellow-400' : 'ring-2 ring-green-400'}`}
+                        title={isHomePlanet ? '🏠 Home Planet' : '🌍 Colony'}
+                      >
+                        <span className="flex items-center space-x-2">
+                          <span>{isHomePlanet ? '🏠' : '🌍'}</span>
+                          <span>{planet.name}</span>
+                          <span className="text-xs opacity-75">({planet.x}:{planet.y}:{planet.z})</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Planet Summary */}
               <div className="mt-4 flex items-center space-x-6 text-sm text-gray-400">
@@ -824,21 +847,40 @@ function Dashboard({ user, onLogout }) {
             {/* Planet Selection for Shipyard */}
             <div className="bg-gray-800 rounded-lg p-6">
               <h4 className="text-lg font-semibold mb-4 text-white">Select Planet</h4>
-              <div className="flex space-x-4 overflow-x-auto">
-                {planets.map(planet => (
-                  <button
-                    key={planet.id}
-                    onClick={() => setSelectedPlanet(planet)}
-                    className={`px-4 py-2 rounded whitespace-nowrap ${
-                      selectedPlanet?.id === planet.id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    {planet.name} ({planet.coordinates})
-                  </button>
-                ))}
-              </div>
+              {planets.length > 6 ? (
+                <select
+                  className="w-full p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  data-testid="shipyard-planet-dropdown"
+                  value={selectedPlanet?.id ?? ''}
+                  onChange={(e) => {
+                    const id = parseInt(e.target.value, 10);
+                    const p = planets.find((pl) => pl.id === id);
+                    if (p) setSelectedPlanet(p);
+                  }}
+                >
+                  {planets.map((planet) => (
+                    <option key={planet.id} value={planet.id}>
+                      {(planet.is_home_planet ? '🏠 ' : '🌍 ') + planet.name} ({planet.x}:{planet.y}:{planet.z})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="flex space-x-4 overflow-x-auto overflow-y-hidden max-w-full pb-1">
+                  {planets.map(planet => (
+                    <button
+                      key={planet.id}
+                      onClick={() => setSelectedPlanet(planet)}
+                      className={`px-4 py-2 rounded whitespace-nowrap ${
+                        selectedPlanet?.id === planet.id
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      {planet.name} ({planet.coordinates})
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Ship Construction */}
