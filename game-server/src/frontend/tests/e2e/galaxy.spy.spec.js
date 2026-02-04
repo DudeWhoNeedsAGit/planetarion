@@ -23,20 +23,35 @@ test.describe('Galaxy → Spy Flow', () => {
     });
     expect(buildProbeRes.ok()).toBeTruthy();
 
+    // Pick a system that contains an enemy-owned planet (pirates count as enemy) on our Z slice.
+    const nearbyRes = await request.get(`http://localhost:5000/api/galaxy/nearby/${planets[0].x}/${planets[0].y}/${planets[0].z}?range=2500&z_band=0&limit=500`, { headers });
+    expect(nearbyRes.ok()).toBeTruthy();
+    const nearby = await nearbyRes.json();
+    const systems = Array.isArray(nearby?.systems) ? nearby.systems : [];
+    const enemySystem = systems.find((s) => s.relation === 'pirates' || s.relation === 'enemy');
+    expect(enemySystem).toBeTruthy();
+
     await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
 
     await page.getByTestId('nav-galaxy').click();
     await expect(page.getByTestId('galaxy-modal')).toBeVisible();
     await expect(page.getByText('Loading Galaxy Data...')).not.toBeVisible({ timeout: 60000 });
 
-    // Prefer a marker that is known to have colonies owned by someone else (enemy/pirates).
-    // In test env, fog-of-war is disabled so the system details should list planets immediately.
-    const enemyMarker = page.locator('[data-test-marker="system-marker"][title*="Enemy Colony"]').first();
-    if (await enemyMarker.count()) {
-      await enemyMarker.click();
-    } else {
-      await page.locator('[data-test-marker="system-marker"]').first().click();
+    // Click the specific enemy system marker.
+    // If SMART marker density hides it, switch to ALL markers first.
+    const markerSelector = `[data-test-marker="system-marker"][title*="${enemySystem.x}:${enemySystem.y}:${enemySystem.z}"]`;
+    let marker = page.locator(markerSelector).first();
+    if ((await marker.count()) === 0) {
+      const toggle = page.getByTestId('galaxy-toggle-all-markers');
+      if (await toggle.isVisible()) {
+        await toggle.click();
+      }
+      marker = page.locator(markerSelector).first();
     }
+
+    await expect(marker).toBeVisible({ timeout: 60000 });
+    // DOM click avoids pointer interception from overlapping marker wrappers in dense views.
+    await marker.evaluate((el) => el.click());
     await expect(page.getByRole('heading', { name: /^🌌 System/i })).toBeVisible({ timeout: 60000 });
 
     const spyButtons = page.getByRole('button', { name: 'Spy' });

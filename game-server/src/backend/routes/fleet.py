@@ -80,8 +80,13 @@ def get_user_fleets():
     user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
+    include_inventory = request.args.get('include_inventory', '0').lower() in ('1', 'true', 'yes')
+
     print("DEBUG: Querying fleets for user...")
-    fleets = Fleet.query.filter_by(user_id=user_id).all()
+    query = Fleet.query.filter_by(user_id=user_id)
+    if not include_inventory:
+        query = query.filter(Fleet.mission != INVENTORY_FLEET_MISSION)
+    fleets = query.all()
     print(f"DEBUG: Found {len(fleets)} fleets for user")
 
     # Get planet information for display

@@ -922,13 +922,14 @@ class FleetArrivalService:
             # Offset coordinates slightly for multiple planets in same system
             planet_x = target_x + random.randint(-5, 5)
             planet_y = target_y + random.randint(-5, 5)
-            planet_z = target_z + random.randint(-5, 5)
+            # Keep exploration on the same Z slice to match the 2D GalaxyMap and reduce wasted depth.
+            planet_z = target_z
 
             # Ensure coordinates are unique
             while Planet.query.filter_by(x=planet_x, y=planet_y, z=planet_z).first():
                 planet_x = target_x + random.randint(-5, 5)
                 planet_y = target_y + random.randint(-5, 5)
-                planet_z = target_z + random.randint(-5, 5)
+                planet_z = target_z
 
             # Generate planet properties
             planet_names = [

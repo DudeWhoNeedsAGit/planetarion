@@ -76,6 +76,54 @@ def _get_sqlite_db_path() -> str:
 def _default_snapshot_path(live_path: str) -> str:
     return f"{live_path}.bak"
 
+
+@admin_bp.route("/research/seed-points", methods=["POST"])
+def seed_research_points():
+    """Seed research points for a user (dev/test only).
+
+    Useful for fast E2E flows where RP would otherwise require many ticks.
+    """
+    allowed, err = _require_admin_or_dev_token()
+    if not allowed:
+        payload, code = err
+        return jsonify(payload), code
+
+    payload = request.get_json(silent=True) or {}
+    username = (payload.get("username") or "").strip()
+    points = payload.get("research_points", payload.get("points", 0))
+    try:
+        points = int(points)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid points"}), 400
+
+    from backend.models import Research
+
+    if username:
+        user = User.query.filter_by(username=username).first()
+    else:
+        identity = get_jwt_identity()
+        try:
+            user_id = int(identity) if identity is not None else None
+        except (TypeError, ValueError):
+            user_id = None
+        user = User.query.get(user_id) if user_id else None
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    research = Research.query.filter_by(user_id=user.id).first()
+    if not research:
+        research = Research(user_id=user.id, research_points=0)
+        db.session.add(research)
+        db.session.flush()
+
+    research.research_points = max(0, points)
+    if hasattr(research, "research_points_fraction"):
+        research.research_points_fraction = 0.0
+    db.session.commit()
+
+    return jsonify({"message": "Seeded research points", "user_id": user.id, "research_points": int(research.research_points or 0)}), 200
+
 @admin_bp.route("/db/snapshot", methods=["POST"])
 def snapshot_db():
     allowed, err = _require_admin_or_dev_token()
@@ -185,6 +233,30 @@ def restore_db():
             src.close()
 
         duration_ms = int((time.time() - start) * 1000)
+
+        # After restoring the raw sqlite file, re-ensure schema so newly added columns/tables exist.
+        try:
+            with current_app.app_context():
+                db.create_all()
+                from backend.services.sqlite_schema import (
+                    ensure_planet_storage_columns,
+                    ensure_planet_trait_columns,
+                    ensure_fleet_cargo_columns,
+                    ensure_user_lifecycle_columns,
+                    ensure_user_research_queue_columns,
+                    ensure_research_fraction_columns,
+                    ensure_research_tech_columns,
+                )
+                ensure_planet_storage_columns(db.engine)
+                ensure_planet_trait_columns(db.engine)
+                ensure_fleet_cargo_columns(db.engine)
+                ensure_user_lifecycle_columns(db.engine)
+                ensure_user_research_queue_columns(db.engine)
+                ensure_research_fraction_columns(db.engine)
+                ensure_research_tech_columns(db.engine)
+        except Exception:
+            # Non-fatal: restore should still succeed even if schema ensure fails.
+            pass
 
         if job_paused:
             try:

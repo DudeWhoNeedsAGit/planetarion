@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
+import { backendBaseUrl } from './apiBase';
 
 const FLEET_SHIP_KEYS = [
   'small_cargo',
@@ -81,6 +82,7 @@ function FleetManagement({ user, planets = [] }) {
   const [activeSendPreset, setActiveSendPreset] = useState(null);
   const [timelineEvents, setTimelineEvents] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  const sseHealthyRef = useRef(false);
   const { showSuccess, showError } = useToast();
 
   // Helper function for ETA calculation
@@ -138,7 +140,14 @@ function FleetManagement({ user, planets = [] }) {
     setTimelineLoading(true);
     try {
       const response = await axios.get('/api/tick/logs', { params: { limit: 25, offset: 0 } });
-      const logs = Array.isArray(response.data?.logs) ? response.data.logs : [];
+      const logsRaw = Array.isArray(response.data?.logs) ? response.data.logs : [];
+      // Defensive: filter out resource-only rows (no event_type/description) that can
+      // appear if the backend is running an older build/config.
+      const logs = logsRaw.filter((evt) => {
+        const hasType = typeof evt?.event_type === 'string' && evt.event_type.trim() !== '';
+        const hasDesc = typeof evt?.event_description === 'string' && evt.event_description.trim() !== '';
+        return hasType || hasDesc;
+      });
       // Merge so the UI doesn't "blink" by removing items between refreshes.
       setTimelineEvents((prev) => {
         const merged = [];
@@ -161,7 +170,9 @@ function FleetManagement({ user, planets = [] }) {
 
   const fetchFleets = useCallback(async () => {
     try {
-      const response = await axios.get('/api/fleet');
+      // Include the inventory fleet so shipyard-built ships (recyclers/colony ships/etc)
+      // show up in availability calculations and quick-send flows.
+      const response = await axios.get('/api/fleet', { params: { include_inventory: 1 } });
       console.log('DEBUG: Fleet API Response:', response.data); // API response validation
 
       if (!Array.isArray(response.data)) {
@@ -205,10 +216,76 @@ function FleetManagement({ user, planets = [] }) {
   useEffect(() => {
     const interval = setInterval(() => {
       fetchFleets();
-      fetchTimeline();
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchFleets, fetchTimeline]);
+  }, [fetchFleets]);
+
+  // Event-driven fleet timeline: subscribe to activity SSE and append relevant events.
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return undefined;
+
+    let es;
+    try {
+      const sseUrl = `${backendBaseUrl}/api/events/stream?token=${encodeURIComponent(token)}`;
+      es = new EventSource(sseUrl);
+    } catch (e) {
+      return undefined;
+    }
+
+    const onActivity = (evt) => {
+      try {
+        const payload = JSON.parse(evt.data || '{}');
+        if (!payload || payload.id == null) return;
+        const type = (payload.event_type || '').toLowerCase();
+        // Only keep “interesting” events in the Fleet timeline.
+        const keep =
+          type.includes('fleet') ||
+          type.includes('combat') ||
+          type.includes('recycle') ||
+          type.includes('colon') ||
+          type.includes('planet_capture') ||
+          type.includes('espion');
+        if (!keep) return;
+
+        setTimelineEvents((prev) => {
+          const merged = [];
+          const seen = new Set();
+          [payload, ...(Array.isArray(prev) ? prev : [])].forEach((e) => {
+            if (!e || e.id == null) return;
+            if (seen.has(e.id)) return;
+            seen.add(e.id);
+            merged.push(e);
+          });
+          return merged.slice(0, 50);
+        });
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    es.addEventListener('activity', onActivity);
+    es.addEventListener('open', () => {
+      sseHealthyRef.current = true;
+    });
+    es.addEventListener('error', () => {
+      sseHealthyRef.current = false;
+      try {
+        es.close();
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    return () => {
+      sseHealthyRef.current = false;
+      try {
+        es.close();
+      } catch (e) {
+        // ignore
+      }
+    };
+  }, []);
 
   // Cross-screen "quick send" support (e.g. from Combat debris list).
   useEffect(() => {
@@ -274,6 +351,62 @@ function FleetManagement({ user, planets = [] }) {
           // ignore
         }
       }
+
+      // Spy presets: if the player built probes into the inventory fleet but hasn't created a probe fleet,
+      // auto-create a 1-probe fleet so the one-click UX from Galaxy works.
+      if (sendPreset.mission === 'espionage') {
+        const eligible =
+          normalizedFleets.find((f) => {
+            if (f.status !== 'stationed') return false;
+            if (f.mission === 'inventory') return false;
+            if (preferredPlanetId != null && f.start_planet_id !== preferredPlanetId) return false;
+            return (f?.ships?.espionage_probe || 0) > 0;
+          }) ||
+          normalizedFleets.find((f) => {
+            if (f.status !== 'stationed') return false;
+            if (f.mission === 'inventory') return false;
+            return (f?.ships?.espionage_probe || 0) > 0;
+          });
+
+        if (eligible) {
+          openSendForFleet(eligible);
+          return;
+        }
+
+        const inv =
+          normalizedFleets.find((f) => {
+            if (f.status !== 'stationed') return false;
+            if (f.mission !== 'inventory') return false;
+            if (preferredPlanetId != null && f.start_planet_id !== preferredPlanetId) return false;
+            return (f?.ships?.espionage_probe || 0) > 0;
+          }) ||
+          normalizedFleets.find((f) => f.status === 'stationed' && f.mission === 'inventory' && (f?.ships?.espionage_probe || 0) > 0);
+
+        if (!inv) {
+          showError('No espionage probes available. Build probes first (Shipyard) or create a probe fleet.');
+          setSendPreset(null);
+          return;
+        }
+
+        try {
+          const count = Math.max(1, inv?.ships?.espionage_probe || 0);
+          const resp = await axios.post('/api/fleet', {
+            start_planet_id: inv.start_planet_id,
+            ships: { espionage_probe: count }
+          });
+          const created = resp.data?.fleet;
+          if (!created) throw new Error('Missing fleet in response');
+          await fetchFleets();
+          openSendForFleet(created);
+          return;
+        } catch (e) {
+          console.error('Failed to auto-create probe fleet:', e);
+          showError(e.response?.data?.error || 'Failed to create probe fleet automatically.');
+          setSendPreset(null);
+          return;
+        }
+      }
+
       // For recycle presets: if the player only built recyclers but hasn't created a recycler fleet,
       // auto-create a recycler-only fleet from the inventory fleet so the one-click UX works.
       if (sendPreset.mission === 'recycle') {
@@ -381,7 +514,7 @@ function FleetManagement({ user, planets = [] }) {
   useEffect(() => {
     const onTick = () => {
       fetchFleets();
-      fetchTimeline();
+      if (!sseHealthyRef.current) fetchTimeline();
     };
     window.addEventListener('planetarion:tick', onTick);
     return () => window.removeEventListener('planetarion:tick', onTick);
@@ -406,6 +539,16 @@ function FleetManagement({ user, planets = [] }) {
       return acc;
     }, {});
   }, [normalizedFleets]);
+
+  // UI should not treat the inventory fleet as a "real fleet" for management tiles.
+  const visibleFleetsByPlanet = useMemo(() => {
+    return Object.fromEntries(
+      Object.entries(fleetsByPlanet).map(([planetId, list]) => [
+        planetId,
+        (Array.isArray(list) ? list : []).filter((f) => f?.mission !== 'inventory'),
+      ]),
+    );
+  }, [fleetsByPlanet]);
 
   const availableShipsByPlanetId = useMemo(() => {
     const map = {};
@@ -514,7 +657,14 @@ function FleetManagement({ user, planets = [] }) {
   };
 
   const formatTimeRemaining = (arrivalTime, status) => {
-    if (!arrivalTime) return 'N/A';
+    // Only show a countdown for in-flight missions. Stationary fleets should not display
+    // a countdown even if their DB timestamps are stale or were restored from snapshots.
+    const isInFlight =
+      status === 'traveling' ||
+      status === 'returning' ||
+      (typeof status === 'string' && (status.startsWith('exploring:') || status.startsWith('colonizing:')));
+
+    if (!arrivalTime || !isInFlight) return '—';
 
     const now = new Date();
     const arrival = new Date(arrivalTime);
@@ -585,7 +735,7 @@ function FleetManagement({ user, planets = [] }) {
         <div className="mb-6">
           <PlanetOverviewCard
             planet={selectedPlanet}
-            fleets={fleetsByPlanet[selectedPlanet.id] || []}
+            fleets={visibleFleetsByPlanet[selectedPlanet.id] || []}
             onCreateFleet={() => setShowCreateForm(true)}
           />
         </div>
@@ -606,12 +756,12 @@ function FleetManagement({ user, planets = [] }) {
         <div className="mb-6">
           <h4 className="text-white font-medium mb-3">Fleets at {selectedPlanet.name}:</h4>
           <div className="space-y-4">
-            {(fleetsByPlanet[selectedPlanet.id] || []).length === 0 ? (
+            {(visibleFleetsByPlanet[selectedPlanet.id] || []).length === 0 ? (
               <div className="text-center text-gray-400 py-8 bg-gray-700 rounded" data-testid="fleet-empty-state">
                 No fleets at this planet. Create your first fleet!
               </div>
             ) : (
-              (fleetsByPlanet[selectedPlanet.id] || []).map(fleet => (
+              (visibleFleetsByPlanet[selectedPlanet.id] || []).map(fleet => (
                 <FleetTile
                   key={fleet.id}
                   fleet={fleet}

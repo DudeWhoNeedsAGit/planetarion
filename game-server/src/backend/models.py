@@ -15,6 +15,9 @@ class User(db.Model):
     # Exploration data
     explored_systems = db.Column(db.Text)  # JSON string of explored coordinates
 
+    # Research queue (MVP: one active project per user; JSON string)
+    research_queue = db.Column(db.Text)
+
     # Player lifecycle / protection (for respawn loop)
     eliminated_at = db.Column(db.DateTime)
     respawned_at = db.Column(db.DateTime)
@@ -71,6 +74,12 @@ class Planet(db.Model):
     base_defense_bonus = db.Column(db.Float, default=0.0)
     base_attack_bonus = db.Column(db.Float, default=0.0)
     colonization_difficulty = db.Column(db.Integer, default=1)  # 1-5 scale
+
+    # Planet classification and environmental traits (used by colonization/perf tests and gameplay UI)
+    planet_type = db.Column(db.String(32), default="terrestrial")
+    temperature = db.Column(db.Integer, default=20)
+    size = db.Column(db.Integer, default=10000)
+    habitability = db.Column(db.Float, default=100.0)
 
     # Research lab for research point generation
     research_lab = db.Column(db.Integer, default=0)
@@ -252,8 +261,30 @@ class Research(db.Model):
     astrophysics = db.Column(db.Integer, default=0)
     interstellar_communication = db.Column(db.Integer, default=0)
 
+    # Additional tech fields used by tests / future gameplay (defaults keep MVP behavior).
+    energy_tech = db.Column(db.Integer, default=0)
+    laser_tech = db.Column(db.Integer, default=0)
+    ion_tech = db.Column(db.Integer, default=0)
+    hyperspace_tech = db.Column(db.Integer, default=0)
+    plasma_tech = db.Column(db.Integer, default=0)
+
+    combustion_drive = db.Column(db.Integer, default=0)
+    impulse_drive = db.Column(db.Integer, default=0)
+    hyperspace_drive = db.Column(db.Integer, default=0)
+
+    espionage_tech = db.Column(db.Integer, default=0)
+    computer_tech = db.Column(db.Integer, default=0)
+    intergalactic_research_network = db.Column(db.Integer, default=0)
+    graviton_tech = db.Column(db.Integer, default=0)
+
+    weapons_tech = db.Column(db.Integer, default=0)
+    shielding_tech = db.Column(db.Integer, default=0)
+    armour_tech = db.Column(db.Integer, default=0)
+
     # Research points
     research_points = db.Column(db.BigInteger, default=0)
+    # Fractional RP accumulator so low rates still accrue over time.
+    research_points_fraction = db.Column(db.Float, default=0.0)
 
     # Relationships
     user = db.relationship('User', backref='research_data')

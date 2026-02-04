@@ -19,6 +19,17 @@ DEV_ADMIN_TOKEN ?= planetarion-dev
 # - FRESH=1 forces full teardown + repopulate (slow, but useful when schema changes)
 FRESH ?= 0
 
+# Pytest DB isolation:
+# - `instance/test_e2e.db` is reserved for manual play / Playwright UI runs.
+# - Running `make unit` / `make integration` should never mutate that file.
+# Use a throwaway SQLite file under /tmp and wipe it each run for deterministic results.
+PYTEST_DB ?= /tmp/planetarion_pytest.db
+
+# Local SQLite DB used for manual UI + Playwright runs.
+TEST_DB_PATH ?= ./instance/test_e2e.db
+TEST_DB_URL ?= sqlite:////$(CURDIR)/instance/test_e2e.db
+PYTHONPATH_SRC ?= $(CURDIR)/src
+
 # Default target - Show help
 help: # Show all available commands
 	@echo "Planetarion Development Commands:"
@@ -71,29 +82,31 @@ help: # Show all available commands
 # Local development tests (SQLite, no Docker)
 unit: # Run unit tests (fast, no Docker)
 	@echo "🧪 Running Unit Tests (SQLite)..."
+	@rm -f $(PYTEST_DB) || true
 	@if [ -n "$(TEST_FILE)" ]; then \
 		echo "🎯 Running specific test file: $(TEST_FILE)"; \
-		. venv/bin/activate && python -m pytest $(TEST_FILE) -v --tb=short --disable-warnings; \
+		. venv/bin/activate && DATABASE_URL=sqlite:////$(PYTEST_DB) python -m pytest $(TEST_FILE) -v --tb=short --disable-warnings; \
 	else \
-		. venv/bin/activate && python -m pytest tests/unit -v --tb=short --disable-warnings; \
+		. venv/bin/activate && DATABASE_URL=sqlite:////$(PYTEST_DB) python -m pytest tests/unit -v --tb=short --disable-warnings; \
 	fi
 
 integration: # Run integration tests (fast, no Docker)
 	@echo "🔗 Running Integration Tests (SQLite)..."
+	@rm -f $(PYTEST_DB) || true
 	@if [ -n "$(TEST_FILE)" ]; then \
 		echo "🎯 Running specific test file: $(TEST_FILE)"; \
-		. venv/bin/activate && python -m pytest $(TEST_FILE) -v --tb=short --disable-warnings; \
+		. venv/bin/activate && DATABASE_URL=sqlite:////$(PYTEST_DB) python -m pytest $(TEST_FILE) -v --tb=short --disable-warnings; \
 	else \
-		. venv/bin/activate && python -m pytest tests/integration $(if $(FAILED),--lf,) -v --tb=short --disable-warnings; \
+		. venv/bin/activate && DATABASE_URL=sqlite:////$(PYTEST_DB) python -m pytest tests/integration $(if $(FAILED),--lf,) -v --tb=short --disable-warnings; \
 	fi
 
 integration-failed: # Run only previously failed integration tests
 	@echo "🔄 Running Only Previously Failed Integration Tests..."
-	. venv/bin/activate && python -m pytest tests/integration --lf -v --tb=short --disable-warnings
+	. venv/bin/activate && DATABASE_URL=sqlite:////$(PYTEST_DB) python -m pytest tests/integration --lf -v --tb=short --disable-warnings
 
 test-a: # Table A backend golden-path integration test
 	@echo "🧪 Running Table A backend golden-path test..."
-	. venv/bin/activate && python -m pytest tests/integration/test_two_player_table_a_golden_path.py -v --tb=short --disable-warnings
+	. venv/bin/activate && DATABASE_URL=sqlite:////$(PYTEST_DB) python -m pytest tests/integration/test_two_player_table_a_golden_path.py -v --tb=short --disable-warnings
 
 # Docker-based tests (PostgreSQL)
 e2e: # Run end-to-end tests (Docker + PostgreSQL)
@@ -130,7 +143,7 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	@echo "✅ Instance directory ready"
 	@echo ""
 	@echo "🔧 Starting backend server..."
-	@. venv/bin/activate && DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' $(TICK_ENV) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 &
 	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
 	@sleep 5  # Give Flask time to start or show errors
 	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY" backend.log; then \
@@ -171,7 +184,7 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 			sleep 1; \
 		fi; \
 	done
-	@export DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && python scripts/setup_test_db.py
+	@export DATABASE_URL='$(TEST_DB_URL)' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=$(PYTHONPATH_SRC) && . venv/bin/activate && python scripts/setup_test_db.py
 	@echo "✅ Test database ready"
 	@echo ""
 	@echo "🎨 Starting frontend server..."
@@ -269,7 +282,7 @@ supertest: # Run JavaScript integration tests (Supertest + Jest)
 	@echo "✅ Instance directory ready"
 	@echo ""
 	@echo "🔧 Starting backend server for Supertest..."
-	@. venv/bin/activate && DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 &
 	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
 	@sleep 5  # Give Flask time to start or show errors
 	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
@@ -311,7 +324,7 @@ supertest: # Run JavaScript integration tests (Supertest + Jest)
 		fi; \
 	done
 	@echo "🔧 Setting up test database (fast backup/restore)..."
-	@export DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && python scripts/setup_test_db.py
+	@export DATABASE_URL='$(TEST_DB_URL)' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=$(PYTHONPATH_SRC) && . venv/bin/activate && python scripts/setup_test_db.py
 	@echo "✅ Test database populated"
 	@echo ""
 	@echo "🎨 Starting frontend server for Supertest..."
@@ -399,13 +412,13 @@ test: # Start local test environment (SQLite + servers + test data)
 	@echo "✅ Instance directory ready"
 	@echo ""
 	@echo "🔧 Starting backend server..."
-	@echo "   📁 Database file: $(PWD)/instance/test_e2e.db"
-	@echo "   🔗 Database URL: sqlite:////$(PWD)/instance/test_e2e.db"
+	@echo "   📁 Database file: $(TEST_DB_PATH)"
+	@echo "   🔗 Database URL: $(TEST_DB_URL)"
 	@if [ "$(FRESH)" != "1" ] && [ -f instance/test_e2e.db.bak ]; then \
 		echo "⚡ Restoring DB file from snapshot before start (instance/test_e2e.db.bak → instance/test_e2e.db)"; \
 		cp -f instance/test_e2e.db.bak instance/test_e2e.db; \
 	fi
-	@. venv/bin/activate && DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 &
 	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
 	@sleep 5  # Give Flask time to start or show errors
 	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
@@ -435,7 +448,7 @@ test: # Start local test environment (SQLite + servers + test data)
 	@echo ""
 	@if [ "$(FRESH)" = "1" ] || [ ! -f instance/test_e2e.db.bak ]; then \
 		echo "📊 Populating test database (one-time / schema refresh)..."; \
-		export DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && python scripts/populate_test_data.py; \
+		export DATABASE_URL='$(TEST_DB_URL)' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=$(PYTHONPATH_SRC) && . venv/bin/activate && python scripts/populate_test_data.py; \
 		echo "📸 Creating DB snapshot for fast reset..."; \
 		curl -s -X POST http://localhost:5000/api/admin/db/snapshot \
 			-H "X-Planetarion-Dev-Token: $(DEV_ADMIN_TOKEN)" \
@@ -524,7 +537,7 @@ test-env: # Start backend + frontend for manual testing (no Playwright)
 			cp -f instance/test_e2e.db.bak instance/test_e2e.db; \
 		fi; \
 		echo "🔧 Starting backend server..."; \
-		. venv/bin/activate && DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 & \
+		. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 & \
 		sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid; \
 		sleep 5; \
 		if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\\| * Running on" backend.log; then \
@@ -547,7 +560,7 @@ test-env: # Start backend + frontend for manual testing (no Playwright)
 	@echo ""
 	@if [ "$(FRESH)" = "1" ] || [ ! -f instance/test_e2e.db.bak ]; then \
 		echo "📊 Populating test database (one-time / schema refresh)..."; \
-		export DATABASE_URL='sqlite:////$(PWD)/instance/test_e2e.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && python scripts/populate_test_data.py; \
+		export DATABASE_URL='$(TEST_DB_URL)' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=$(PYTHONPATH_SRC) && . venv/bin/activate && python scripts/populate_test_data.py; \
 		echo "📸 Creating DB snapshot for fast reset..."; \
 		curl -s -X POST http://localhost:5000/api/admin/db/snapshot \
 			-H "X-Planetarion-Dev-Token: $(DEV_ADMIN_TOKEN)" \
@@ -557,6 +570,23 @@ test-env: # Start backend + frontend for manual testing (no Playwright)
 	else \
 		echo "⚡ Restoring DB from snapshot via API (fast)"; \
 		$(MAKE) test-env-reset DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) >/dev/null || true; \
+	fi
+	@echo ""
+	@echo "🔍 Verifying test user exists (e2etestuser)..."
+	@if [ ! -f instance/test_e2e.db ]; then \
+		echo "❌ Missing instance/test_e2e.db after setup"; \
+		exit 1; \
+	fi
+	@if ! sqlite3 instance/test_e2e.db "SELECT 1 FROM users WHERE username='e2etestuser' LIMIT 1;" | grep -q "1"; then \
+		echo "⚠️  Snapshot/DB missing e2etestuser. Rebuilding test data and refreshing snapshot..."; \
+		export DATABASE_URL='$(TEST_DB_URL)' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=$(PYTHONPATH_SRC) && . venv/bin/activate && python scripts/populate_test_data.py; \
+		curl -s -X POST http://localhost:5000/api/admin/db/snapshot \
+			-H "X-Planetarion-Dev-Token: $(DEV_ADMIN_TOKEN)" \
+			-H "Content-Type: application/json" \
+			-d '{"overwrite": true}' >/dev/null || true; \
+		echo "✅ Snapshot refreshed with e2etestuser"; \
+	else \
+		echo "✅ e2etestuser present"; \
 	fi
 	@echo ""
 	@echo "🎨 Starting frontend server..."
@@ -633,6 +663,12 @@ test-env-reset: # Restore DB from snapshot (fast; servers stay running)
 		-H "Content-Type: application/json" \
 		-d '{}' | cat
 	@echo ""
+	@echo "🔍 Verifying restored DB contains e2etestuser..."
+	@if [ -f instance/test_e2e.db ] && sqlite3 instance/test_e2e.db "SELECT 1 FROM users WHERE username='e2etestuser' LIMIT 1;" | grep -q "1"; then \
+		echo "✅ Restore OK"; \
+	else \
+		echo "⚠️  Restore produced DB without e2etestuser. Run: make test-env FRESH=1"; \
+	fi
 
 test-env-snapshot: # Create/overwrite snapshot from live DB
 	@echo "📸 Creating DB snapshot from live DB..."
@@ -671,7 +707,7 @@ colonization-env: # Start backend + frontend for colonization testing (no E2E te
 	@echo "✅ Instance directory ready"
 	@echo ""
 	@echo "🔧 Starting backend server with colonization focus..."
-	@DATABASE_URL='sqlite:///./instance/test_colonization.db' . venv/bin/activate && FLASK_ENV=testing PYTHONPATH=/home/yves/repos/planetarion/game-server/src python3 -m src > backend.log 2>&1 &
+	@DATABASE_URL='sqlite:///./instance/test_colonization.db' . venv/bin/activate && FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 &
 	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
 	@sleep 5  # Give Flask time to start or show errors
 	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
@@ -713,7 +749,7 @@ colonization-env: # Start backend + frontend for colonization testing (no E2E te
 		fi; \
 	done
 	@echo "🔧 Setting DATABASE_URL=sqlite:///instance/test_colonization.db"
-	@export DATABASE_URL='sqlite:///./instance/test_colonization.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=/home/yves/repos/planetarion/game-server/src && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py
+	@export DATABASE_URL='sqlite:///./instance/test_colonization.db' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=$(PYTHONPATH_SRC) && . venv/bin/activate && echo "DEBUG: DATABASE_URL=$$DATABASE_URL" && python scripts/populate_test_data.py
 	@echo "✅ Test database populated with colonization scenarios"
 	@echo ""
 	@echo "🎨 Starting frontend server for colonization testing..."

@@ -6,11 +6,10 @@ test.describe('Research UI Smoke', () => {
     await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
   });
 
-  test('renders research placeholder section', async ({ page }) => {
+  test('renders research dashboard', async ({ page }) => {
     await page.getByTestId('nav-research').click();
     await expect(page.getByTestId('section-research')).toBeVisible();
     await expect(page.getByRole('heading', { name: /research lab/i })).toBeVisible();
-    await expect(page.getByText(/research system coming soon/i)).toBeVisible();
+    await expect(page.getByTestId('research-points')).toBeVisible();
   });
 });
-

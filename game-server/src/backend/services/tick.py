@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import inspect
 from backend.database import db
-from backend.models import Planet, Fleet, TickLog, User
+from backend.models import Planet, Fleet, TickLog, User, Research
 from flask import current_app
 import math
 from backend.config import get_planet_storage_caps
+import json
 
 RESPAWN_PROTECTION_MINUTES_DEFAULT = 10
 
@@ -19,6 +20,7 @@ def run_tick():
 
     # Execute normal tick operations
     resource_changes = process_resource_generation()
+    research_changes = process_research_points()
     # Fleet arrivals/missions are processed by FleetArrivalService. We intentionally
     # avoid mutating fleet statuses here to prevent prematurely "stationing" fleets
     # before mission handlers run.
@@ -27,6 +29,9 @@ def run_tick():
     # Process arrived fleets using the FleetArrivalService
     from .fleet_arrival import FleetArrivalService
     FleetArrivalService.process_arrived_fleets()
+
+    # Process research completion (tick-driven).
+    process_research_queue(tick_start_time)
 
     # Process player elimination/respawn lifecycle (Phase 7).
     # We intentionally separate "mark eliminated" from "respawn" so the respawn happens
@@ -216,6 +221,142 @@ def process_resource_generation():
     db.session.commit()
     return changes
 
+
+def process_research_points():
+    """Accrue research points for all users based on research labs (tick-based)."""
+    users = User.query.all()
+    raw_per_hour_per_level = current_app.config.get("RESEARCH_RP_PER_HOUR_PER_LAB_LEVEL", 10)
+    if inspect.isawaitable(raw_per_hour_per_level):
+        raw_per_hour_per_level = None
+    try:
+        per_hour_per_level = int(raw_per_hour_per_level) if raw_per_hour_per_level is not None else 10
+    except (TypeError, ValueError):
+        per_hour_per_level = 10
+    changes = []
+
+    for user in users:
+        if user.username == "pirates":
+            continue
+
+        research = Research.query.filter_by(user_id=user.id).first()
+        if not research:
+            research = Research(user_id=user.id, research_points=0)
+            db.session.add(research)
+            db.session.flush()
+
+        planets = Planet.query.filter_by(user_id=user.id).all()
+        total_per_hour = 0.0
+        for planet in planets:
+            lvl = int(getattr(planet, "research_lab", 0) or 0)
+            if lvl <= 0:
+                continue
+
+            energy_production = (planet.solar_plant or 0) * 20 + (planet.fusion_reactor or 0) * 50
+            energy_consumption = (
+                (planet.metal_mine or 0) * 10
+                + (planet.crystal_mine or 0) * 10
+                + (planet.deuterium_synthesizer or 0) * 20
+                + (getattr(planet, "research_lab", 0) or 0) * 15
+            )
+            energy_ratio = min(1.0, energy_production / energy_consumption) if energy_consumption > 0 else 1.0
+            total_per_hour += float(lvl * per_hour_per_level) * float(energy_ratio)
+
+        # Accelerated tick scale (resources use divisor=72). Keep fractional remainder so low rates still accrue.
+        tick_rp = float(total_per_hour / 72.0)
+        if tick_rp <= 0:
+            continue
+
+        fraction = float(getattr(research, "research_points_fraction", 0.0) or 0.0) + tick_rp
+        gain = int(fraction)
+        fraction = fraction - gain
+        research.research_points_fraction = fraction
+
+        if gain <= 0:
+            continue
+
+        before = int(research.research_points or 0)
+        research.research_points = before + gain
+        changes.append({"user_id": user.id, "rp_change": gain})
+
+    db.session.commit()
+    return changes
+
+
+def process_research_queue(tick_start_time: datetime) -> None:
+    """Complete research projects whose completes_at has passed (one per user).
+
+    We treat `tick_start_time` as the authoritative "now" for tick processing.
+    This keeps completion deterministic in tests and matches the game's discrete
+    tick semantics (events resolve on the next tick at/after their scheduled time).
+    """
+    tick_now = tick_start_time  # naive UTC (run_tick uses datetime.utcnow()).
+    users = User.query.all()
+    for user in users:
+        raw = getattr(user, "research_queue", None)
+        if not raw:
+            continue
+        try:
+            queue = json.loads(raw)
+        except Exception:
+            user.research_queue = None
+            continue
+        if not isinstance(queue, dict):
+            user.research_queue = None
+            continue
+
+        key = queue.get("key")
+        target_level = int(queue.get("target_level") or 0)
+        completes_at_raw = queue.get("completes_at")
+        completes_at = None
+        if isinstance(completes_at_raw, str):
+            s = completes_at_raw.strip()
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            try:
+                completes_at = datetime.fromisoformat(s)
+            except Exception:
+                completes_at = None
+
+        # Normalize to naive UTC for comparison against `tick_now`.
+        if completes_at and completes_at.tzinfo is not None:
+            completes_at = completes_at.astimezone(timezone.utc).replace(tzinfo=None)
+
+        if not key or key not in ("colonization_tech", "astrophysics", "interstellar_communication"):
+            user.research_queue = None
+            continue
+        if not completes_at:
+            continue
+        # Ensure completion happens only after the scheduled time.
+        if completes_at > tick_now:
+            continue
+
+        research = Research.query.filter_by(user_id=user.id).first()
+        if not research:
+            research = Research(user_id=user.id, research_points=0)
+            db.session.add(research)
+            db.session.flush()
+
+        current_level = int(getattr(research, key) or 0)
+        if target_level != current_level + 1:
+            # Guard against corrupted queue or double-apply; normalize to next level.
+            target_level = current_level + 1
+
+        setattr(research, key, target_level)
+        user.research_queue = None
+
+        home = Planet.query.filter_by(user_id=user.id).order_by(Planet.is_home_planet.desc(), Planet.id.asc()).first()
+        db.session.add(
+            TickLog(
+                tick_number=0,
+                planet_id=home.id if home else None,
+                event_type="research_complete",
+                event_description=f"Research completed: {key} → Level {target_level}",
+                timestamp=datetime.utcnow(),
+            )
+        )
+
+    db.session.commit()
+
 def calculate_production_rate(level, resource_type, planet=None):
     """Calculate production rate for a building level with planet trait bonuses"""
     # Base production rates
@@ -330,16 +471,27 @@ def generate_exploration_planets(x, y, z, user_id):
     num_planets = random.randint(1, 3)
 
     for i in range(num_planets):
-        # Offset coordinates slightly for multiple planets in same system
-        planet_x = x + random.randint(-5, 5)
-        planet_y = y + random.randint(-5, 5)
-        planet_z = z + random.randint(-5, 5)
+        # Offset coordinates slightly for multiple planets in same system.
+        # Ensure at least one axis differs from the system center (so we never place a planet exactly at x:y:z).
+        # Keep exploration on the same Z slice to match the 2D GalaxyMap and reduce wasted depth.
+        planet_z = z
+        while True:
+            dx = random.randint(-5, 5)
+            dy = random.randint(-5, 5)
+            if dx != 0 or dy != 0:
+                planet_x = x + dx
+                planet_y = y + dy
+                break
 
         # Ensure coordinates are unique
         while Planet.query.filter_by(x=planet_x, y=planet_y, z=planet_z).first():
-            planet_x = x + random.randint(-5, 5)
-            planet_y = y + random.randint(-5, 5)
-            planet_z = z + random.randint(-5, 5)
+            dx = random.randint(-5, 5)
+            dy = random.randint(-5, 5)
+            if dx == 0 and dy == 0:
+                continue
+            planet_x = x + dx
+            planet_y = y + dy
+            planet_z = z
 
         # Generate planet properties
         planet_names = [

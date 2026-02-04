@@ -17,7 +17,21 @@ async function runTick(request, token) {
   expect(res.ok()).toBeTruthy();
 }
 
+async function restoreSnapshot(request) {
+  const devToken = process.env.PLANETARION_DEV_ADMIN_TOKEN || 'planetarion-dev';
+  const res = await request.post('http://localhost:5000/api/admin/db/restore', {
+    headers: { 'X-Planetarion-Dev-Token': devToken },
+  });
+  expect(res.ok()).toBeTruthy();
+}
+
 test.describe('Overview activity feed', () => {
+  test.afterEach(async ({ request }) => {
+    // This spec intentionally mutates global state by switching scenarios.
+    // Restore the DB snapshot so other specs can still assume the default dataset.
+    await restoreSnapshot(request);
+  });
+
   test('shows combat + capture related events from tick logs', async ({ page, request }) => {
     const scenario = await resetTwoPlayerScenario(request);
     const alphaFleetId = scenario.fleets.alpha_fleet_id;
@@ -46,4 +60,3 @@ test.describe('Overview activity feed', () => {
     await expect(list).toContainText(/Combat between/i);
   });
 });
-

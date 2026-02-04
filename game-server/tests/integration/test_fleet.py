@@ -280,7 +280,7 @@ class TestFleetEndpoints:
         assert dissolve_resp.status_code == 200
 
         # Inventory fleet should now include the ships again, and the dissolved fleet should be gone.
-        fleets = client.get('/api/fleet', headers=headers).get_json()
+        fleets = client.get('/api/fleet?include_inventory=1', headers=headers).get_json()
         assert all(f['id'] != created_id for f in fleets)
 
         inventory = next((f for f in fleets if f.get('mission') == 'inventory'), None)
@@ -309,7 +309,7 @@ class TestFleetEndpoints:
         resp = client.post('/api/fleet', json=create_payload, headers=headers)
         assert resp.status_code == 201
 
-        fleets = client.get('/api/fleet', headers=headers).get_json()
+        fleets = client.get('/api/fleet?include_inventory=1', headers=headers).get_json()
         inventory = next((f for f in fleets if f.get('mission') == 'inventory'), None)
         assert inventory is not None
 

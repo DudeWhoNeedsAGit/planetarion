@@ -34,7 +34,7 @@ def is_valid_position(x, y, z, existing_planets, min_distance=25):
             return False
     return True
 
-def generate_cluster_centers(num_clusters, min_distance):
+def generate_cluster_centers(num_clusters, min_distance, fixed_z=None):
     """Generate centers for galaxy clusters"""
     centers = []
     max_attempts = 1000
@@ -43,7 +43,7 @@ def generate_cluster_centers(num_clusters, min_distance):
         for attempt in range(max_attempts):
             x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
             y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
-            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = int(fixed_z) if fixed_z is not None else random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
 
             # Check distance from other cluster centers
             valid = True
@@ -59,12 +59,12 @@ def generate_cluster_centers(num_clusters, min_distance):
             # If we can't find a valid position, place it randomly
             x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
             y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
-            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = int(fixed_z) if fixed_z is not None else random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
             centers.append((x, y, z))
 
     return centers
 
-def generate_planet_position(existing_planets, cluster_center=None, is_core_planet=False):
+def generate_planet_position(existing_planets, cluster_center=None, is_core_planet=False, fixed_z=None):
     """Generate a valid planet position"""
     max_attempts = 100
 
@@ -75,12 +75,15 @@ def generate_planet_position(existing_planets, cluster_center=None, is_core_plan
             radius = UNIVERSE_CONFIG['cluster_radius']
             x = cx + random.randint(-radius, radius)
             y = cy + random.randint(-radius, radius)
-            z = cz + random.randint(-radius, radius)
+            if fixed_z is not None:
+                z = int(fixed_z)
+            else:
+                z = cz + random.randint(-radius, radius)
         else:
             # Generate random position across universe
             x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
             y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
-            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = int(fixed_z) if fixed_z is not None else random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
 
         # Ensure coordinates are within bounds
         x = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], x))
@@ -93,7 +96,7 @@ def generate_planet_position(existing_planets, cluster_center=None, is_core_plan
     # If we can't find a valid position, place it with minimal distance check
     x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
     y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
-    z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+    z = int(fixed_z) if fixed_z is not None else random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
     return x, y, z
 
 def create_enemy_planets_around_player(player_planets, num_enemies=5):
@@ -135,7 +138,8 @@ def create_enemy_planets_around_player(player_planets, num_enemies=5):
             # Generate position around player planet
             distance = random.randint(500, 1000)  # 500-1000 units away
             angle = random.uniform(0, 2 * math.pi)
-            height_offset = random.randint(-200, 200)  # Some vertical variation
+            # Keep enemies on the same Z slice as the player for a denser, more navigable 2D map.
+            height_offset = 0
 
             enemy_x = int(player_planet.x + distance * math.cos(angle))
             enemy_y = int(player_planet.y + distance * math.sin(angle))
@@ -210,7 +214,8 @@ def create_pirate_camps_around_player(player_planets, num_camps=2):
         for i in range(num_camps):
             angle = random.uniform(0, 2 * math.pi)
             distance = random.randint(300, 900)
-            height_offset = random.randint(-200, 200)
+            # Keep pirate camps on the same Z slice as the player for a denser, more navigable 2D map.
+            height_offset = 0
 
             x = int(player_planet.x + distance * math.cos(angle))
             y = int(player_planet.y + distance * math.sin(angle))
@@ -246,6 +251,59 @@ def create_pirate_camps_around_player(player_planets, num_camps=2):
 
     db.session.commit()
     return pirate_data
+
+
+def create_local_unowned_planets_on_same_z(existing_planets, center_planet, count=80, radius=1800):
+    """Create extra unowned planets near a player's start location on the same Z slice.
+
+    The current GalaxyMap UI is 2D (X/Y) and keeps Z fixed to the player's home Z.
+    Without local density on that Z slice, the map can feel empty (only a handful of systems).
+    """
+    if not center_planet:
+        return []
+
+    created = []
+    attempts = 0
+    max_attempts = max(500, count * 20)
+
+    # Use a slightly larger spacing locally so markers don't look like a blob.
+    local_min_distance = max(UNIVERSE_CONFIG['min_distance'], 80)
+
+    while len(created) < count and attempts < max_attempts:
+        attempts += 1
+        # Sample a point in a disk for better spread.
+        angle = random.uniform(0, 2 * math.pi)
+        r = radius * math.sqrt(random.random())
+        x = int(center_planet.x + r * math.cos(angle))
+        y = int(center_planet.y + r * math.sin(angle))
+        z = int(center_planet.z)
+
+        # Keep within universe bounds.
+        x = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], x))
+        y = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], y))
+
+        if not is_valid_position(x, y, z, existing_planets + created, local_min_distance):
+            continue
+
+        planet = Planet(
+            name=f"Uncharted {random.choice(['Belt', 'Rock', 'World', 'Orbit'])} {random.randint(100, 999)}",
+            x=x,
+            y=y,
+            z=z,
+            user_id=None,
+            metal=random.randint(500, 5000),
+            crystal=random.randint(250, 2500),
+            deuterium=random.randint(0, 1500),
+            metal_mine=0,
+            crystal_mine=0,
+            deuterium_synthesizer=0,
+            solar_plant=0,
+            fusion_reactor=0,
+            created_at=fake.date_time_this_year()
+        )
+        created.append(planet)
+
+    return created
 
 @populate_bp.route('/populate', methods=['POST'])
 def populate_database():
@@ -335,15 +393,27 @@ def populate_database():
         ]
 
         print("DEBUG: Generating galaxy clusters...")
+        # GalaxyMap is currently 2D (X/Y) and keeps Z fixed. In testing we keep the
+        # entire populated universe on a single Z slice to improve density and
+        # reduce wasted "depth" data the player can't reach/see.
+        fixed_z = 0
+        try:
+            if users and any(u.username == 'e2etestuser' for u in users):
+                fixed_z = None  # will be set after we pick the test user's cluster
+        except Exception:
+            fixed_z = 0
+
         cluster_centers = generate_cluster_centers(
             UNIVERSE_CONFIG['num_clusters'],
-            UNIVERSE_CONFIG['cluster_spacing']
+            UNIVERSE_CONFIG['cluster_spacing'],
+            fixed_z=fixed_z,
         )
         print(f"DEBUG: Generated {len(cluster_centers)} galaxy clusters")
 
         # Assign users to clusters - ensure e2etestuser gets a dedicated cluster
         user_clusters = {}
         test_user_cluster = cluster_centers[0]  # Reserve first cluster for test user
+        fixed_z = test_user_cluster[2]
 
         for i, user in enumerate(users):
             if user.username == 'e2etestuser':
@@ -352,7 +422,8 @@ def populate_database():
             else:
                 # Start from cluster 1 for other users
                 cluster_idx = (i % (len(cluster_centers) - 1)) + 1
-                user_clusters[user.id] = cluster_centers[cluster_idx]
+                cx, cy, _cz = cluster_centers[cluster_idx]
+                user_clusters[user.id] = (cx, cy, fixed_z)
 
         print("DEBUG: Generating planets with proper spacing...")
 
@@ -369,7 +440,8 @@ def populate_database():
                     x, y, z = generate_planet_position(
                         planets + test_user_positions,  # Include already generated positions
                         cluster_center,
-                        is_core_planet=(i == 0)  # First planet is core planet
+                        is_core_planet=(i == 0),  # First planet is core planet
+                        fixed_z=fixed_z,
                     )
                     test_user_positions.append(type('MockPlanet', (), {'x': x, 'y': y, 'z': z})())
 
@@ -412,7 +484,8 @@ def populate_database():
                     x, y, z = generate_planet_position(
                         planets,
                         cluster_center,
-                        is_core_planet=(i == 0)  # First planet is core planet
+                        is_core_planet=(i == 0),  # First planet is core planet
+                        fixed_z=fixed_z,
                     )
 
                     name = f"{planet_names[i % len(planet_names)]} {user.username}"
@@ -441,6 +514,26 @@ def populate_database():
         print(f"DEBUG: Minimum planet spacing: {UNIVERSE_CONFIG['min_distance']} units")
 
         db.session.commit()
+
+        # Add extra unowned planets on the same Z slice near the test user to make the
+        # 2D GalaxyMap feel populated without requiring a 3D depth selector.
+        try:
+            test_user = User.query.filter_by(username='e2etestuser').first()
+            if test_user:
+                test_home = Planet.query.filter_by(user_id=test_user.id).order_by(Planet.id.asc()).first()
+                # Minimal mode is used by fast tests that assert the smallest possible dataset.
+                # Keep it truly minimal: only the single test-user planet should exist.
+                if not minimal:
+                    extra_count = 120
+                    extra = create_local_unowned_planets_on_same_z(planets, test_home, count=extra_count, radius=2000)
+                    if extra:
+                        for p in extra:
+                            planets.append(p)
+                            db.session.add(p)
+                        db.session.commit()
+                        print(f"DEBUG: Added {len(extra)} extra unowned planets near e2etestuser on Z={test_home.z}")
+        except Exception as e:
+            print(f"WARNING: Failed to add local unowned planets: {e}")
 
         # Generate alliances
         alliances = []

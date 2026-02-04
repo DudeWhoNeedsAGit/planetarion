@@ -8,6 +8,7 @@ import GalaxyMap from './GalaxyMap';
 import CombatDashboard from './CombatDashboard';
 import ChatPanel from './ChatPanel';
 import ShipStats from './ShipStats';
+import ResearchDashboard from './ResearchDashboard';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
 
@@ -451,7 +452,7 @@ function Dashboard({ user, onLogout }) {
       case 'overview':
         return (
           <div data-testid="section-overview">
-            <Overview user={user} planets={planets} />
+            <Overview user={user} planets={planets} onNavigateSection={setActiveSection} />
           </div>
         );
 	      case 'planets':
@@ -849,19 +850,7 @@ function Dashboard({ user, onLogout }) {
         );
       case 'research':
         return (
-          <div className="bg-gray-800 rounded-lg p-6" data-testid="section-research">
-            <h3 className="text-xl font-bold mb-4 text-white">🔬 Research Lab</h3>
-            <div className="text-center text-gray-400 py-8">
-              Research system coming soon! This will include technologies like:
-              <ul className="mt-4 space-y-2">
-                <li>• Energy Technology</li>
-                <li>• Laser Technology</li>
-                <li>• Ion Technology</li>
-                <li>• Hyperspace Technology</li>
-                <li>• Plasma Technology</li>
-              </ul>
-            </div>
-          </div>
+          <ResearchDashboard />
         );
       case 'shipyard':
         // Filter ships based on selected role
@@ -1196,7 +1185,7 @@ function Dashboard({ user, onLogout }) {
       default:
         return (
           <div data-testid="section-overview">
-            <Overview user={user} planets={planets} />
+            <Overview user={user} planets={planets} onNavigateSection={setActiveSection} />
           </div>
         );
     }

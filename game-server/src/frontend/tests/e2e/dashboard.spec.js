@@ -30,7 +30,7 @@ test.describe('Dashboard', () => {
     await expect(page.getByTestId('fleet-management')).toBeVisible();
 
     await goToSection(page, 'research');
-    await expect(page.locator('text=Research Lab')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /research lab/i })).toBeVisible();
 
     await goToSection(page, 'overview');
     await expect(page.locator('text=Welcome back, e2etestuser!')).toBeVisible();
@@ -61,15 +61,10 @@ test.describe('Dashboard', () => {
   test('should display research placeholder', async ({ page }) => {
     await goToSection(page, 'research');
 
-    // Check for research placeholder content
-    await expect(page.locator('text=Research Lab')).toBeVisible();
-    await expect(page.locator('text=Research system coming soon')).toBeVisible();
-
-    // Check for technology list
-    const technologies = ['Energy Technology', 'Laser Technology', 'Ion Technology'];
-    for (const tech of technologies) {
-      await expect(page.locator(`text=${tech}`)).toBeVisible();
-    }
+    // Research MVP: ensure the dashboard renders key UI sections.
+    await expect(page.getByRole('heading', { name: /research lab/i })).toBeVisible();
+    await expect(page.getByTestId('research-points')).toBeVisible();
+    await expect(page.getByTestId('research-queue-empty')).toBeVisible();
   });
 
   test('should display alliance placeholder', async ({ page }) => {

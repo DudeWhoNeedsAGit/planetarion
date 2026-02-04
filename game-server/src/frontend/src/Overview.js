@@ -1,9 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import { backendBaseUrl } from './apiBase';
 
-function Overview({ user, planets }) {
+function Overview({ user, planets, onNavigateSection }) {
   const [activity, setActivity] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [debrisSummary, setDebrisSummary] = useState({ count: 0, total: 0 });
+  const [researchSummary, setResearchSummary] = useState({ points: 0, queue: null, nextSuggestionKey: null });
+  const sseHealthyRef = useRef(false);
 
   const mergeActivity = (prev, next) => {
     const byId = new Map();
@@ -11,7 +15,12 @@ function Overview({ user, planets }) {
       if (e && e.id != null) byId.set(e.id, e);
     });
     (Array.isArray(next) ? next : []).forEach((e) => {
-      if (e && e.id != null && !byId.has(e.id)) byId.set(e.id, e);
+      if (!e || e.id == null) return;
+      // Defensive: hide per-tick resource rows or malformed rows that pollute the feed.
+      const hasType = typeof e.event_type === 'string' && e.event_type.trim() !== '';
+      const hasDesc = typeof e.event_description === 'string' && e.event_description.trim() !== '';
+      if (!hasType && !hasDesc) return;
+      if (!byId.has(e.id)) byId.set(e.id, e);
     });
     return Array.from(byId.values()).sort((a, b) => {
       const ta = new Date(a.timestamp || 0).getTime();
@@ -37,9 +46,89 @@ function Overview({ user, planets }) {
 
   useEffect(() => {
     fetchActivity();
-    const onTick = () => fetchActivity();
+    // Commander Suggestions inputs (cheap, lightweight):
+    // - known debris fields (combat/debris)
+    // - research queue + RP (research)
+    const loadCommanderContext = async () => {
+      try {
+        const [debrisRes, researchRes] = await Promise.all([
+          axios.get('/api/combat/debris'),
+          axios.get('/api/research'),
+        ]);
+
+        const debris = Array.isArray(debrisRes.data?.debris_fields) ? debrisRes.data.debris_fields : [];
+        const total = debris.reduce((sum, df) => {
+          const r = df?.resources || {};
+          return sum + (r.metal || 0) + (r.crystal || 0) + (r.deuterium || 0);
+        }, 0);
+        setDebrisSummary({ count: debris.length, total });
+
+        const rp = Number(researchRes.data?.research_points || 0) || 0;
+        const queue = researchRes.data?.queue || null;
+        const nextLevelCosts = researchRes.data?.next_level_costs || {};
+        const levels = researchRes.data?.levels || {};
+        // Suggest one “high ROI” tech if affordable and no queue is running.
+        const candidateOrder = ['astrophysics', 'colonization_tech', 'recycler_efficiency', 'weapons_tech', 'energy_tech'];
+        const nextSuggestionKey = !queue
+          ? candidateOrder.find((k) => typeof nextLevelCosts?.[k] === 'number' && rp >= nextLevelCosts[k])
+          : null;
+        setResearchSummary({ points: rp, queue, nextSuggestionKey, levels });
+      } catch (e) {
+        // Non-fatal: keep defaults.
+      }
+    };
+    loadCommanderContext();
+    const onTick = () => {
+      // If SSE is connected, avoid refetching on every tick; the stream will deliver new events.
+      if (!sseHealthyRef.current) fetchActivity();
+    };
     window.addEventListener('planetarion:tick', onTick);
-    return () => window.removeEventListener('planetarion:tick', onTick);
+
+    // Event-driven updates (SSE). Fallback to existing tick/polling behavior on error.
+    const token = localStorage.getItem('token');
+    let es = null;
+    if (token) {
+      try {
+        const sseUrl = `${backendBaseUrl}/api/events/stream?token=${encodeURIComponent(token)}`;
+        es = new EventSource(sseUrl);
+        es.addEventListener('activity', (evt) => {
+          try {
+            const payload = JSON.parse(evt.data || '{}');
+            if (!payload || payload.id == null) return;
+            setActivity((prev) => mergeActivity(prev, [payload]));
+          } catch (e) {
+            // ignore
+          }
+        });
+        // If stream is open, no need to spam fetches.
+        es.addEventListener('open', () => {
+          sseHealthyRef.current = true;
+        });
+        es.addEventListener('error', () => {
+          sseHealthyRef.current = false;
+          try {
+            es.close();
+          } catch (e) {
+            // ignore
+          }
+          es = null;
+        });
+      } catch (e) {
+        es = null;
+      }
+    }
+
+    return () => {
+      window.removeEventListener('planetarion:tick', onTick);
+      sseHealthyRef.current = false;
+      if (es) {
+        try {
+          es.close();
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -145,6 +234,82 @@ function Overview({ user, planets }) {
           </div>
           <div className="text-2xl font-bold text-purple-400">
             {Object.values(totalBuildings).reduce((sum, level) => sum + level, 0)}
+          </div>
+        </div>
+      </div>
+
+      {/* Commander Suggestions */}
+      <div className="bg-gray-800 rounded-lg p-6" data-testid="commander-suggestions">
+        <h3 className="text-xl font-bold mb-4 text-white">Commander Suggestions</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="bg-gray-700 rounded p-4 border border-gray-600">
+            <div className="text-white font-semibold mb-1">♻️ Recycle known debris</div>
+            <div className="text-gray-300 mb-3">
+              {debrisSummary.count > 0
+                ? `${debrisSummary.count} debris field(s) visible • ~${debrisSummary.total.toLocaleString()} total resources`
+                : 'No known debris fields right now.'}
+            </div>
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
+              disabled={debrisSummary.count === 0}
+              onClick={() => onNavigateSection?.('combat')}
+              data-testid="commander-suggest-open-combat"
+            >
+              Open Combat
+            </button>
+          </div>
+
+          <div className="bg-gray-700 rounded p-4 border border-gray-600">
+            <div className="text-white font-semibold mb-1">🔬 Keep research running</div>
+            <div className="text-gray-300 mb-3">
+              {researchSummary.queue
+                ? `Research in progress: ${researchSummary.queue.key} → L${researchSummary.queue.target_level}`
+                : `No research in progress • ${Number(researchSummary.points || 0).toLocaleString()} RP available`}
+            </div>
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white"
+              onClick={() => onNavigateSection?.('research')}
+              data-testid="commander-suggest-open-research"
+            >
+              Open Research
+            </button>
+            {!researchSummary.queue && researchSummary.nextSuggestionKey && (
+              <div className="mt-2 text-xs text-gray-200">
+                Suggested: <span className="text-white font-medium">{String(researchSummary.nextSuggestionKey).replace(/_/g, ' ')}</span> (affordable now)
+              </div>
+            )}
+          </div>
+
+          <div className="bg-gray-700 rounded p-4 border border-gray-600">
+            <div className="text-white font-semibold mb-1">🌌 Pick your next target</div>
+            <div className="text-gray-300 mb-3">
+              Use the map to find pirates nearby, scout, and plan attacks.
+            </div>
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-gray-900 hover:bg-gray-800 text-white border border-gray-600"
+              onClick={() => onNavigateSection?.('galaxy')}
+              data-testid="commander-suggest-open-galaxy"
+            >
+              Open Galaxy Map
+            </button>
+          </div>
+
+          <div className="bg-gray-700 rounded p-4 border border-gray-600">
+            <div className="text-white font-semibold mb-1">🚀 Build ships for the next fight</div>
+            <div className="text-gray-300 mb-3">
+              Stock up on fighters + recyclers so every win turns into profit.
+            </div>
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-gray-900 hover:bg-gray-800 text-white border border-gray-600"
+              onClick={() => onNavigateSection?.('shipyard')}
+              data-testid="commander-suggest-open-shipyard"
+            >
+              Open Shipyard
+            </button>
           </div>
         </div>
       </div>

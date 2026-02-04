@@ -34,9 +34,27 @@ async function clearAllFleets(page) {
   }
 }
 
+async function ensureShipyardShips(page, shipType, quantity) {
+  const token = await page.evaluate(() => localStorage.getItem('token'));
+  if (!token) return;
+  const headers = { Authorization: `Bearer ${token}` };
+  const planetsRes = await page.request.get('http://localhost:5000/api/planet', { headers });
+  if (!planetsRes.ok()) return;
+  const planets = await planetsRes.json();
+  const startPlanetId = planets?.[0]?.id;
+  if (!startPlanetId) return;
+  await page.request.post('http://localhost:5000/api/shipyard/build', {
+    headers,
+    data: { planet_id: startPlanetId, ship_type: shipType, quantity },
+  });
+}
+
 test.describe('Fleet Management', () => {
   test.beforeEach(async ({ page, request }) => {
     await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
+    // Keep this suite independent of DB scenario ordering: ensure ships exist even if
+    // a prior test cleared fleets (including the inventory fleet).
+    await ensureShipyardShips(page, 'small_cargo', 10);
     await navigateToFleets(page);
   });
 
@@ -54,6 +72,7 @@ test.describe('Fleet Management', () => {
     await expect(page.getByTestId('fleet-empty-state')).toBeVisible();
 
     // Restore state for subsequent tests (create a minimal fleet via UI).
+    await ensureShipyardShips(page, 'small_cargo', 5);
     await page.getByTestId('fleet-create-button').click();
     await page.getByTestId('fleet-start-planet-select').selectOption({ index: 1 });
     await page.getByTestId('fleet-ship-small_cargo').fill('1');

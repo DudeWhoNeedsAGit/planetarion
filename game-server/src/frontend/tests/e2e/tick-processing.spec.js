@@ -26,6 +26,18 @@ test.describe('Tick Processing', () => {
     });
     expect(buildProbeRes.ok()).toBeTruthy();
 
+    // Create a dedicated fleet that contains the probe (shipyard builds go to the inventory fleet).
+    const createProbeFleetRes = await request.post('http://localhost:5000/api/fleet', {
+      headers,
+      data: {
+        start_planet_id: startPlanetId,
+        ships: { espionage_probe: 1 },
+      },
+    });
+    expect(createProbeFleetRes.ok()).toBeTruthy();
+    const probeFleetId = (await createProbeFleetRes.json())?.fleet?.id;
+    expect(probeFleetId).toBeTruthy();
+
     // Find an enemy planet to spy on.
     const allPlanetsRes = await request.get('http://localhost:5000/api/planets');
     expect(allPlanetsRes.ok()).toBeTruthy();
@@ -33,17 +45,10 @@ test.describe('Tick Processing', () => {
     const enemyPlanet = allPlanets.find((p) => p.user_id != null && p.user_id !== self.id);
     expect(enemyPlanet).toBeTruthy();
 
-    // Find a stationed fleet with probes.
-    const fleetsRes = await request.get('http://localhost:5000/api/fleet', { headers });
-    expect(fleetsRes.ok()).toBeTruthy();
-    const fleets = await fleetsRes.json();
-    const probeFleet = fleets.find((f) => f.status === 'stationed' && (f?.ships?.espionage_probe || 0) > 0);
-    expect(probeFleet).toBeTruthy();
-
     // Send espionage; in test env travel time can be 0, so the UI will show "Arrived (pending tick)" until tick runs.
     const sendRes = await request.post('http://localhost:5000/api/fleet/send', {
       headers,
-      data: { fleet_id: probeFleet.id, mission: 'espionage', target_planet_id: enemyPlanet.id },
+      data: { fleet_id: probeFleetId, mission: 'espionage', target_planet_id: enemyPlanet.id },
     });
     expect(sendRes.ok()).toBeTruthy();
 
@@ -54,7 +59,7 @@ test.describe('Tick Processing', () => {
     const pendingBanner = page.getByTestId('fleet-pending-tick-banner');
     await expect(pendingBanner).toBeVisible({ timeout: 60000 });
 
-    const tile = page.getByTestId('fleet-tile').filter({ hasText: `Fleet #${probeFleet.id}` }).first();
+    const tile = page.getByTestId('fleet-tile').filter({ hasText: `Fleet #${probeFleetId}` }).first();
     await expect(tile).toBeVisible({ timeout: 60000 });
     await expect(tile.getByTestId('fleet-eta-value')).toHaveText('Arrived (pending tick)', { timeout: 60000 });
 
@@ -71,4 +76,3 @@ test.describe('Tick Processing', () => {
     await expect(tile.getByTestId('fleet-eta-value')).not.toHaveText('Arrived (pending tick)', { timeout: 60000 });
   });
 });
-

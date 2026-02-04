@@ -1,6 +1,8 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
+from sqlalchemy import event, text
+import os
 try:
     from flasgger import Swagger
 except Exception:  # pragma: no cover
@@ -9,6 +11,7 @@ import json
 from .config import get_config
 from .database import db, migrate
 from .services.scheduler import GameScheduler
+from .services.event_bus import EventMessage, event_bus
 
 def create_app(config_name=None):
     """Application factory pattern"""
@@ -20,13 +23,28 @@ def create_app(config_name=None):
         app = Flask(__name__)
         print("✅ Flask app created")
 
+        def _display_db_uri(uri: str | None) -> str:
+            if not uri:
+                return "Not set"
+            # Avoid leaking local absolute paths in logs (public repo friendliness).
+            # Keep enough info to understand which DB file is in use.
+            if uri.startswith("sqlite:////"):
+                raw = uri[len("sqlite:////"):]
+                marker = "/instance/"
+                idx = raw.rfind(marker)
+                if idx != -1:
+                    suffix = raw[idx + 1 :]  # instance/...
+                    return f"sqlite:///./{suffix}"
+                return f"sqlite:///…/{os.path.basename(raw)}"
+            return uri
+
         # Load configuration
         print("⚙️ Loading configuration...")
         config_class = get_config(config_name)
         app.config.from_object(config_class)
         print(f"✅ Configuration loaded: {config_class.__name__}")
         print(f"📊 FLASK_ENV: {app.config.get('FLASK_ENV')}")
-        print(f"🗄️ DATABASE_URL: {app.config.get('SQLALCHEMY_DATABASE_URI', 'Not set')}")
+        print(f"🗄️ DATABASE_URL: {_display_db_uri(app.config.get('SQLALCHEMY_DATABASE_URI'))}")
 
         # Initialize extensions
         print("🔧 Initializing database...")
@@ -37,6 +55,57 @@ def create_app(config_name=None):
         print("📋 Importing models for table creation...")
         from .models import User, Planet, Fleet, Alliance, TickLog, EspionageReport
         print("✅ Models imported successfully")
+
+        # Event-driven UI: broadcast significant TickLog rows to connected SSE clients.
+        # Use low-level SQL via the connection to avoid ORM/session recursion in flush hooks.
+        def _broadcast_ticklog(mapper, connection, target):  # pragma: no cover
+            try:
+                event_type = (getattr(target, "event_type", None) or "").strip()
+                event_desc = (getattr(target, "event_description", None) or "").strip()
+                if not event_type and not event_desc:
+                    return
+
+                planet_id = getattr(target, "planet_id", None)
+                fleet_id = getattr(target, "fleet_id", None)
+
+                user_ids = set()
+                if planet_id:
+                    res = connection.execute(text("SELECT user_id FROM planets WHERE id = :id"), {"id": int(planet_id)}).fetchone()
+                    if res and res[0] is not None:
+                        user_ids.add(int(res[0]))
+                if fleet_id:
+                    res = connection.execute(text("SELECT user_id FROM fleets WHERE id = :id"), {"id": int(fleet_id)}).fetchone()
+                    if res and res[0] is not None:
+                        user_ids.add(int(res[0]))
+
+                if not user_ids:
+                    return
+
+                ts = getattr(target, "timestamp", None)
+                ts_iso = ts.isoformat() + "Z" if ts else None
+
+                payload = {
+                    "id": int(getattr(target, "id", 0) or 0),
+                    "tick_number": int(getattr(target, "tick_number", 0) or 0),
+                    "timestamp": ts_iso,
+                    "planet_id": int(planet_id) if planet_id else None,
+                    "fleet_id": int(fleet_id) if fleet_id else None,
+                    "event_type": event_type or None,
+                    "event_description": event_desc or None,
+                }
+                msg = EventMessage(event="activity", data=payload, id=payload["id"] or None)
+                for uid in user_ids:
+                    event_bus.publish(uid, msg)
+            except Exception:
+                # Never break the main transaction path.
+                return
+
+        try:
+            # Avoid duplicate listeners when create_app() is called multiple times (tests, dev reloader).
+            if not event.contains(TickLog, "after_insert", _broadcast_ticklog):
+                event.listen(TickLog, "after_insert", _broadcast_ticklog)
+        except Exception:
+            pass
 
         print("🔄 Initializing migrate...")
         migrate.init_app(app, db)
@@ -113,6 +182,7 @@ def create_app(config_name=None):
         from .routes.combat import combat_bp
         from .routes.admin import admin_bp
         from .routes.espionage import espionage_bp
+        from .routes.events import events_bp
 
         app.register_blueprint(auth_bp)
         print("✅ Auth blueprint registered")
@@ -154,6 +224,9 @@ def create_app(config_name=None):
         app.register_blueprint(admin_bp)
         print("✅ Admin blueprint registered")
 
+        app.register_blueprint(events_bp)
+        print("✅ Events blueprint registered")
+
         # Health check endpoint
         @app.route('/health')
         def health():
@@ -163,8 +236,10 @@ def create_app(config_name=None):
         @app.route('/api/tick', methods=['POST'])
         def manual_tick():
             from .services.tick import run_tick
-            with app.app_context():
-                changes = run_tick()
+            # Already running inside a request/app context; avoid creating a nested
+            # app context which would create a separate scoped DB session and can
+            # lead to stale reads during tests.
+            changes = run_tick()
             return jsonify({
                 'message': 'Manual tick executed successfully',
                 'changes': changes
@@ -282,12 +357,20 @@ def create_app(config_name=None):
                 try:
                     from .services.sqlite_schema import (
                         ensure_planet_storage_columns,
+                        ensure_planet_trait_columns,
                         ensure_fleet_cargo_columns,
                         ensure_user_lifecycle_columns,
+                        ensure_user_research_queue_columns,
+                        ensure_research_fraction_columns,
+                        ensure_research_tech_columns,
                     )
                     ensure_planet_storage_columns(db.engine)
+                    ensure_planet_trait_columns(db.engine)
                     ensure_fleet_cargo_columns(db.engine)
                     ensure_user_lifecycle_columns(db.engine)
+                    ensure_user_research_queue_columns(db.engine)
+                    ensure_research_fraction_columns(db.engine)
+                    ensure_research_tech_columns(db.engine)
                     print("✅ SQLite schema ensured (planet storage columns)")
                 except Exception as e:
                     print(f"⚠️ SQLite schema ensure failed: {e}")
@@ -307,12 +390,20 @@ def create_app(config_name=None):
                 try:
                     from .services.sqlite_schema import (
                         ensure_planet_storage_columns,
+                        ensure_planet_trait_columns,
                         ensure_fleet_cargo_columns,
                         ensure_user_lifecycle_columns,
+                        ensure_user_research_queue_columns,
+                        ensure_research_fraction_columns,
+                        ensure_research_tech_columns,
                     )
                     ensure_planet_storage_columns(db.engine)
+                    ensure_planet_trait_columns(db.engine)
                     ensure_fleet_cargo_columns(db.engine)
                     ensure_user_lifecycle_columns(db.engine)
+                    ensure_user_research_queue_columns(db.engine)
+                    ensure_research_fraction_columns(db.engine)
+                    ensure_research_tech_columns(db.engine)
                 except Exception:
                     # Tests recreate DB frequently; missing migration isn't fatal here.
                     pass

@@ -320,7 +320,7 @@ class TestShipyardIntegration:
         assert (inventory.recycler or 0) >= 1  # 2 built - 1 allocated
 
     def test_ship_building_updates_existing_fleet(self, client, sample_user, sample_planet, sample_fleet, db_session):
-        """Test that building ships updates existing fleet"""
+        """Test that building ships updates planet inventory fleet"""
         headers = make_auth_headers(sample_user.id)
 
         # Ensure fleet is stationed at the planet
@@ -346,9 +346,12 @@ class TestShipyardIntegration:
         assert response.status_code == 200
         data = response.get_json()
 
-        # Verify existing fleet was updated
-        assert data['fleet']['id'] == sample_fleet.id
-        assert data['fleet']['colony_ship'] == 3  # 2 + 1
+        # Ship builds go into the planet's inventory fleet (not an arbitrary stationed fleet).
+        from backend.models import Fleet
+        built_fleet = Fleet.query.get(data['fleet']['id'])
+        assert built_fleet is not None
+        assert built_fleet.mission == 'inventory'
+        assert data['fleet']['colony_ship'] >= 1
 
 class TestShipyardEdgeCases:
     """Test shipyard endpoint edge cases"""
