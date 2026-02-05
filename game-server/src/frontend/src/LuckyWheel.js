@@ -89,10 +89,10 @@ const LuckyWheel = ({ planets, selectedPlanet, onBuffApplied }) => {
   const canSpinNow = canSpin() && canAffordSpin() && !isSpinning;
 
   return (
-    <div className="bg-gray-800 rounded-lg p-6">
+    <div className="pa-card p-6">
       <div className="text-center mb-6">
         <h3 className="text-2xl font-bold text-white mb-2">🎰 Lucky Wheel</h3>
-        <p className="text-gray-400">Spin for a chance to supercharge your production!</p>
+        <p className="text-slate-300/80">Spin for a chance to supercharge your production!</p>
       </div>
 
       {/* Wheel Container */}
@@ -101,7 +101,7 @@ const LuckyWheel = ({ planets, selectedPlanet, onBuffApplied }) => {
           {/* Wheel */}
           <div
             ref={wheelRef}
-            className="w-64 h-64 rounded-full border-4 border-gray-600 relative overflow-hidden transition-transform duration-[4000ms] ease-out"
+            className="w-64 h-64 rounded-full border-4 border-slate-500/40 relative overflow-hidden transition-transform duration-[4000ms] ease-out"
             style={{
               transform: `rotate(${rotation}deg)`,
               background: `conic-gradient(
@@ -114,7 +114,7 @@ const LuckyWheel = ({ planets, selectedPlanet, onBuffApplied }) => {
           >
             {/* Zone Labels */}
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-white font-bold text-lg bg-black bg-opacity-50 px-3 py-1 rounded">
+              <div className="text-white font-bold text-lg bg-black/40 border border-slate-500/30 px-3 py-1 rounded">
                 SPIN TO WIN!
               </div>
             </div>
@@ -149,14 +149,14 @@ const LuckyWheel = ({ planets, selectedPlanet, onBuffApplied }) => {
               className="w-4 h-4 rounded-full mx-auto mb-1"
               style={{ backgroundColor: zone.color }}
             ></div>
-            <div className="text-xs text-gray-300">{zone.label}</div>
+            <div className="text-xs text-slate-200/80">{zone.label}</div>
           </div>
         ))}
       </div>
 
       {/* Cost Information */}
-      <div className="bg-gray-700 rounded p-3 mb-4">
-        <div className="text-sm text-gray-300 mb-2">Spin Cost:</div>
+      <div className="pa-panel p-3 mb-4">
+        <div className="text-sm text-slate-200/80 mb-2">Spin Cost:</div>
         <div className="text-yellow-400 text-sm">
           1,000 Metal | 500 Crystal | 200 Deuterium
         </div>
@@ -165,7 +165,7 @@ const LuckyWheel = ({ planets, selectedPlanet, onBuffApplied }) => {
       {/* Spin Button */}
       <div className="text-center">
         {!canSpin() && timeRemaining > 0 ? (
-          <div className="text-gray-400">
+          <div className="text-slate-300/80">
             <div className="text-sm mb-2">Next spin available in:</div>
             <div className="text-lg font-bold text-yellow-400">
               {formatTimeRemaining(timeRemaining)}
@@ -179,10 +179,10 @@ const LuckyWheel = ({ planets, selectedPlanet, onBuffApplied }) => {
           <button
             onClick={spinWheel}
             disabled={!canSpinNow}
-            className={`px-8 py-3 rounded-lg font-bold text-lg transition-all ${
+            className={`px-8 py-3 font-bold text-lg transition-all ${
               canSpinNow
-                ? 'bg-yellow-500 hover:bg-yellow-400 text-black hover:scale-105'
-                : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                ? 'pa-btn-primary bg-amber-400 hover:bg-amber-300 text-black hover:scale-105'
+                : 'pa-btn-secondary text-slate-300/60'
             }`}
           >
             {isSpinning ? 'SPINNING...' : 'SPIN THE WHEEL!'}
@@ -191,7 +191,7 @@ const LuckyWheel = ({ planets, selectedPlanet, onBuffApplied }) => {
       </div>
 
       {/* Instructions */}
-      <div className="mt-4 text-xs text-gray-500 text-center">
+      <div className="mt-4 text-xs text-slate-300/60 text-center">
         Land on green zones for production boosts! Cooldown: 5 minutes
       </div>
     </div>

@@ -5,13 +5,13 @@ const Toast = ({ toast, onRemove }) => {
   const getToastStyles = (type) => {
     switch (type) {
       case 'success':
-        return 'bg-green-500 text-white border-green-600';
+        return 'pa-panel text-white border-green-500/60';
       case 'error':
-        return 'bg-red-500 text-white border-red-600';
+        return 'pa-panel text-white border-red-500/60';
       case 'info':
-        return 'bg-blue-500 text-white border-blue-600';
+        return 'pa-panel text-white border-blue-500/60';
       default:
-        return 'bg-gray-500 text-white border-gray-600';
+        return 'pa-panel text-white border-slate-500/50';
     }
   };
 
@@ -39,7 +39,7 @@ const Toast = ({ toast, onRemove }) => {
         damping: 40,
         opacity: { duration: 0.2 }
       }}
-      className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg border-l-4 max-w-sm ${getToastStyles(toast.type)}`}
+      className={`p-4 rounded-lg shadow-lg border-l-4 max-w-sm ${getToastStyles(toast.type)}`}
       role="alert"
       aria-live="assertive"
     >
@@ -52,7 +52,7 @@ const Toast = ({ toast, onRemove }) => {
         </div>
         <button
           onClick={() => onRemove(toast.id)}
-          className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-white rounded"
+          className="text-white/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400/70 rounded"
           aria-label="Close notification"
         >
           <span className="text-lg" aria-hidden="true">×</span>
@@ -64,20 +64,12 @@ const Toast = ({ toast, onRemove }) => {
 
 export const ToastContainer = ({ toasts, removeToast }) => {
   return (
-    <div className="fixed top-0 right-0 z-50 pointer-events-none">
+    <div className="fixed top-4 right-4 z-50 pointer-events-none flex flex-col gap-3">
       <AnimatePresence>
-        {toasts.map((toast, index) => (
-          <motion.div
-            key={toast.id}
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            transition={{ delay: index * 0.1 }}
-            className="pointer-events-auto"
-            style={{ marginTop: `${index * 80 + 16}px` }}
-          >
+        {toasts.map((toast) => (
+          <div key={toast.id} className="pointer-events-auto">
             <Toast toast={toast} onRemove={removeToast} />
-          </motion.div>
+          </div>
         ))}
       </AnimatePresence>
     </div>

@@ -15,7 +15,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet, Fleet, Research, TickLog
 from backend.config import get_forced_travel_time_seconds, get_min_travel_time_seconds
-from backend.services.fleet_arrival import FleetArrivalService, COLONIZATION_ERRORS, MISSION_ERRORS
+from backend.services.fleet_arrival import FleetArrivalService, COLONIZATION_ERRORS
 from backend.services.fleet_state_machine import FleetStateMachine, FleetStateError
 from datetime import datetime, timedelta, timezone
 import math
@@ -570,7 +570,7 @@ def send_fleet():
 
         if colonization_difficulty > user_research_level:
             return jsonify({
-                'error': COLONIZATION_ERRORS['insufficient_research'],
+                'error': f'{COLONIZATION_ERRORS["insufficient_research"]} (requires L{colonization_difficulty}, you have L{user_research_level})',
                 'required_level': colonization_difficulty,
                 'current_level': user_research_level
             }), 400

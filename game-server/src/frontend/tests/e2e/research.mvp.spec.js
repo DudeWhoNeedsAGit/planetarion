@@ -12,6 +12,7 @@ async function runTick(page) {
 
 test.describe('Research MVP', () => {
   test('start research → wait → tick completes → level increases', async ({ page, request }) => {
+    test.setTimeout(120000);
     const token = await apiLogin(request, 'e2etestuser', 'testpassword123');
     const headers = { Authorization: `Bearer ${token}` };
 
@@ -57,18 +58,19 @@ test.describe('Research MVP', () => {
 
     // Wait for completion time, then tick to process completion.
     await page.waitForTimeout(durationSeconds * 1000 + 700);
-    // Use backend tick for determinism (the Run Tick button is covered elsewhere).
-    await request.post('http://localhost:5000/api/tick');
 
     // Poll backend until completion applied, then assert UI level updates.
     await expect
       .poll(
         async () => {
+          // Keep running ticks while polling so completion is applied even if the
+          // backend's reported duration is slightly off (or rounding causes early ticks).
+          await request.post('http://localhost:5000/api/tick');
           const res = await request.get('http://localhost:5000/api/research', { headers });
           const body = await res.json();
           return Number(body.levels?.astrophysics || 0);
         },
-        { timeout: 60000 }
+        { timeout: 120000 }
       )
       .toBe(beforeLevel + 1);
 

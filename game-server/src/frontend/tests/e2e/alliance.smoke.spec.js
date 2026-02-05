@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { loginViaLocalStorage } = require('./helpers/testSession');
+const { goToSection } = require('./helpers/nav');
 
 test.describe('Alliance UI Smoke', () => {
   test.beforeEach(async ({ page, request }) => {
@@ -7,10 +8,9 @@ test.describe('Alliance UI Smoke', () => {
   });
 
   test('renders alliance placeholder section', async ({ page }) => {
-    await page.getByTestId('nav-alliance').click();
+    await goToSection(page, 'alliance');
     await expect(page.getByTestId('section-alliance')).toBeVisible();
     await expect(page.getByRole('heading', { name: /alliance center/i })).toBeVisible();
     await expect(page.getByText(/alliance system coming soon/i)).toBeVisible();
   });
 });
-

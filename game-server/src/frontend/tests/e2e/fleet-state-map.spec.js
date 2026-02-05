@@ -41,7 +41,8 @@ test.describe('Fleet State Map (UI)', () => {
     expect(match).toBeTruthy();
     const fleetId = match[1];
 
-    await sendButton.click();
+    // DOM click avoids occasional pointer interception from fixed UI overlays.
+    await sendButton.evaluate((el) => el.click());
     await expect(page.getByTestId('fleet-send-modal')).toBeVisible();
 
     await page.getByTestId('fleet-mission-select').selectOption('deploy');

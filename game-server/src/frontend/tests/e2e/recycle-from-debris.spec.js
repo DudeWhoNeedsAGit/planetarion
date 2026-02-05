@@ -1,8 +1,21 @@
 const { test, expect } = require('@playwright/test');
 const { apiLogin, loginViaLocalStorage } = require('./helpers/testSession');
 
+async function restoreSnapshot(request) {
+  const devToken = process.env.PLANETARION_DEV_ADMIN_TOKEN || 'planetarion-dev';
+  const res = await request.post('http://localhost:5000/api/admin/db/restore', {
+    headers: { 'X-Planetarion-Dev-Token': devToken },
+  });
+  expect(res.ok()).toBeTruthy();
+}
+
 test.describe('Recycle From Combat Debris', () => {
+  test.setTimeout(120000);
+
   test('build recyclers → click Send recyclers in Combat → collect + return + deposit', async ({ page, request }) => {
+    // Keep this spec deterministic even when running in the full suite.
+    await restoreSnapshot(request);
+
     const token = await apiLogin(request, 'e2etestuser', 'testpassword123');
     const headers = { Authorization: `Bearer ${token}` };
 

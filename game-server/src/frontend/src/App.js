@@ -10,6 +10,8 @@ import { ToastContainer } from './Toast';
 // Use external IP only for production
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 axios.defaults.baseURL = backendUrl;
+// Prevent "infinite spinners" when the backend is down or the browser has a stuck connection.
+axios.defaults.timeout = Number(process.env.REACT_APP_AXIOS_TIMEOUT_MS || 10000);
 
 // Axios request interceptor - automatically add JWT token to all requests
 axios.interceptors.request.use(
@@ -119,8 +121,11 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-space-dark flex items-center justify-center">
-        <div className="text-xl">Loading Planetarion...</div>
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="pa-card p-6 text-center">
+          <div className="text-xl font-semibold text-white">Loading Planetarion…</div>
+          <div className="text-sm text-slate-300/90 mt-2">Initializing command systems</div>
+        </div>
       </div>
     );
   }

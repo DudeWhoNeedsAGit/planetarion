@@ -16,7 +16,7 @@ test.describe('Fleet Management planet selection', () => {
     const chosenLabel = (await chosen.textContent())?.trim() || null;
 
     await chosen.click();
-    await expect(chosen).toHaveClass(/bg-blue-600/);
+    await expect(chosen).toHaveClass(/pa-btn-primary/);
 
     // Trigger the same refresh path the dashboard uses after processing a tick.
     const runTick = page.getByTestId('run-tick-button');
@@ -25,15 +25,14 @@ test.describe('Fleet Management planet selection', () => {
 
     if (chosenLabel) {
       const chosenAfter = page.getByTestId('fleet-planet-button').filter({ hasText: chosenLabel }).first();
-      await expect(chosenAfter).toHaveClass(/bg-blue-600/, { timeout: 60000 });
+      await expect(chosenAfter).toHaveClass(/pa-btn-primary/, { timeout: 60000 });
     }
 
     // Also ensure periodic polling doesn't reset the selection.
     await page.waitForTimeout(6000);
     if (chosenLabel) {
       const chosenAfterPoll = page.getByTestId('fleet-planet-button').filter({ hasText: chosenLabel }).first();
-      await expect(chosenAfterPoll).toHaveClass(/bg-blue-600/);
+      await expect(chosenAfterPoll).toHaveClass(/pa-btn-primary/);
     }
   });
 });
-

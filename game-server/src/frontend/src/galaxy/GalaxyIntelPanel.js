@@ -21,17 +21,17 @@ function PlanetCard({
   const debrisTotal = (planet?.debris?.metal || 0) + (planet?.debris?.crystal || 0) + (planet?.debris?.deuterium || 0);
 
   return (
-    <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
+    <div className="pa-panel p-4">
       <div className="flex justify-between items-start mb-3">
         <div>
           <h5 className="text-white font-bold text-lg">{planet.name}</h5>
-          <div className="text-gray-300 text-sm">
+          <div className="text-slate-200/80 text-sm">
             {planet.x}:{planet.y}:{planet.z}{' '}
-            <span className="text-gray-500">
+            <span className="text-slate-300/60">
               ({planet.x - centerX}:{planet.y - centerY}:{planet.z - centerZ})
             </span>
           </div>
-          <div className="text-gray-400 text-xs mt-1">
+          <div className="text-slate-300/70 text-xs mt-1">
             {isMine ? '🏠 Your planet' : isEnemy ? '⚔️ Enemy planet' : '🪐 Unowned'}
             {planet.owner_name ? ` • Owner: ${planet.owner_name}` : ''}
           </div>
@@ -51,25 +51,25 @@ function PlanetCard({
       </div>
 
       {debrisTotal > 0 && (
-        <div className="bg-gray-800 rounded p-3 mb-3">
-          <div className="text-gray-200 text-sm font-medium mb-1">Debris Field</div>
+        <div className="pa-surface p-3 mb-3">
+          <div className="text-slate-200/90 text-sm font-medium mb-1">Debris Field</div>
           <div className="grid grid-cols-3 gap-2 text-xs">
-            <div className="text-center bg-gray-900 p-2 rounded">
-              <div className="text-gray-300">Metal</div>
+            <div className="text-center pa-panel p-2">
+              <div className="text-slate-200/80">Metal</div>
               <div className="text-white font-bold">{(planet?.debris?.metal || 0).toLocaleString()}</div>
             </div>
-            <div className="text-center bg-gray-900 p-2 rounded">
-              <div className="text-gray-300">Crystal</div>
+            <div className="text-center pa-panel p-2">
+              <div className="text-slate-200/80">Crystal</div>
               <div className="text-white font-bold">{(planet?.debris?.crystal || 0).toLocaleString()}</div>
             </div>
-            <div className="text-center bg-gray-900 p-2 rounded">
-              <div className="text-gray-300">Deut</div>
+            <div className="text-center pa-panel p-2">
+              <div className="text-slate-200/80">Deut</div>
               <div className="text-white font-bold">{(planet?.debris?.deuterium || 0).toLocaleString()}</div>
             </div>
           </div>
           <button
             onClick={() => onRecycle(planet)}
-            className="mt-3 w-full px-3 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm"
+            className="mt-3 w-full pa-btn-primary px-3 py-2 text-sm"
             disabled={loading}
           >
             ♻️ Send recyclers
@@ -81,7 +81,7 @@ function PlanetCard({
         {!isOwned && (
           <button
             onClick={() => onQuickColonize(planet)}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm"
+            className="pa-btn-primary px-3 py-2 text-sm"
             disabled={loading}
           >
             🌱 Colonize
@@ -91,7 +91,7 @@ function PlanetCard({
         {isEnemy && (
           <button
             onClick={() => onSpy(planet)}
-            className="px-3 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-sm"
+            className="pa-btn-secondary px-3 py-2 text-sm bg-amber-500/20 hover:bg-amber-500/25 border-amber-500/30 text-amber-100"
             disabled={loading}
           >
             🕵️ Spy
@@ -101,7 +101,7 @@ function PlanetCard({
         {isEnemy && (
           <button
             onClick={() => onAttack(planet)}
-            className="px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm"
+            className="pa-btn-danger px-3 py-2 text-sm"
             disabled={loading}
           >
             Attack
@@ -122,24 +122,24 @@ function SystemStatistics({ planets }) {
   }, 0);
 
   return (
-    <div className="bg-gray-700 rounded-lg p-4 mb-4 border border-gray-600">
+    <div className="pa-card p-4 mb-4">
       <h4 className="text-white font-bold mb-3 flex items-center">📊 System Statistics</h4>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-        <div className="text-center bg-gray-800 p-3 rounded">
+        <div className="text-center pa-panel p-3">
           <div className="text-2xl font-bold text-blue-400">{totalPlanets}</div>
-          <div className="text-gray-400 text-xs">Total Planets</div>
+          <div className="text-slate-300/70 text-xs">Total Planets</div>
         </div>
-        <div className="text-center bg-gray-800 p-3 rounded">
+        <div className="text-center pa-panel p-3">
           <div className="text-2xl font-bold text-green-400">{ownedPlanets}</div>
-          <div className="text-gray-400 text-xs">Colonized</div>
+          <div className="text-slate-300/70 text-xs">Colonized</div>
         </div>
-        <div className="text-center bg-gray-800 p-3 rounded">
-          <div className="text-2xl font-bold text-gray-400">{unownedPlanets}</div>
-          <div className="text-gray-400 text-xs">Available</div>
+        <div className="text-center pa-panel p-3">
+          <div className="text-2xl font-bold text-slate-200/80">{unownedPlanets}</div>
+          <div className="text-slate-300/70 text-xs">Available</div>
         </div>
-        <div className="text-center bg-gray-800 p-3 rounded">
+        <div className="text-center pa-panel p-3">
           <div className="text-2xl font-bold text-purple-300">{totalDebris.toLocaleString()}</div>
-          <div className="text-gray-400 text-xs">Debris Total</div>
+          <div className="text-slate-300/70 text-xs">Debris Total</div>
         </div>
       </div>
     </div>
@@ -186,35 +186,35 @@ export default function GalaxyIntelPanel({
   };
 
   return (
-    <div className="mt-6 bg-gray-800 rounded-lg p-6 max-h-96 overflow-y-auto border border-gray-600">
+    <div className="pa-card p-6 h-full overflow-y-auto">
       <div className="flex justify-between items-center mb-6">
         <div className="flex-1">
           <h3 className="text-2xl font-bold text-white flex items-center">🌌 System {system.x}:{system.y}:{system.z}</h3>
-          <div className="text-gray-400 mt-1 flex items-center">
+          <div className="text-slate-300/70 mt-1 flex items-center">
             <span
               className={`px-2 py-1 rounded text-xs font-medium ${
-                system.explored ? 'bg-blue-900 text-blue-300' : 'bg-gray-900 text-gray-300'
+                system.explored ? 'bg-blue-900/40 text-blue-300' : 'bg-slate-900/40 text-slate-200/80'
               }`}
             >
               {system.explored ? '✅ Explored' : '❓ Unexplored'}
             </span>
           </div>
         </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-white text-xl ml-4">
-          ✕
+        <button onClick={onClose} className="pa-btn-ghost px-3 py-2 text-sm ml-4">
+          Close
         </button>
       </div>
 
       <SystemStatistics planets={planets} />
 
       {!system.explored && (
-        <div className="mb-4 bg-gray-900 border border-gray-600 rounded p-3">
-          <div className="text-gray-200 font-medium mb-2">Unexplored system</div>
-          <div className="text-gray-400 text-sm mb-3">Send an exploration fleet to reveal planets in this system.</div>
+        <div className="mb-4 pa-panel p-3">
+          <div className="text-slate-200/90 font-medium mb-2">Unexplored system</div>
+          <div className="text-slate-300/70 text-sm mb-3">Send an exploration fleet to reveal planets in this system.</div>
           <button
             onClick={() => onExplore?.(system)}
             disabled={loading}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white rounded text-sm"
+            className="pa-btn-primary px-3 py-2 text-sm"
           >
             🚀 Send exploration fleet
           </button>
@@ -225,7 +225,7 @@ export default function GalaxyIntelPanel({
         <h4 className="text-white font-bold mb-4 flex items-center">🪐 Planets ({planets.length})</h4>
 
         {planets.length === 0 ? (
-          <div className="text-gray-400 text-center py-8 bg-gray-700 rounded-lg">
+          <div className="text-slate-300/70 text-center py-8 pa-panel">
             <div className="text-4xl mb-2">🌌</div>
             <div>No planets discovered yet</div>
             <div className="text-sm mt-2">Send an exploration fleet to discover planets in this system</div>

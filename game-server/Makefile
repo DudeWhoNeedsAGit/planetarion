@@ -143,12 +143,17 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	@echo "✅ Instance directory ready"
 	@echo ""
 	@echo "🔧 Starting backend server..."
-	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 &
-	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
-	@sleep 5  # Give Flask time to start or show errors
-	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY" backend.log; then \
-		echo "✅ Backend started successfully"; \
-	else \
+	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) PYTHONUNBUFFERED=1 python3 -u -m src > backend.log 2>&1 &
+	@sleep 1 && ps aux | grep "python3 -u -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
+	@echo "⏳ Waiting for backend to become healthy..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
+		if curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
+			echo "✅ Backend started successfully"; \
+			break; \
+		fi; \
+		sleep 1; \
+	done
+	@if ! curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
 		echo "❌ BACKEND FAILED TO START!"; \
 		echo "🔍 Backend log:"; \
 		cat backend.log; \
@@ -184,21 +189,27 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 			sleep 1; \
 		fi; \
 	done
-	@export DATABASE_URL='$(TEST_DB_URL)' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=$(PYTHONPATH_SRC) && . venv/bin/activate && python scripts/setup_test_db.py
+	@export DATABASE_URL='$(TEST_DB_URL)' && export BACKEND_URL=http://localhost:5000 && export PYTHONPATH=$(PYTHONPATH_SRC) && export PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) && . venv/bin/activate && python scripts/setup_test_db.py
 	@echo "✅ Test database ready"
 	@echo ""
 	@echo "🎨 Starting frontend server..."
 	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 &
-	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
-	@sleep 10  # Give React time to start or crash
-	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
+	@echo "⏳ Waiting for frontend to become ready..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
+		if curl -s --max-time 1 http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
+			break; \
+		fi; \
+		sleep 1; \
+	done
+	@if ! curl -s --max-time 1 http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
 		echo "❌ FRONTEND FAILED TO START!"; \
 		echo "🔍 Frontend log:"; \
-		cat frontend.log; \
+		cat src/frontend/frontend.log || true; \
 		echo ""; \
 		echo "🛑 Stopping Makefile execution..."; \
 		exit 1; \
 	fi
+	@lsof -ti:3000 | head -1 > frontend.pid
 	@echo "🔍 Frontend process verification:"
 	@if ! ps -p $$(cat frontend.pid) > /dev/null; then \
 		echo "❌ Frontend PID $$(cat frontend.pid) is not running!"; \
@@ -282,12 +293,17 @@ supertest: # Run JavaScript integration tests (Supertest + Jest)
 	@echo "✅ Instance directory ready"
 	@echo ""
 	@echo "🔧 Starting backend server for Supertest..."
-	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 &
-	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
-	@sleep 5  # Give Flask time to start or show errors
-	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
-		echo "✅ Backend started successfully"; \
-	else \
+	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) PLANETARION_FORCED_TRAVEL_TIME_SECONDS=0 FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) PYTHONUNBUFFERED=1 python3 -u -m src > backend.log 2>&1 &
+	@sleep 1 && ps aux | grep "python3 -u -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
+	@echo "⏳ Waiting for backend to become healthy..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
+		if curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
+			echo "✅ Backend started successfully"; \
+			break; \
+		fi; \
+		sleep 1; \
+	done
+	@if ! curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
 		echo "❌ BACKEND FAILED TO START!"; \
 		echo "🔍 Backend log:"; \
 		cat backend.log; \
@@ -418,12 +434,17 @@ test: # Start local test environment (SQLite + servers + test data)
 		echo "⚡ Restoring DB file from snapshot before start (instance/test_e2e.db.bak → instance/test_e2e.db)"; \
 		cp -f instance/test_e2e.db.bak instance/test_e2e.db; \
 	fi
-	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 &
-	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
-	@sleep 5  # Give Flask time to start or show errors
-	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
-		echo "✅ Backend started successfully"; \
-	else \
+	@. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) PYTHONUNBUFFERED=1 python3 -u -m src > backend.log 2>&1 &
+	@sleep 1 && ps aux | grep "python3 -u -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
+	@echo "⏳ Waiting for backend to become healthy..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
+		if curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
+			echo "✅ Backend started successfully"; \
+			break; \
+		fi; \
+		sleep 1; \
+	done
+	@if ! curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
 		echo "❌ BACKEND FAILED TO START!"; \
 		echo "🔍 Backend log:"; \
 		cat backend.log; \
@@ -537,12 +558,17 @@ test-env: # Start backend + frontend for manual testing (no Playwright)
 			cp -f instance/test_e2e.db.bak instance/test_e2e.db; \
 		fi; \
 		echo "🔧 Starting backend server..."; \
-		. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 & \
-		sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid; \
-		sleep 5; \
-		if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\\| * Running on" backend.log; then \
-			echo "✅ Backend started successfully"; \
-		else \
+		. venv/bin/activate && DATABASE_URL='$(TEST_DB_URL)' $(TICK_ENV) PLANETARION_MIN_TRAVEL_TIME_SECONDS=30 PLANETARION_DEV_ADMIN_TOKEN=$(DEV_ADMIN_TOKEN) FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) PYTHONUNBUFFERED=1 python3 -u -m src > backend.log 2>&1 & \
+		sleep 1 && ps aux | grep "python3 -u -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid; \
+		echo "⏳ Waiting for backend to become healthy..."; \
+		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
+			if curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
+				echo "✅ Backend started successfully"; \
+				break; \
+			fi; \
+			sleep 1; \
+		done; \
+		if ! curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
 			echo "❌ BACKEND FAILED TO START!"; \
 			echo "🔍 Backend log:"; \
 			cat backend.log; \
@@ -707,12 +733,17 @@ colonization-env: # Start backend + frontend for colonization testing (no E2E te
 	@echo "✅ Instance directory ready"
 	@echo ""
 	@echo "🔧 Starting backend server with colonization focus..."
-	@DATABASE_URL='sqlite:///./instance/test_colonization.db' . venv/bin/activate && FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) python3 -m src > backend.log 2>&1 &
-	@sleep 1 && ps aux | grep "python3 -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
-	@sleep 5  # Give Flask time to start or show errors
-	@if grep -q "TEST APPLICATION STARTED SUCCESSFULLY\| * Running on" backend.log; then \
-		echo "✅ Backend started successfully"; \
-	else \
+	@DATABASE_URL='sqlite:///./instance/test_colonization.db' . venv/bin/activate && FLASK_ENV=testing PYTHONPATH=$(PYTHONPATH_SRC) PYTHONUNBUFFERED=1 python3 -u -m src > backend.log 2>&1 &
+	@sleep 1 && ps aux | grep "python3 -u -m src" | grep -v grep | awk '{print $$2}' | head -1 > backend.pid
+	@echo "⏳ Waiting for backend to become healthy..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
+		if curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
+			echo "✅ Backend started successfully"; \
+			break; \
+		fi; \
+		sleep 1; \
+	done
+	@if ! curl -s --max-time 1 http://localhost:5000/health > /dev/null 2>&1; then \
 		echo "❌ BACKEND FAILED TO START!"; \
 		echo "🔍 Backend log:"; \
 		cat backend.log; \

@@ -20,8 +20,7 @@ test.describe('Dashboard', () => {
     await expect(page.getByTestId('nav-planets')).toBeVisible();
     await expect(page.getByTestId('nav-fleets')).toBeVisible();
     await expect(page.getByTestId('nav-research')).toBeVisible();
-    await expect(page.getByTestId('nav-alliance')).toBeVisible();
-    await expect(page.getByTestId('nav-messages')).toBeVisible();
+    await expect(page.getByTestId('nav-more')).toBeVisible();
 
     await goToSection(page, 'planets');
     await expect(page.locator('text=Your Planets')).toBeVisible();

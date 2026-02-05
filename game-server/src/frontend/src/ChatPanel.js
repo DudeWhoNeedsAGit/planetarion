@@ -88,7 +88,7 @@ const ChatPanel = ({ isMinimized = false, onToggleMinimize }) => {
   const getMessageStyle = (isSystem) => {
     return isSystem
       ? 'bg-yellow-900/20 border-l-4 border-yellow-500 text-yellow-200'
-      : 'bg-gray-700/50 hover:bg-gray-700/70';
+      : 'bg-slate-800/35 hover:bg-slate-800/55 border border-slate-500/20';
   };
 
   const getUsernameStyle = (isSystem) => {
@@ -102,7 +102,7 @@ const ChatPanel = ({ isMinimized = false, onToggleMinimize }) => {
       <div className="fixed bottom-4 right-4 z-50">
         <button
           onClick={onToggleMinimize}
-          className="bg-space-dark border border-gray-600 rounded-lg p-3 hover:bg-gray-700 transition-colors"
+          className="pa-panel p-3 hover:bg-slate-800/75 transition-colors"
           title="Open Chat"
         >
           <div className="flex items-center space-x-2">
@@ -120,16 +120,16 @@ const ChatPanel = ({ isMinimized = false, onToggleMinimize }) => {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 w-96 h-96 bg-space-dark border border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
+    <div className="fixed bottom-4 right-4 w-96 h-96 pa-panel shadow-xl z-50 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-gray-600 bg-gray-800/50 rounded-t-lg">
+      <div className="flex items-center justify-between p-3 border-b border-slate-500/25 bg-black/15 rounded-t-xl">
         <h3 className="text-lg font-semibold text-white flex items-center">
           <span className="mr-2">💬</span>
           Global Chat
         </h3>
         <button
           onClick={onToggleMinimize}
-          className="text-gray-400 hover:text-white transition-colors"
+          className="text-slate-300/70 hover:text-white transition-colors"
           title="Minimize Chat"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +147,7 @@ const ChatPanel = ({ isMinimized = false, onToggleMinimize }) => {
         )}
 
         {messages.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
+          <div className="text-center text-slate-300/70 py-8">
             <span className="text-2xl mb-2 block">💭</span>
             No messages yet. Be the first to say hello!
           </div>
@@ -161,11 +161,11 @@ const ChatPanel = ({ isMinimized = false, onToggleMinimize }) => {
                 <span className={getUsernameStyle(message.is_system)}>
                   {message.username}
                 </span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-slate-300/60">
                   {formatTimestamp(message.timestamp)}
                 </span>
               </div>
-              <p className="text-sm text-gray-200 break-words">
+              <p className="text-sm text-slate-100/90 break-words">
                 {message.message}
               </p>
             </div>
@@ -175,7 +175,7 @@ const ChatPanel = ({ isMinimized = false, onToggleMinimize }) => {
       </div>
 
       {/* Input Area */}
-      <form onSubmit={sendMessage} className="p-3 border-t border-gray-600 bg-gray-800/50 rounded-b-lg">
+      <form onSubmit={sendMessage} className="p-3 border-t border-slate-500/25 bg-black/15 rounded-b-xl">
         <div className="flex space-x-2">
           <input
             ref={inputRef}
@@ -183,14 +183,14 @@ const ChatPanel = ({ isMinimized = false, onToggleMinimize }) => {
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Type a message..."
-            className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+            className="pa-input flex-1 px-3 py-2"
             maxLength={500}
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={isLoading || !newMessage.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors flex items-center"
+            className="pa-btn-primary px-4 py-2 transition-colors flex items-center"
           >
             {isLoading ? (
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
@@ -204,7 +204,7 @@ const ChatPanel = ({ isMinimized = false, onToggleMinimize }) => {
             )}
           </button>
         </div>
-        <div className="text-xs text-gray-400 mt-1">
+        <div className="text-xs text-slate-300/60 mt-1">
           {newMessage.length}/500 characters
         </div>
       </form>

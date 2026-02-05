@@ -1,0 +1,80 @@
+.root {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 40;
+  background: rgba(2, 6, 23, 0.68);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.75rem;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  padding: 0.5rem;
+  backdrop-filter: blur(6px);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.title {
+  color: rgba(226, 232, 240, 0.95);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.sub {
+  color: rgba(148, 163, 184, 0.85);
+  font-size: 0.65rem;
+}
+
+.map {
+  position: relative;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background:
+    radial-gradient(circle at 30% 20%, rgba(37, 99, 235, 0.18), transparent 45%),
+    radial-gradient(circle at 70% 80%, rgba(20, 184, 166, 0.14), transparent 50%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.95), rgba(15, 23, 42, 0.92));
+}
+
+.window {
+  position: absolute;
+  border: 1px solid rgba(226, 232, 240, 0.35);
+  background: rgba(226, 232, 240, 0.06);
+  border-radius: 0.25rem;
+  pointer-events: none;
+}
+
+.dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
+}
+
+.legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.45rem;
+  gap: 0.45rem;
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.65rem;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  border: 1px solid rgba(15, 23, 42, 0.6);
+}

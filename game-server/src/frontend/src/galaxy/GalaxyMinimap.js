@@ -58,15 +58,15 @@ export default function GalaxyMinimap({
   }, [galaxyRange, minimapHalf, anchorCenter?.x, anchorCenter?.y, cameraCenter?.x, cameraCenter?.y]);
 
   return (
-    <div className="absolute top-3 right-3 bg-black/60 border border-gray-600 rounded-lg shadow-lg p-2 z-30" data-testid="galaxy-minimap">
+    <div className="absolute top-3 right-3 pa-panel shadow-lg p-2 z-30" data-testid="galaxy-minimap">
       <div className="flex items-center justify-between mb-1">
-        <div className="text-xs text-gray-200 font-semibold">Minimap</div>
-        <div className="text-[10px] text-gray-400">±{Math.round(windowRect.labelRange)} • Z {centerZ}</div>
+        <div className="text-xs text-slate-200/90 font-semibold">Minimap</div>
+        <div className="text-[10px] text-slate-300/60">±{Math.round(windowRect.labelRange)} • Z {centerZ}</div>
       </div>
 
-      <div className="relative bg-gray-900/70 border border-gray-700 rounded" style={{ width: `${MINIMAP_SIZE_PX}px`, height: `${MINIMAP_SIZE_PX}px` }}>
-        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-700/70" />
-        <div className="absolute top-1/2 left-0 right-0 h-px bg-gray-700/70" />
+      <div className="relative bg-black/20 border border-slate-500/25 rounded" style={{ width: `${MINIMAP_SIZE_PX}px`, height: `${MINIMAP_SIZE_PX}px` }}>
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-500/25" />
+        <div className="absolute top-1/2 left-0 right-0 h-px bg-slate-500/25" />
 
         <div
           className="absolute border border-white/30 rounded"
@@ -107,7 +107,7 @@ export default function GalaxyMinimap({
         })}
       </div>
 
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-gray-200">
+      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-slate-200/90">
         <div className="flex items-center gap-1">
           <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: '#3b82f6' }} />
           <span>Yours</span>
@@ -124,4 +124,3 @@ export default function GalaxyMinimap({
     </div>
   );
 }
-

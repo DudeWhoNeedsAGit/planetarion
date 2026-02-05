@@ -212,23 +212,23 @@ const RecycleConfigModal = ({ config, planets, onClose, onConfirm }) => {
   const targetLabel = config?.target_label || 'debris field';
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" data-testid="combat-recycle-config-modal">
-      <div className="bg-gray-800 p-6 rounded-lg w-full max-w-md border border-gray-700">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-6" data-testid="combat-recycle-config-modal">
+      <div className="pa-modal p-6 w-full max-w-md">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-white">Send recyclers</h3>
-          <button className="text-gray-400 hover:text-white" onClick={onClose} aria-label="Close">
-            ✕
+          <button className="pa-btn-ghost px-3 py-2 text-sm" onClick={onClose} aria-label="Close">
+            Close
           </button>
         </div>
 
-        <div className="text-sm text-gray-300 mb-4">
+        <div className="text-sm text-slate-200/80 mb-4">
           Target: <span className="text-white font-medium">{targetLabel}</span>
         </div>
 
         <div className="mb-4">
-          <label className="block text-gray-300 mb-2">Source planet (where recyclers depart)</label>
+          <label className="block text-slate-200/90 mb-2">Source planet (where recyclers depart)</label>
           <select
-            className="w-full p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+            className="pa-input"
             data-testid="combat-recycle-source-planet"
             value={startPlanetId}
             onChange={(e) => setStartPlanetId(e.target.value)}
@@ -242,8 +242,8 @@ const RecycleConfigModal = ({ config, planets, onClose, onConfirm }) => {
         </div>
 
         <div className="mb-4">
-          <label className="block text-gray-300 mb-2">Recycling focus</label>
-          <div className="space-y-2 text-sm text-gray-200">
+          <label className="block text-slate-200/90 mb-2">Recycling focus</label>
+          <div className="space-y-2 text-sm text-slate-200/90">
             <label className="flex items-center gap-2">
               <input
                 type="radio"
@@ -289,21 +289,21 @@ const RecycleConfigModal = ({ config, planets, onClose, onConfirm }) => {
               <span>Deuterium only</span>
             </label>
           </div>
-          <div className="mt-2 text-xs text-gray-400">
+          <div className="mt-2 text-xs text-slate-300/70">
             Tip: pick “Metal only”/“Crystal only” for strategic focus, or keep proportional for automatic cleanup.
           </div>
         </div>
 
         <div className="flex gap-3">
           <button
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+            className="flex-1 pa-btn-primary py-2 px-4"
             data-testid="combat-recycle-continue"
             onClick={() => onConfirm({ startPlanetId: startPlanetId ? parseInt(startPlanetId, 10) : null, focus })}
           >
             Continue
           </button>
           <button
-            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+            className="flex-1 pa-btn-secondary py-2 px-4"
             data-testid="combat-recycle-cancel"
             onClick={onClose}
           >
@@ -404,9 +404,9 @@ const CombatOverview = ({ user, planets, onNavigate, onSelectReport, onNavigateS
       </div>
 
       <div className="overview-section" style={{ marginTop: '16px' }}>
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 text-sm text-gray-200">
+        <div className="pa-panel p-4 text-sm text-slate-200/90">
           <div className="font-semibold text-white mb-1">Gameplay rules (MVP)</div>
-          <ul className="text-gray-300" style={{ paddingLeft: '18px', listStyle: 'disc' }}>
+          <ul className="text-slate-200/80" style={{ paddingLeft: '18px', listStyle: 'disc' }}>
             <li>Winning a battle does not always grant ownership. A planet is captured only when the defender is eliminated/undefended (Option A).</li>
             <li>Debris fields appear from battles you participated in (or explored intel) and must be recycled to turn into resources.</li>
           </ul>

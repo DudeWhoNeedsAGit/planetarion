@@ -176,32 +176,32 @@ function Overview({ user, planets, onNavigateSection }) {
   return (
     <div className="space-y-6">
       {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-space-blue to-blue-600 rounded-lg p-6 text-white">
+      <div className="pa-card p-6 bg-gradient-to-r from-blue-600/20 to-teal-500/10 text-white">
         <h2 className="text-2xl font-bold mb-2">Welcome back, {user.username}!</h2>
-        <p className="text-blue-100">Your empire spans {planets.length} planet{planets.length !== 1 ? 's' : ''} across the galaxy.</p>
+        <p className="text-slate-200/80">Your empire spans {planets.length} planet{planets.length !== 1 ? 's' : ''} across the galaxy.</p>
       </div>
 
       {/* Quick Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Planets */}
-        <div className="bg-gray-800 rounded-lg p-6">
+        <div className="pa-card p-6">
           <div className="flex items-center space-x-3 mb-4">
             <span className="text-3xl">🪐</span>
             <div>
               <h3 className="text-lg font-semibold text-white">Planets</h3>
-              <p className="text-gray-400">Colonies</p>
+              <p className="text-slate-300/70">Colonies</p>
             </div>
           </div>
           <div className="text-3xl font-bold text-blue-400">{planets.length}</div>
         </div>
 
         {/* Total Resources */}
-        <div className="bg-gray-800 rounded-lg p-6">
+        <div className="pa-card p-6">
           <div className="flex items-center space-x-3 mb-4">
             <span className="text-3xl">💰</span>
             <div>
               <h3 className="text-lg font-semibold text-white">Resources</h3>
-              <p className="text-gray-400">Total Value</p>
+              <p className="text-slate-300/70">Total Value</p>
             </div>
           </div>
           <div className="text-2xl font-bold text-green-400">
@@ -210,12 +210,12 @@ function Overview({ user, planets, onNavigateSection }) {
         </div>
 
         {/* Production */}
-        <div className="bg-gray-800 rounded-lg p-6">
+        <div className="pa-card p-6">
           <div className="flex items-center space-x-3 mb-4">
             <span className="text-3xl">⚡</span>
             <div>
               <h3 className="text-lg font-semibold text-white">Production</h3>
-              <p className="text-gray-400">Per Hour</p>
+              <p className="text-slate-300/70">Per Hour</p>
             </div>
           </div>
           <div className="text-2xl font-bold text-yellow-400">
@@ -224,12 +224,12 @@ function Overview({ user, planets, onNavigateSection }) {
         </div>
 
         {/* Buildings */}
-        <div className="bg-gray-800 rounded-lg p-6">
+        <div className="pa-card p-6">
           <div className="flex items-center space-x-3 mb-4">
             <span className="text-3xl">🏗️</span>
             <div>
               <h3 className="text-lg font-semibold text-white">Buildings</h3>
-              <p className="text-gray-400">Total Level</p>
+              <p className="text-slate-300/70">Total Level</p>
             </div>
           </div>
           <div className="text-2xl font-bold text-purple-400">
@@ -239,19 +239,19 @@ function Overview({ user, planets, onNavigateSection }) {
       </div>
 
       {/* Commander Suggestions */}
-      <div className="bg-gray-800 rounded-lg p-6" data-testid="commander-suggestions">
+      <div className="pa-card p-6" data-testid="commander-suggestions">
         <h3 className="text-xl font-bold mb-4 text-white">Commander Suggestions</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div className="bg-gray-700 rounded p-4 border border-gray-600">
+          <div className="pa-panel p-4">
             <div className="text-white font-semibold mb-1">♻️ Recycle known debris</div>
-            <div className="text-gray-300 mb-3">
+            <div className="text-slate-200/80 mb-3">
               {debrisSummary.count > 0
                 ? `${debrisSummary.count} debris field(s) visible • ~${debrisSummary.total.toLocaleString()} total resources`
                 : 'No known debris fields right now.'}
             </div>
             <button
               type="button"
-              className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
+              className="pa-btn-primary px-3 py-2"
               disabled={debrisSummary.count === 0}
               onClick={() => onNavigateSection?.('combat')}
               data-testid="commander-suggest-open-combat"
@@ -260,36 +260,36 @@ function Overview({ user, planets, onNavigateSection }) {
             </button>
           </div>
 
-          <div className="bg-gray-700 rounded p-4 border border-gray-600">
+          <div className="pa-panel p-4">
             <div className="text-white font-semibold mb-1">🔬 Keep research running</div>
-            <div className="text-gray-300 mb-3">
+            <div className="text-slate-200/80 mb-3">
               {researchSummary.queue
                 ? `Research in progress: ${researchSummary.queue.key} → L${researchSummary.queue.target_level}`
                 : `No research in progress • ${Number(researchSummary.points || 0).toLocaleString()} RP available`}
             </div>
             <button
               type="button"
-              className="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white"
+              className="pa-btn-primary px-3 py-2"
               onClick={() => onNavigateSection?.('research')}
               data-testid="commander-suggest-open-research"
             >
               Open Research
             </button>
             {!researchSummary.queue && researchSummary.nextSuggestionKey && (
-              <div className="mt-2 text-xs text-gray-200">
+              <div className="mt-2 text-xs text-slate-200/80">
                 Suggested: <span className="text-white font-medium">{String(researchSummary.nextSuggestionKey).replace(/_/g, ' ')}</span> (affordable now)
               </div>
             )}
           </div>
 
-          <div className="bg-gray-700 rounded p-4 border border-gray-600">
+          <div className="pa-panel p-4">
             <div className="text-white font-semibold mb-1">🌌 Pick your next target</div>
-            <div className="text-gray-300 mb-3">
+            <div className="text-slate-200/80 mb-3">
               Use the map to find pirates nearby, scout, and plan attacks.
             </div>
             <button
               type="button"
-              className="px-3 py-2 rounded bg-gray-900 hover:bg-gray-800 text-white border border-gray-600"
+              className="pa-btn-secondary px-3 py-2"
               onClick={() => onNavigateSection?.('galaxy')}
               data-testid="commander-suggest-open-galaxy"
             >
@@ -297,14 +297,14 @@ function Overview({ user, planets, onNavigateSection }) {
             </button>
           </div>
 
-          <div className="bg-gray-700 rounded p-4 border border-gray-600">
+          <div className="pa-panel p-4">
             <div className="text-white font-semibold mb-1">🚀 Build ships for the next fight</div>
-            <div className="text-gray-300 mb-3">
+            <div className="text-slate-200/80 mb-3">
               Stock up on fighters + recyclers so every win turns into profit.
             </div>
             <button
               type="button"
-              className="px-3 py-2 rounded bg-gray-900 hover:bg-gray-800 text-white border border-gray-600"
+              className="pa-btn-secondary px-3 py-2"
               onClick={() => onNavigateSection?.('shipyard')}
               data-testid="commander-suggest-open-shipyard"
             >
@@ -316,55 +316,55 @@ function Overview({ user, planets, onNavigateSection }) {
 
       {/* Resource Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-gray-800 rounded-lg p-6">
+        <div className="pa-card p-6">
           <h3 className="text-xl font-bold mb-4 text-metal">Metal Resources</h3>
           <div className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-gray-400">Current:</span>
+              <span className="text-slate-300/70">Current:</span>
               <span className="text-metal font-bold">{totalResources.metal.toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Production:</span>
+              <span className="text-slate-300/70">Production:</span>
               <span className="text-metal">{totalProduction.metal.toLocaleString()}/h</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Mines:</span>
+              <span className="text-slate-300/70">Mines:</span>
               <span className="text-metal">{totalBuildings.metal_mine} total</span>
             </div>
           </div>
         </div>
 
-        <div className="bg-gray-800 rounded-lg p-6">
+        <div className="pa-card p-6">
           <h3 className="text-xl font-bold mb-4 text-crystal">Crystal Resources</h3>
           <div className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-gray-400">Current:</span>
+              <span className="text-slate-300/70">Current:</span>
               <span className="text-crystal font-bold">{totalResources.crystal.toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Production:</span>
+              <span className="text-slate-300/70">Production:</span>
               <span className="text-crystal">{totalProduction.crystal.toLocaleString()}/h</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Mines:</span>
+              <span className="text-slate-300/70">Mines:</span>
               <span className="text-crystal">{totalBuildings.crystal_mine} total</span>
             </div>
           </div>
         </div>
 
-        <div className="bg-gray-800 rounded-lg p-6">
+        <div className="pa-card p-6">
           <h3 className="text-xl font-bold mb-4 text-deuterium">Deuterium Resources</h3>
           <div className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-gray-400">Current:</span>
+              <span className="text-slate-300/70">Current:</span>
               <span className="text-deuterium font-bold">{totalResources.deuterium.toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Production:</span>
+              <span className="text-slate-300/70">Production:</span>
               <span className="text-deuterium">{totalProduction.deuterium.toLocaleString()}/h</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Synthesizers:</span>
+              <span className="text-slate-300/70">Synthesizers:</span>
               <span className="text-deuterium">{totalBuildings.deuterium_synthesizer} total</span>
             </div>
           </div>
@@ -372,9 +372,9 @@ function Overview({ user, planets, onNavigateSection }) {
       </div>
 
       {/* Next Steps */}
-      <div className="bg-gray-800 rounded-lg p-6">
+      <div className="pa-card p-6">
         <h3 className="text-xl font-bold mb-4 text-white">Next Steps</h3>
-        <ul className="space-y-2 text-gray-300 text-sm">
+        <ul className="space-y-2 text-slate-200/80 text-sm">
           <li>🌌 Open Galaxy Map, find enemies / pirates / allies.</li>
           <li>🔬 Build a Research Lab to generate research points.</li>
           <li>🕵️ Build espionage probes and send an Espionage mission to scout targets.</li>
@@ -385,21 +385,21 @@ function Overview({ user, planets, onNavigateSection }) {
       </div>
 
       {/* Recent Activity Placeholder */}
-      <div className="bg-gray-800 rounded-lg p-6">
+      <div className="pa-card p-6">
         <h3 className="text-xl font-bold mb-4 text-white">Recent Activity</h3>
         <div className="space-y-3">
           {activityItems.length === 0 ? (
-            <div className="text-center text-gray-400 py-4" data-testid="overview-activity-empty">
+            <div className="text-center text-slate-300/70 py-4" data-testid="overview-activity-empty">
               {activityLoading ? 'Loading activity…' : 'No recent activity yet. Explore, fight, and colonize to generate events.'}
             </div>
           ) : (
             <div className="space-y-3" data-testid="overview-activity-list">
               {activityItems.map((item) => (
-                <div key={item.id} className="flex items-center space-x-3 p-3 bg-gray-700 rounded" data-testid="overview-activity-item">
+                <div key={item.id} className="flex items-center space-x-3 p-3 pa-panel" data-testid="overview-activity-item">
                   <span className="text-xl">{item.icon}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-white truncate">{item.description}</p>
-                    <p className="text-gray-400 text-sm">
+                    <p className="text-slate-300/70 text-sm">
                       {item.timestamp ? new Date(item.timestamp).toLocaleString() : '—'}
                     </p>
                   </div>

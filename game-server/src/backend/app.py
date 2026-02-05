@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from sqlalchemy import event, text
+from sqlalchemy.engine import Engine
 import os
 try:
     from flasgger import Swagger
@@ -46,6 +47,35 @@ def create_app(config_name=None):
         print(f"📊 FLASK_ENV: {app.config.get('FLASK_ENV')}")
         print(f"🗄️ DATABASE_URL: {_display_db_uri(app.config.get('SQLALCHEMY_DATABASE_URI'))}")
 
+        # SQLite tuning: reduce "database is locked" errors under concurrent requests (Playwright, dev UI).
+        # - WAL allows concurrent readers + a single writer.
+        # - busy_timeout makes writes wait rather than immediately failing.
+        # - check_same_thread=False lets us share connections across threads (Werkzeug dev server).
+        uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        if uri.startswith("sqlite:"):
+            app.config.setdefault("SQLALCHEMY_ENGINE_OPTIONS", {})
+            engine_opts = app.config["SQLALCHEMY_ENGINE_OPTIONS"] or {}
+            engine_opts.setdefault("connect_args", {})
+            engine_opts["connect_args"].setdefault("timeout", 30)
+            engine_opts["connect_args"].setdefault("check_same_thread", False)
+            app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_opts
+
+            @event.listens_for(Engine, "connect")
+            def _sqlite_pragmas(dbapi_connection, _connection_record):  # pragma: no cover
+                try:
+                    import sqlite3
+
+                    if not isinstance(dbapi_connection, sqlite3.Connection):
+                        return
+                    cursor = dbapi_connection.cursor()
+                    cursor.execute("PRAGMA journal_mode=WAL;")
+                    cursor.execute("PRAGMA synchronous=NORMAL;")
+                    cursor.execute("PRAGMA temp_store=MEMORY;")
+                    cursor.execute("PRAGMA busy_timeout=30000;")
+                    cursor.close()
+                except Exception:
+                    return
+
         # Initialize extensions
         print("🔧 Initializing database...")
         db.init_app(app)
@@ -58,7 +88,7 @@ def create_app(config_name=None):
 
         # Event-driven UI: broadcast significant TickLog rows to connected SSE clients.
         # Use low-level SQL via the connection to avoid ORM/session recursion in flush hooks.
-        def _broadcast_ticklog(mapper, connection, target):  # pragma: no cover
+        def _broadcast_ticklog(_mapper, connection, target):  # pragma: no cover
             try:
                 event_type = (getattr(target, "event_type", None) or "").strip()
                 event_desc = (getattr(target, "event_description", None) or "").strip()
@@ -134,7 +164,7 @@ def create_app(config_name=None):
                         "endpoint": 'apispec',
                         "route": '/apispec.json',
                         "rule_filter": lambda rule: True,
-                        "model_filter": lambda tag: True,
+                        "model_filter": lambda _tag: True,
                     }
                 ],
                 "static_url_path": "/flasgger_static",

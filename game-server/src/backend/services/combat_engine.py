@@ -129,7 +129,7 @@ class CombatEngine:
         }
 
     @staticmethod
-    def _calculate_firepower(attacker_ships, defender_ships, side):
+    def _calculate_firepower(attacker_ships, defender_ships, _side):
         """Calculate total firepower including rapid fire bonuses"""
         total_fire = 0
 

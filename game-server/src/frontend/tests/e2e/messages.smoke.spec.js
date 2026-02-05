@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { loginViaLocalStorage } = require('./helpers/testSession');
+const { goToSection } = require('./helpers/nav');
 
 test.describe('Messages UI Smoke', () => {
   test.beforeEach(async ({ page, request }) => {
@@ -7,10 +8,9 @@ test.describe('Messages UI Smoke', () => {
   });
 
   test('renders messages placeholder section', async ({ page }) => {
-    await page.getByTestId('nav-messages').click();
+    await goToSection(page, 'messages');
     await expect(page.getByTestId('section-messages')).toBeVisible();
     await expect(page.getByRole('heading', { name: /messages/i })).toBeVisible();
     await expect(page.getByText(/messaging system coming soon/i)).toBeVisible();
   });
 });
-

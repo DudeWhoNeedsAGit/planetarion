@@ -28,11 +28,24 @@ export default function ResearchDashboard() {
     // Keep the last good view rendered while refreshing to avoid flicker.
     if (!data) setLoading(true);
     try {
-      const res = await axios.get('/api/research');
-      setData(res.data);
+      const run = async () => {
+        const res = await axios.get('/api/research');
+        return res.data;
+      };
+
+      try {
+        setData(await run());
+      } catch (e) {
+        const status = e.response?.status;
+        const shouldRetry = !e.response || (typeof status === 'number' && status >= 500);
+        if (!shouldRetry) throw e;
+
+        await new Promise((r) => setTimeout(r, 250));
+        setData(await run());
+      }
     } catch (e) {
       showError(e.response?.data?.error || 'Failed to load research');
-      setData(null);
+      if (!data) setData(null);
     } finally {
       setLoading(false);
     }
@@ -64,7 +77,7 @@ export default function ResearchDashboard() {
 
   if (loading) {
     return (
-      <div className="bg-gray-800 rounded-lg p-6" data-testid="section-research">
+      <div className="pa-card p-6" data-testid="section-research">
         <div className="text-center text-white">Loading research…</div>
       </div>
     );
@@ -72,59 +85,59 @@ export default function ResearchDashboard() {
 
   return (
     <div className="space-y-6" data-testid="section-research">
-      <div className="bg-gray-800 rounded-lg p-6">
+      <div className="pa-card p-6">
         <h3 className="text-xl font-bold mb-2 text-white">🔬 Research Lab</h3>
-        <div className="text-sm text-gray-300">
+        <div className="text-sm text-slate-200/80">
           Research points accrue from Research Labs on your planets and are processed on ticks.
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gray-800 rounded-lg p-6">
-          <div className="text-gray-400 text-sm mb-1">Research Points</div>
+        <div className="pa-card p-6">
+          <div className="text-slate-300/70 text-sm mb-1">Research Points</div>
           <div className="text-3xl font-bold text-blue-300" data-testid="research-points">
             {(data?.research_points ?? 0).toLocaleString()}
           </div>
-          <div className="mt-2 text-xs text-gray-400">
+          <div className="mt-2 text-xs text-slate-300/70">
             +{Math.floor(rates?.rp_per_hour || 0).toLocaleString()}/h • ~{Math.floor(rates?.rp_per_tick || 0).toLocaleString()}/tick
           </div>
         </div>
 
-        <div className="bg-gray-800 rounded-lg p-6">
-          <div className="text-gray-400 text-sm mb-1">Colonization Tech</div>
+        <div className="pa-card p-6">
+          <div className="text-slate-300/70 text-sm mb-1">Colonization Tech</div>
           <div className="text-2xl font-bold text-white" data-testid="research-level-colonization">
             L{levels?.colonization_tech ?? 0}
           </div>
-          <div className="text-xs text-gray-400 mt-2">Unlocks harder colonization targets.</div>
+          <div className="text-xs text-slate-300/70 mt-2">Unlocks harder colonization targets.</div>
         </div>
 
-        <div className="bg-gray-800 rounded-lg p-6">
-          <div className="text-gray-400 text-sm mb-1">Astrophysics</div>
+        <div className="pa-card p-6">
+          <div className="text-slate-300/70 text-sm mb-1">Astrophysics</div>
           <div className="text-2xl font-bold text-white" data-testid="research-level-astrophysics">
             L{levels?.astrophysics ?? 0}
           </div>
-          <div className="text-xs text-gray-400 mt-2">Reduces travel time; improves expansion.</div>
+          <div className="text-xs text-slate-300/70 mt-2">Reduces travel time; improves expansion.</div>
         </div>
       </div>
 
-      <div className="bg-gray-800 rounded-lg p-6">
+      <div className="pa-card p-6">
         <h4 className="text-lg font-semibold mb-4 text-white">Research Queue</h4>
 
         {queue ? (
-          <div className="border border-gray-700 rounded p-4 bg-gray-900/30" data-testid="research-queue-active">
+          <div className="pa-panel p-4" data-testid="research-queue-active">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <div className="text-white font-semibold">
                   {RESEARCH_LABELS[queue.key] || queue.key} → Level {queue.target_level}
                 </div>
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-slate-300/70 mt-1">
                   Completes at {queue.completes_at}
                   {queueRemainingSeconds != null ? ` • ~${formatSeconds(queueRemainingSeconds)} remaining` : ''}
                 </div>
               </div>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                className="pa-btn-secondary px-4 py-2"
                 onClick={async () => {
                   setCanceling(true);
                   try {
@@ -143,24 +156,24 @@ export default function ResearchDashboard() {
                 {canceling ? 'Canceling…' : 'Cancel'}
               </button>
             </div>
-            <div className="mt-3 text-xs text-gray-400">
+            <div className="mt-3 text-xs text-slate-300/70">
               Tip: if something is “pending tick”, click “Run tick” to process completions faster in test env.
             </div>
           </div>
         ) : (
-          <div className="text-gray-400" data-testid="research-queue-empty">
+          <div className="text-slate-300/70" data-testid="research-queue-empty">
             No research in progress.
           </div>
         )}
       </div>
 
-      <div className="bg-gray-800 rounded-lg p-6">
+      <div className="pa-card p-6">
         <h4 className="text-lg font-semibold mb-4 text-white">Start Research</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
           <div>
-            <label className="block text-gray-300 mb-2">Technology</label>
+            <label className="block text-slate-200/90 mb-2">Technology</label>
             <select
-              className="w-full p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+              className="pa-input"
               value={selectedKey}
               onChange={(e) => setSelectedKey(e.target.value)}
               data-testid="research-select"
@@ -172,7 +185,7 @@ export default function ResearchDashboard() {
             </select>
           </div>
 
-          <div className="text-sm text-gray-300">
+          <div className="text-sm text-slate-200/80">
             <div>Next level: <span className="text-white font-medium">L{(levels?.[selectedKey] ?? 0) + 1}</span></div>
             <div>Cost: <span className="text-white font-medium">{(selectedCost ?? 0).toLocaleString()} RP</span></div>
             <div>Duration: <span className="text-white font-medium">{formatSeconds(selectedDuration ?? 0)}</span></div>
@@ -181,7 +194,7 @@ export default function ResearchDashboard() {
           <div>
             <button
               type="button"
-              className="w-full px-4 py-3 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full pa-btn-primary py-3"
               disabled={starting || Boolean(queue)}
               data-testid="research-start"
               onClick={async () => {
@@ -202,7 +215,7 @@ export default function ResearchDashboard() {
           </div>
         </div>
         {queue && (
-          <div className="mt-3 text-xs text-gray-400">
+          <div className="mt-3 text-xs text-slate-300/70">
             Finish or cancel the current research to start another.
           </div>
         )}

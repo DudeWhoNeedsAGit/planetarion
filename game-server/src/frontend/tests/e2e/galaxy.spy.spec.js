@@ -50,11 +50,11 @@ test.describe('Galaxy → Spy Flow', () => {
     }
 
     await expect(marker).toBeVisible({ timeout: 60000 });
-    // DOM click avoids pointer interception from overlapping marker wrappers in dense views.
-    await marker.evaluate((el) => el.click());
+    // Use an event dispatch (works for SVG markers and avoids pointer interception).
+    await marker.dispatchEvent('click');
     await expect(page.getByRole('heading', { name: /^🌌 System/i })).toBeVisible({ timeout: 60000 });
 
-    const spyButtons = page.getByRole('button', { name: 'Spy' });
+    const spyButtons = page.getByRole('button', { name: /Spy/i });
     await expect(spyButtons.first()).toBeVisible({ timeout: 60000 });
     await expect(spyButtons.first()).toBeEnabled({ timeout: 60000 });
     // DOM click is more reliable than pointer-based click with overlays (chat, scroll containers).

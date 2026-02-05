@@ -1,4 +1,5 @@
 import React from 'react';
+import styles from './GalaxyBackground.module.css';
 
 export default function GalaxyBackground({ starfield }) {
   const stars = starfield?.stars || [];
@@ -32,12 +33,14 @@ export default function GalaxyBackground({ starfield }) {
         {stars.map((s) => (
           <div
             key={s.key}
-            className={`absolute rounded-full bg-white ${s.sizeClass}`}
+            className={styles.star}
             style={{
               left: `${s.left}%`,
               top: `${s.top}%`,
-              animation: `twinkle ${s.twinkleSeconds}s infinite`,
-              animationDelay: `${s.delaySeconds}s`,
+              width: `${s.sizePx}px`,
+              height: `${s.sizePx}px`,
+              ['--twinkle-duration']: `${s.twinkleSeconds}s`,
+              ['--twinkle-delay']: `${s.delaySeconds}s`,
             }}
           />
         ))}
@@ -48,12 +51,14 @@ export default function GalaxyBackground({ starfield }) {
         {particles.map((p) => (
           <div
             key={p.key}
-            className="absolute w-1 h-1 bg-white rounded-full opacity-20"
+            className={styles.particle}
             style={{
               left: `${p.left}%`,
               top: `${p.top}%`,
-              animation: `float ${p.floatSeconds}s infinite linear`,
-              animationDelay: `${p.delaySeconds}s`,
+              width: `${p.sizePx}px`,
+              height: `${p.sizePx}px`,
+              ['--float-duration']: `${p.floatSeconds}s`,
+              ['--float-delay']: `${p.delaySeconds}s`,
             }}
           />
         ))}
