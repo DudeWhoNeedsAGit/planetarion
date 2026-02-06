@@ -42,9 +42,10 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
   const fetchInFlightRef = useRef(false);
 
   const homePlanet = (planets || []).find((p) => p.user_id === user.id) || (planets || [])[0];
-  const homeX = homePlanet?.x || 100;
-  const homeY = homePlanet?.y || 200;
-  const centerZ = homePlanet?.z || 300;
+  // Important: coordinates can legitimately be `0`, so avoid `||` fallbacks.
+  const homeX = Number.isFinite(homePlanet?.x) ? homePlanet.x : 100;
+  const homeY = Number.isFinite(homePlanet?.y) ? homePlanet.y : 200;
+  const centerZ = Number.isFinite(homePlanet?.z) ? homePlanet.z : 0;
   const homeCenter = useMemo(() => ({ x: homeX, y: homeY, z: centerZ }), [homeX, homeY, centerZ]);
 
   const worldScale = useMemo(() => {
