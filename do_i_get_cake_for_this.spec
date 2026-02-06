@@ -36,6 +36,10 @@ Purpose: A curated list of **highest ROI** additions to make Planetarion feel �
   - fleets: resolve by `arrival_time <= now`
   - research: consume RP budget, pop queue items
 
+MVP implementation note (2026-02-05):
+- Implemented **delta-based catch-up** on `GET /api/auth/me` (no tick replay).
+- Awards resources + research points using elapsed-time formulas, respects storage caps, and processes arrived fleets for the authenticated user only.
+
 **ROI**: Makes game viable with intermittent hosting; creates “return dopamine”.
 
 ### 1.3 “Truthful UI”
@@ -222,4 +226,3 @@ Small “next step” rail:
 - New player can: build ships → raid pirates → see clear win summary → send recyclers → get payout → colonize → rename → repeat.
 - No manual babysitting required (ticks, ETAs, arrivals).
 - Galaxy map answers: where to go, why, and what reward.
-

@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet
+from backend.services.commander_xp import xp_progress
 import bcrypt
 import re
 import random
@@ -263,6 +264,9 @@ def login():
     # Update last login timestamp
     from datetime import datetime
     user.last_login = datetime.utcnow()
+    # Treat a successful login as "seen now" so idle catch-up is computed from the prior seen time.
+    if getattr(user, "last_seen_at", None) is None:
+        user.last_seen_at = user.last_login
     db.session.commit()
     print("DEBUG: Last login timestamp updated")
 
@@ -288,9 +292,79 @@ def get_current_user():
     user_id = int(get_jwt_identity())
     user = User.query.get_or_404(user_id)
 
+    # Apply offline catch-up in a delta-based way (no tick replay).
+    idle = None
+    try:
+        from backend.services.idle_catchup import apply_idle_catchup
+
+        idle = apply_idle_catchup(user_id)
+        # `apply_idle_catchup` commits and updates user.last_seen_at; keep the user object fresh.
+        user = User.query.get_or_404(user_id)
+    except Exception:
+        # Non-fatal; do not block auth/me.
+        idle = None
+
+    commander_xp = int(getattr(user, "commander_xp", 0) or 0)
+    xp_into_level, xp_to_next = xp_progress(commander_xp)
+
     return jsonify({
         'id': user.id,
         'username': user.username,
         'email': user.email,
-        'created_at': user.created_at.isoformat() if user.created_at else None
+        'created_at': user.created_at.isoformat() if user.created_at else None,
+        'last_login': user.last_login.isoformat() if getattr(user, "last_login", None) else None,
+        'last_seen_at': user.last_seen_at.isoformat() if getattr(user, "last_seen_at", None) else None,
+        'commander_level': int(getattr(user, "commander_level", 1) or 1),
+        'commander_xp': commander_xp,
+        'commander_xp_progress': {'into_level': int(xp_into_level), 'to_next': int(xp_to_next)},
+        'portrait_key': getattr(user, "portrait_key", None),
+        'frame_key': getattr(user, "frame_key", None),
+        'idle_gains': (
+            {
+                'since': idle.since.isoformat() if idle else None,
+                'until': idle.until.isoformat() if idle else None,
+                'duration_seconds': int(idle.duration_seconds),
+                'resources': idle.resources,
+                'research_points': int(idle.research_points),
+                'events': idle.events,
+            }
+            if idle
+            else None
+        ),
     }), 200
+
+
+@auth_bp.route('/me', methods=['PATCH'])
+@jwt_required()
+def update_current_user_profile():
+    user_id = int(get_jwt_identity())
+    user = User.query.get_or_404(user_id)
+
+    from flask import request
+
+    payload = request.get_json(silent=True) or {}
+    allowed_portrait_keys = {None, "", "male", "female"}
+    allowed_frame_keys = {None, ""}  # MVP: frames are derived from level; keep reserved for later.
+
+    if "portrait_key" in payload:
+        raw = payload.get("portrait_key", None)
+        key = None if raw is None else str(raw).strip().lower()
+        if key not in allowed_portrait_keys:
+            return jsonify({"error": "Invalid portrait_key"}), 400
+        user.portrait_key = key or None
+
+    if "frame_key" in payload:
+        raw = payload.get("frame_key", None)
+        key = None if raw is None else str(raw).strip().lower()
+        if key not in allowed_frame_keys:
+            return jsonify({"error": "Invalid frame_key"}), 400
+        user.frame_key = key or None
+
+    db.session.commit()
+    return jsonify(
+        {
+            "id": user.id,
+            "portrait_key": getattr(user, "portrait_key", None),
+            "frame_key": getattr(user, "frame_key", None),
+        }
+    ), 200

@@ -128,9 +128,9 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	fi
 	@echo ""
 	@echo "🧹 Cleaning up any existing processes and test database..."
-	@-pkill -f "FLASK_ENV=testing" || true
-	@-pkill -f "python -m src" || true
-	@-pkill -f "npm start" || true
+	@-pkill -f "[F]LASK_ENV=testing" || true
+	@-pkill -f "[p]ython -m src" || true
+	@-pkill -f "[n]pm start" || true
 	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
 	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 	@-rm -f instance/test_e2e.db
@@ -193,7 +193,7 @@ e2e-ui: # Run E2E tests with local UI (no Docker)
 	@echo "✅ Test database ready"
 	@echo ""
 	@echo "🎨 Starting frontend server..."
-	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 &
+	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_DEV_AUTO_TICK_ON_PENDING=true npm start > frontend.log 2>&1 &
 	@echo "⏳ Waiting for frontend to become ready..."
 	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
 		if curl -s --max-time 1 http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
@@ -258,6 +258,7 @@ e2e-c: # Table C full loop Playwright spec (local UI)
 
 # Convenience wrappers (GNU make doesn't support flags like --tick)
 test-env-tick:
+	@$(MAKE) test-stop >/dev/null 2>&1 || true
 	@$(MAKE) test-env TICK=1
 
 test-tick:
@@ -279,9 +280,9 @@ supertest: # Run JavaScript integration tests (Supertest + Jest)
 	@echo "📋 This will start backend and frontend locally, then run Supertest integration tests"
 	@echo ""
 	@echo "🧹 Cleaning up any existing processes and test database..."
-	@-pkill -f "FLASK_ENV=testing" || true
-	@-pkill -f "python -m src" || true
-	@-pkill -f "npm start" || true
+	@-pkill -f "[F]LASK_ENV=testing" || true
+	@-pkill -f "[p]ython -m src" || true
+	@-pkill -f "[n]pm start" || true
 	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
 	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 	@-rm -f instance/test_supertest.db
@@ -344,7 +345,7 @@ supertest: # Run JavaScript integration tests (Supertest + Jest)
 	@echo "✅ Test database populated"
 	@echo ""
 	@echo "🎨 Starting frontend server for Supertest..."
-	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 &
+	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_DEV_AUTO_TICK_ON_PENDING=true npm start > frontend.log 2>&1 &
 	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
 	@sleep 10  # Give React time to start or crash
 	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
@@ -414,12 +415,12 @@ test: # Start local test environment (SQLite + servers + test data)
 	@if [ "$(FRESH)" = "1" ]; then echo "♻️  DB mode: FRESH (repopulate)"; else echo "⚡ DB mode: RESTORE (snapshot)"; fi
 	@echo ""
 	@echo "🧹 Cleaning up any existing processes..."
-	@-pkill -f "FLASK_ENV=testing" || true
-	@-pkill -f "python -m src" || true
-	@-pkill -f "npm start" || true
+	@-pkill -f "[F]LASK_ENV=testing" || true
+	@-pkill -f "[p]ython -m src" || true
+	@-pkill -f "[n]pm start" || true
 	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
 	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-	@if [ "$(FRESH)" = "1" ]; then -rm -f instance/test_e2e.db; fi
+	@if [ "$(FRESH)" = "1" ]; then rm -f instance/test_e2e.db; fi
 	@sleep 2
 	@echo "✅ Cleanup complete"
 	@echo ""
@@ -482,7 +483,7 @@ test: # Start local test environment (SQLite + servers + test data)
 	fi
 	@echo ""
 	@echo "🎨 Starting frontend server..."
-	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 &
+	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 &
 	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
 	@sleep 10  # Give React time to start or crash
 	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
@@ -534,16 +535,16 @@ test-env: # Start backend + frontend for manual testing (no Playwright)
 	@if [ "$(TICK)" = "1" ]; then echo "⏱️  Auto-ticks: enabled"; else echo "⏸️  Auto-ticks: disabled (set TICK=1)"; fi
 	@if [ "$(FRESH)" = "1" ]; then echo "♻️  DB mode: FRESH (repopulate)"; else echo "⚡ DB mode: RESTORE (snapshot)"; fi
 	@echo ""
-	@if [ "$(FRESH)" = "1" ]; then \
-		echo "🧹 Cleaning up any existing processes and test database..."; \
-		-pkill -f "FLASK_ENV=testing" || true; \
-		-pkill -f "python -m src" || true; \
-		-pkill -f "npm start" || true; \
-		-lsof -ti:5000 | xargs kill -9 2>/dev/null || true; \
-		-lsof -ti:3000 | xargs kill -9 2>/dev/null || true; \
-		-rm -f instance/test_e2e.db; \
-		sleep 2; \
-		echo "✅ Cleanup complete"; \
+		@if [ "$(FRESH)" = "1" ]; then \
+			echo "🧹 Cleaning up any existing processes and test database..."; \
+			pkill -f "[F]LASK_ENV=testing" 2>/dev/null || true; \
+			pkill -f "[p]ython -m src" 2>/dev/null || true; \
+			pkill -f "[n]pm start" 2>/dev/null || true; \
+			lsof -ti:5000 2>/dev/null | xargs kill -9 2>/dev/null || true; \
+			lsof -ti:3000 2>/dev/null | xargs kill -9 2>/dev/null || true; \
+			rm -f instance/test_e2e.db; \
+			sleep 2; \
+			echo "✅ Cleanup complete"; \
 		echo ""; \
 	fi
 	@echo "🔧 Creating instance directory for database..."
@@ -625,7 +626,7 @@ test-env: # Start backend + frontend for manual testing (no Playwright)
 			fi; \
 		fi; \
 	else \
-		cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 & \
+		cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 & \
 		sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid; \
 		sleep 10; \
 		if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \
@@ -675,7 +676,7 @@ test-env: # Start backend + frontend for manual testing (no Playwright)
 	@echo "   🌐 Frontend: http://localhost:3000"
 	@echo "   🔧 Backend:  http://localhost:5000"
 	@echo "   👤 Test User: e2etestuser / testpassword123"
-	@echo "   ⏱️  Tick control: Dashboard “Run tick” button enabled"
+	@echo "   ⏱️  Auto-ticks: enabled via scheduler ($(TICK_ENV))"
 	@echo "   🧾 Fleet timeline: Fleet Management shows recent events"
 	@echo "   📊 Database: SQLite (instance/test_e2e.db)"
 	@echo ""
@@ -719,9 +720,9 @@ colonization-env: # Start backend + frontend for colonization testing (no E2E te
 	@echo "    Optimized for colonization mechanics testing without Playwright overhead"
 	@echo ""
 	@echo "🧹 Cleaning up any existing processes and test database..."
-	@-pkill -f "FLASK_ENV=testing" || true
-	@-pkill -f "python -m src" || true
-	@-pkill -f "npm start" || true
+	@-pkill -f "[F]LASK_ENV=testing" || true
+	@-pkill -f "[p]ython -m src" || true
+	@-pkill -f "[n]pm start" || true
 	@-lsof -ti:5000 | xargs kill -9 2>/dev/null || true
 	@-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 	@-rm -f instance/test_colonization.db
@@ -784,7 +785,7 @@ colonization-env: # Start backend + frontend for colonization testing (no E2E te
 	@echo "✅ Test database populated with colonization scenarios"
 	@echo ""
 	@echo "🎨 Starting frontend server for colonization testing..."
-	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 REACT_APP_SHOW_TICK_BUTTON=true npm start > frontend.log 2>&1 &
+	@cd src/frontend && REACT_APP_BACKEND_URL=http://localhost:5000 npm start > frontend.log 2>&1 &
 	@sleep 1 && ps aux | grep "npm start" | grep -v grep | awk '{print $$2}' | head -1 > frontend.pid
 	@sleep 10  # Give React time to start or crash
 	@if ! curl -s http://localhost:3000 | grep -q "<!DOCTYPE html>"; then \

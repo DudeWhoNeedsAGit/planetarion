@@ -246,6 +246,7 @@ def restore_db():
                     ensure_user_research_queue_columns,
                     ensure_research_fraction_columns,
                     ensure_research_tech_columns,
+                    ensure_commander_xp_event_table,
                 )
                 ensure_planet_storage_columns(db.engine)
                 ensure_planet_trait_columns(db.engine)
@@ -254,6 +255,7 @@ def restore_db():
                 ensure_user_research_queue_columns(db.engine)
                 ensure_research_fraction_columns(db.engine)
                 ensure_research_tech_columns(db.engine)
+                ensure_commander_xp_event_table(db.engine)
         except Exception:
             # Non-fatal: restore should still succeed even if schema ensure fails.
             pass

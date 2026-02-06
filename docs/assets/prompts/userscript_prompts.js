@@ -16,6 +16,14 @@
         ["Nav icon - Alliance", "1:1 icon, handshake/crest glyph, purple/teal accent, readable at 20–28px, transparent background, vector/SVG-friendly (flat, no photographic texture)"],
         ["Nav icon - Messages", "1:1 icon, comms/chat glyph, blue accent, readable at 20–28px, transparent background, vector/SVG-friendly (flat, no photographic texture)"],
 
+        // --- Commander Portrait + Level Frames (MVP) ---
+        ["Commander portrait (base)", "1:1 portrait, single consistent Planetarion art style, commander head/shoulders, premium sci‑fi, neutral expression, no text, transparent background preferred, readable at 40–64px when cropped to circle"],
+        ["Commander frame tier 1 (L1–L5)", "1:1 UI frame, circular portrait bezel, subtle blue glow, minimal noise, transparent background, empty center for portrait, readable at 40–64px"],
+        ["Commander frame tier 2 (L6–L10)", "1:1 UI frame, circular portrait bezel, teal accents, slightly more ornate than tier 1, transparent background"],
+        ["Commander frame tier 3 (L11–L15)", "1:1 UI frame, circular portrait bezel, purple accents, premium sci‑fi ops-room vibe, transparent background"],
+        ["Commander frame tier 4 (L16–L20)", "1:1 UI frame, circular portrait bezel, amber accents, elite feel, transparent background"],
+        ["Commander frame tier 5 (L21–L25)", "1:1 UI frame, circular portrait bezel, red accents, legendary feel, transparent background"],
+
         // --- Galaxy Map UI (Phase 1 visual rebuild) ---
         ["Galaxy map background tile", "16:9, subtle starfield + faint nebula gradients, low contrast, stable (no flicker), seamless tileable background, no text, UI-friendly negative space"],
         ["Galaxy map grid overlay", "16:9, subtle sci-fi grid lines + axis highlights, transparent background look, minimal noise, no text, usable as overlay"],

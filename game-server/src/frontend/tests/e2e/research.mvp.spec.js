@@ -2,11 +2,6 @@ const { test, expect } = require('@playwright/test');
 const { apiLogin, loginViaLocalStorage } = require('./helpers/testSession');
 
 async function runTick(page) {
-  const runTickBtn = page.getByTestId('run-tick-button');
-  if (await runTickBtn.isVisible()) {
-    await runTickBtn.click();
-    return;
-  }
   await page.request.post('http://localhost:5000/api/tick');
 }
 

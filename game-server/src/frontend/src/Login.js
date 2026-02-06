@@ -25,7 +25,9 @@ function Login({ onLogin }) {
     try {
       const response = await axios.post('/api/auth/login', formData);
       localStorage.setItem('token', response.data.access_token);
-      onLogin(response.data.user);
+      // Fetch enriched user payload (level/idle gains/etc).
+      const me = await axios.get('/api/auth/me');
+      onLogin(me.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {

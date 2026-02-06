@@ -63,15 +63,14 @@ test.describe('Tick Processing', () => {
     await expect(tile).toBeVisible({ timeout: 60000 });
     await expect(tile.getByTestId('fleet-eta-value')).toHaveText('Arrived (pending tick)', { timeout: 60000 });
 
-    // Click the dashboard Run tick button and ensure the fleet status updates without reloading.
-    const runTick = page.getByTestId('run-tick-button');
-    await expect(runTick).toBeVisible();
-
-    await runTick.click();
+    // Trigger server processing by calling the tick endpoint, then notify the UI to refresh.
+    await request.post('http://localhost:5000/api/tick');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('planetarion:tick')));
     await expect(tile.getByTestId('fleet-status-value')).not.toHaveText('traveling', { timeout: 60000 });
 
     // With forced zero travel time, the mission often requires a second tick to process the return leg.
-    await runTick.click();
+    await request.post('http://localhost:5000/api/tick');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('planetarion:tick')));
     await expect(tile.getByTestId('fleet-status-value')).toHaveText('stationed', { timeout: 60000 });
     await expect(tile.getByTestId('fleet-eta-value')).not.toHaveText('Arrived (pending tick)', { timeout: 60000 });
   });

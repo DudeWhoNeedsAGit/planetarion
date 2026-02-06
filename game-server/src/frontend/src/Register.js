@@ -46,7 +46,9 @@ function Register({ onRegister }) {
       });
 
       localStorage.setItem('token', response.data.access_token);
-      onRegister(response.data.user);
+      // Fetch enriched user payload (level/idle gains/etc).
+      const me = await axios.get('/api/auth/me');
+      onRegister(me.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Registration failed');
     } finally {

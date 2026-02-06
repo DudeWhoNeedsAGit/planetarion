@@ -119,6 +119,12 @@ function AppContent() {
     setCurrentView('login');
   };
 
+  const refreshUser = async () => {
+    const response = await axios.get('/api/auth/me');
+    setUser(response.data);
+    return response.data;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6">
@@ -150,7 +156,7 @@ function AppContent() {
 
   return (
     <>
-      <Dashboard user={user} onLogout={handleLogout} />
+      <Dashboard user={user} onLogout={handleLogout} onUserRefresh={refreshUser} />
       <ToastContainer toasts={toasts} removeToast={removeToast} />
     </>
   );

@@ -100,6 +100,28 @@ def ensure_user_research_queue_columns(db_engine) -> None:
             connection.execute(text("ALTER TABLE users ADD COLUMN research_queue TEXT"))
 
 
+def ensure_user_profile_columns(db_engine) -> None:
+    """Add missing User commander/profile columns for SQLite DBs."""
+    if db_engine.dialect.name != "sqlite":
+        return
+
+    with db_engine.begin() as connection:
+        cols = _get_sqlite_columns(connection, "users")
+        for name, col_type, default in (
+            ("last_seen_at", "DATETIME", "NULL"),
+            ("commander_level", "INTEGER", "1"),
+            ("commander_xp", "BIGINT", "0"),
+            ("portrait_key", "TEXT", "NULL"),
+            ("frame_key", "TEXT", "NULL"),
+        ):
+            if name in cols:
+                continue
+            if default == "NULL":
+                connection.execute(text(f"ALTER TABLE users ADD COLUMN {name} {col_type}"))
+            else:
+                connection.execute(text(f"ALTER TABLE users ADD COLUMN {name} {col_type} DEFAULT {default}"))
+
+
 def ensure_research_fraction_columns(db_engine) -> None:
     """Add missing Research fractional columns for SQLite DBs."""
     if db_engine.dialect.name != "sqlite":
@@ -134,7 +156,37 @@ def ensure_research_tech_columns(db_engine) -> None:
             ("weapons_tech", "INTEGER", "0"),
             ("shielding_tech", "INTEGER", "0"),
             ("armour_tech", "INTEGER", "0"),
+            ("recycler_efficiency", "INTEGER", "0"),
         ):
             if name in cols:
                 continue
             connection.execute(text(f"ALTER TABLE research ADD COLUMN {name} {col_type} DEFAULT {default}"))
+
+
+def ensure_commander_xp_event_table(db_engine) -> None:
+    """Ensure commander XP event idempotency table exists for SQLite DBs."""
+    if db_engine.dialect.name != "sqlite":
+        return
+
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS commander_xp_events (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    source_type VARCHAR(32) NOT NULL,
+                    source_id VARCHAR(128) NOT NULL,
+                    xp_awarded INTEGER NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL,
+                    CONSTRAINT uq_commander_xp_event UNIQUE (user_id, source_type, source_id),
+                    FOREIGN KEY(user_id) REFERENCES users (id)
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_commander_xp_event_user_source ON commander_xp_events (user_id, source_type)"
+            )
+        )

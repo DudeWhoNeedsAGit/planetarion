@@ -19,9 +19,8 @@ test.describe('Fleet Management planet selection', () => {
     await expect(chosen).toHaveClass(/pa-btn-primary/);
 
     // Trigger the same refresh path the dashboard uses after processing a tick.
-    const runTick = page.getByTestId('run-tick-button');
-    await expect(runTick).toBeVisible();
-    await runTick.click();
+    await request.post('http://localhost:5000/api/tick');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('planetarion:tick')));
 
     if (chosenLabel) {
       const chosenAfter = page.getByTestId('fleet-planet-button').filter({ hasText: chosenLabel }).first();

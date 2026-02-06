@@ -17,6 +17,7 @@ from datetime import datetime
 from backend.database import db
 from backend.models import Fleet, Planet, CombatReport, DebrisField, User, TickLog
 from backend.config import COMBAT_SHIP_STATS
+from backend.services.commander_xp import CommanderXPService, xp_from_ship_losses
 
 
 class CombatEngine:
@@ -346,6 +347,12 @@ class CombatEngine:
         )
         db.session.add(battle_report)
 
+        # Flush so we can use battle_report.id as an idempotency source key.
+        try:
+            db.session.flush()
+        except Exception:
+            pass
+
         # Create tick log entry
         attacker_username = getattr(getattr(attacker_fleet, 'owner', None), 'username', f'user_{attacker_fleet.user_id}')
         defender_username = getattr(getattr(defender_fleet, 'owner', None), 'username', f'user_{defender_fleet.user_id}')
@@ -358,6 +365,37 @@ class CombatEngine:
             event_description=f'Combat between {attacker_username} and {defender_username}. Winner: {winner_username}'
         )
         db.session.add(tick_log)
+
+        # Commander XP (idempotent per combat report).
+        try:
+            report_id = getattr(battle_report, "id", None)
+            sid = str(report_id) if report_id is not None else f"fleet:{getattr(attacker_fleet, 'id', 'unknown')}"
+
+            attacker_xp = xp_from_ship_losses(combat_result.get("defender_losses"))
+            defender_xp = xp_from_ship_losses(combat_result.get("attacker_losses"))
+
+            if combat_result.get("winner") == "attacker":
+                attacker_xp += 50
+                defender_xp += 10
+            else:
+                attacker_xp += 10
+                defender_xp += 50
+
+            CommanderXPService.award_xp(
+                user_id=int(attacker_fleet.user_id),
+                xp=int(attacker_xp),
+                source_type="combat",
+                source_id=f"{sid}:attacker",
+            )
+            CommanderXPService.award_xp(
+                user_id=int(defender_fleet.user_id),
+                xp=int(defender_xp),
+                source_type="combat",
+                source_id=f"{sid}:defender",
+            )
+        except Exception:
+            # XP is non-critical; avoid breaking combat resolution.
+            pass
 
         db.session.commit()
         print("DEBUG: Combat result processing complete")
@@ -406,6 +444,18 @@ class CombatEngine:
                 event_description=f'Planet {planet.name} captured by {attacker_username}'
             )
             db.session.add(tick_log)
+
+            # Commander XP (idempotent per TickLog row if possible).
+            try:
+                db.session.flush()
+                CommanderXPService.award_xp(
+                    user_id=int(fleet.user_id),
+                    xp=250,
+                    source_type="planet_capture",
+                    source_id=str(getattr(tick_log, "id", None) or f"planet:{planet.id}:fleet:{fleet.id}"),
+                )
+            except Exception:
+                pass
 
         fleet.last_combat_time = datetime.utcnow()
         db.session.commit()

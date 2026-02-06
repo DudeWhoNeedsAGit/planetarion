@@ -11,6 +11,7 @@ from backend.models import Fleet, Planet, User, TickLog, Research, DebrisField, 
 from backend.services.planet_traits import PlanetTraitService
 from backend.config import calculate_fuel_consumption
 from backend.services.fleet_state_machine import FleetStateMachine
+from backend.services.commander_xp import CommanderXPService, xp_from_resources
 import json
 
 # Enhanced error handling constants
@@ -50,20 +51,31 @@ class FleetArrivalService:
         return User.query.get(fleet.user_id)
 
     @staticmethod
-    def process_arrived_fleets():
-        """Process all fleets that have arrived at their destinations"""
+    def process_arrived_fleets(user_id: int | None = None):
+        """Process fleets that have arrived at their destinations.
+
+        If `user_id` is provided, only process fleets owned by that user. This is
+        important for request-scoped catch-up flows (e.g. /api/auth/me) where we
+        must not mutate other players' fleets.
+        """
         print("DEBUG: Processing arrived fleets")
-        arrived_fleets = Fleet.query.filter(
+        arrived_query = Fleet.query.filter(
             Fleet.arrival_time <= datetime.utcnow(),
             Fleet.status.in_(['traveling', 'returning', 'defending'])
-        ).all()
+        )
+        if user_id is not None:
+            arrived_query = arrived_query.filter(Fleet.user_id == int(user_id))
+        arrived_fleets = arrived_query.all()
 
         # Also check for coordinate-based missions that have arrived
-        coordinate_based_fleets = Fleet.query.filter(
+        coord_query = Fleet.query.filter(
             Fleet.arrival_time <= datetime.utcnow(),
             Fleet.status.like('exploring:%') |
             Fleet.status.like('colonizing:%')
-        ).all()
+        )
+        if user_id is not None:
+            coord_query = coord_query.filter(Fleet.user_id == int(user_id))
+        coordinate_based_fleets = coord_query.all()
 
         arrived_fleets.extend(coordinate_based_fleets)
 
@@ -285,6 +297,19 @@ class FleetArrivalService:
             event_description=f'Planet {target_planet.name} colonized by {username}'
         )
         db.session.add(tick_log)
+
+        # Commander XP (idempotent per TickLog row if possible).
+        try:
+            db.session.flush()
+            difficulty = int(getattr(target_planet, "colonization_difficulty", 1) or 1)
+            CommanderXPService.award_xp(
+                user_id=int(fleet.user_id),
+                xp=200 + max(0, difficulty - 1) * 50,
+                source_type="colonization",
+                source_id=str(getattr(tick_log, "id", None) or f"planet:{target_planet.id}:fleet:{fleet.id}"),
+            )
+        except Exception:
+            pass
 
         # Return fleet to stationed status
         FleetArrivalService._return_fleet_to_stationed(fleet)
@@ -875,6 +900,18 @@ class FleetArrivalService:
                 event_description=f'Fleet {fleet.id} collected {collected_metal}M {collected_crystal}C {collected_deuterium}D from debris field'
             )
             db.session.add(tick_log)
+
+            # Commander XP (idempotent per TickLog row if possible).
+            try:
+                db.session.flush()
+                CommanderXPService.award_xp(
+                    user_id=int(fleet.user_id),
+                    xp=int(xp_from_resources(collected_metal, collected_crystal, collected_deuterium)),
+                    source_type="recycle",
+                    source_id=str(getattr(tick_log, "id", None) or f"fleet:{fleet.id}:planet:{target_planet.id}"),
+                )
+            except Exception:
+                pass
 
             # Clean up empty debris field
             if debris_field.metal <= 0 and debris_field.crystal <= 0 and debris_field.deuterium <= 0:

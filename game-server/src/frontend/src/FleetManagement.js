@@ -102,6 +102,7 @@ function FleetManagement({ user, planets = [] }) {
   const [timelineEvents, setTimelineEvents] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const sseHealthyRef = useRef(false);
+  const lastAutoTickAtRef = useRef(0);
   const { showSuccess, showError } = useToast();
 
   // Helper function for ETA calculation
@@ -642,6 +643,38 @@ function FleetManagement({ user, planets = [] }) {
     });
   }, [normalizedFleets]);
 
+  // Dev-only helper: in manual testing environments where the server scheduler is disabled,
+  // allow the UI to trigger a tick when we detect "Arrived (pending tick)" fleets.
+  // This is intentionally gated by an env var to avoid affecting E2E determinism.
+  useEffect(() => {
+    const enabled = process.env.REACT_APP_DEV_AUTO_TICK_ON_PENDING === 'true';
+    if (!enabled) return;
+    if (!hasArrivedPendingTick) return;
+
+    const now = Date.now();
+    if (now - (lastAutoTickAtRef.current || 0) < 2000) return;
+    lastAutoTickAtRef.current = now;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await axios.post('/api/tick');
+        if (cancelled) return;
+        try {
+          window.dispatchEvent(new CustomEvent('planetarion:tick'));
+        } catch (e) {
+          // ignore
+        }
+      } catch (e) {
+        // Non-fatal. If the endpoint is disabled in prod, we simply won't auto-resolve.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasArrivedPendingTick]);
+
   const handleCreateFleet = async (fleetData) => {
     try {
       const response = await axios.post('/api/fleet', fleetData);
@@ -779,7 +812,7 @@ function FleetManagement({ user, planets = [] }) {
 
       {hasArrivedPendingTick && (
         <div className="mb-6 bg-yellow-900/40 border border-yellow-700 text-yellow-200 rounded p-4" data-testid="fleet-pending-tick-banner">
-          One or more fleets have arrived but are awaiting tick processing. Use the Dashboard “Run tick” button to process arrivals/combat.
+          One or more fleets have arrived and are awaiting server processing. Auto-ticks should resolve this shortly.
         </div>
       )}
 

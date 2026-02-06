@@ -12,22 +12,67 @@ import ResearchDashboard from './ResearchDashboard';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
 import planetarionLogo from './assets/branding/planetarion-logo.png';
+import CommanderPortrait from './CommanderPortrait';
+import BackgroundMusicToggle from './BackgroundMusicToggle';
 
-function Dashboard({ user, onLogout }) {
+function Dashboard({ user, onLogout, onUserRefresh = null }) {
   const [activeSection, setActiveSection] = useState('overview');
   const [planets, setPlanets] = useState([]);
   const [selectedPlanet, setSelectedPlanet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [upgrading, setUpgrading] = useState(false);
-  const [ticking, setTicking] = useState(false);
   const [pollingInterval, setPollingInterval] = useState(null);
   const [chatMinimized, setChatMinimized] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [renaming, setRenaming] = useState(false);
   const { showSuccess, showError } = useToast();
-  const showTickButton = process.env.REACT_APP_SHOW_TICK_BUTTON === 'true';
+  const idleGains = user?.idle_gains || null;
+  const [portraitKey, setPortraitKey] = useState(() => user?.portrait_key || 'male');
+  const [portraitSize, setPortraitSize] = useState(() => (window.innerWidth < 640 ? 72 : 108));
+
+  useEffect(() => {
+    setPortraitKey(user?.portrait_key || 'male');
+  }, [user?.portrait_key]);
+
+  useEffect(() => {
+    const onResize = () => setPortraitSize(window.innerWidth < 640 ? 72 : 108);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const updatePortraitKey = async (nextKey) => {
+    const key = String(nextKey || '').toLowerCase();
+    setPortraitKey(key);
+    try {
+      await axios.patch('/api/auth/me', { portrait_key: key });
+      if (typeof onUserRefresh === 'function') await onUserRefresh();
+      showSuccess('Commander portrait updated.');
+    } catch (e) {
+      showError('Failed to update commander portrait.');
+    }
+  };
+
+  const formatDuration = (seconds) => {
+    const s = Math.max(0, Number(seconds || 0));
+    const m = Math.floor(s / 60);
+    const h = Math.floor(m / 60);
+    if (h > 0) return `${h}h ${m % 60}m`;
+    if (m > 0) return `${m}m`;
+    return `${Math.floor(s)}s`;
+  };
+
+  const shouldShowIdleSummary = () => {
+    if (!idleGains) return false;
+    if (Number(idleGains.duration_seconds || 0) < 120) return false;
+    const r = idleGains.resources || {};
+    const hasRes = (r.metal || 0) + (r.crystal || 0) + (r.deuterium || 0) > 0;
+    const hasRp = Number(idleGains.research_points || 0) > 0;
+    const ev = idleGains.events || {};
+    const hasEvents = Number(ev.fleets_resolved || 0) + Number(ev.research_completed || 0) > 0;
+    return hasRes || hasRp || hasEvents;
+  };
 
   useEffect(() => {
     fetchPlanets(); // Initial fetch
@@ -71,25 +116,6 @@ function Dashboard({ user, onLogout }) {
       setLoadError(message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleRunTick = async () => {
-    setTicking(true);
-    try {
-      await axios.post('/api/tick');
-      await fetchPlanets();
-      // Notify other screens (FleetManagement, Combat, etc.) to refresh.
-      try {
-        window.dispatchEvent(new CustomEvent('planetarion:tick'));
-      } catch (e) {
-        // ignore
-      }
-      showSuccess('Tick executed');
-    } catch (error) {
-      showError(error.response?.data?.error || 'Tick failed');
-    } finally {
-      setTicking(false);
     }
   };
 
@@ -1234,26 +1260,66 @@ function Dashboard({ user, onLogout }) {
             />
             <h1 className="text-2xl sm:text-3xl font-bold text-white">Planetarion</h1>
           </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-slate-200/90">Welcome, {user.username}!</span>
-	            {showTickButton && (
+	          <div className="flex items-center gap-4 flex-wrap justify-between sm:justify-end w-full sm:w-auto">
+	            <div className="flex items-center gap-3 min-w-[260px]">
+	              <CommanderPortrait
+	                username={user.username}
+	                level={user.commander_level || 1}
+	                portraitKey={portraitKey}
+	                size={portraitSize}
+	              />
+	              <div className="min-w-0">
+	                <div className="text-slate-200/90 font-medium truncate">Welcome, {user.username}!</div>
+	                {shouldShowIdleSummary() && (
+                  <div className="text-xs text-slate-300/80 mt-0.5" data-testid="idle-summary">
+                    While you were away ({formatDuration(idleGains.duration_seconds)}):{' '}
+                    <span className="text-slate-100/95 font-semibold">
+                      +{Number(idleGains.resources?.metal || 0).toLocaleString()}M
+                    </span>{' '}
+                    <span className="text-slate-100/95 font-semibold">
+                      +{Number(idleGains.resources?.crystal || 0).toLocaleString()}C
+                    </span>{' '}
+                    <span className="text-slate-100/95 font-semibold">
+                      +{Number(idleGains.resources?.deuterium || 0).toLocaleString()}D
+                    </span>
+                    {Number(idleGains.research_points || 0) > 0 && (
+                      <>
+                        {' • '}
+                        <span className="text-slate-100/95 font-semibold">
+                          +{Number(idleGains.research_points || 0).toLocaleString()} RP
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+	            <div className="flex items-center gap-3 flex-wrap">
+	              <label className="flex items-center gap-2 text-xs text-slate-200/80">
+	                <span className="hidden sm:inline">Commander</span>
+	                <select
+	                  className="pa-input py-2 px-3 text-sm"
+	                  value={portraitKey || 'male'}
+	                  onChange={(e) => updatePortraitKey(e.target.value)}
+	                  data-testid="commander-portrait-select"
+	                  aria-label="Commander portrait"
+	                  title="Commander portrait"
+	                >
+	                  <option value="male">Male</option>
+	                  <option value="female">Female</option>
+	                </select>
+	              </label>
+	              <BackgroundMusicToggle />
 	              <button
-	                onClick={handleRunTick}
-	                data-testid="run-tick-button"
-	                disabled={ticking}
-	                className="pa-btn-secondary px-3 py-2 text-sm"
+	                onClick={onLogout}
+	                data-testid="logout-button"
+	                className="pa-btn-danger px-4 py-2"
 	              >
-	                {ticking ? 'Ticking…' : 'Run tick'}
-	              </button>
-	            )}
-	            <button
-	              onClick={onLogout}
-	              data-testid="logout-button"
-	              className="pa-btn-danger px-4 py-2"
-	            >
                 Logout
               </button>
             </div>
+          </div>
           </div>
         </header>
 

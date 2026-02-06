@@ -22,11 +22,11 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from backend.database import db
 from backend.models import User, Research, Planet, TickLog
+from backend.services.research_defs import RESEARCH_DEF_BY_KEY, RESEARCH_DEFS, RESEARCH_KEYS as ALL_RESEARCH_KEYS
 
 research_bp = Blueprint('research', __name__, url_prefix='/api/research')
 
-
-RESEARCH_KEYS = ('colonization_tech', 'astrophysics', 'interstellar_communication')
+RESEARCH_KEYS = ALL_RESEARCH_KEYS
 
 
 def _utcnow() -> datetime:
@@ -97,12 +97,7 @@ def calculate_research_cost(key: str, target_level: int) -> int:
 
     # Legacy formula (covered by existing unit tests):
     #   cost = base * (level ** 1.5)
-    base_costs = {
-        "colonization_tech": 100,
-        "astrophysics": 150,
-        "interstellar_communication": 200,
-    }
-    base = int(base_costs.get(key, 100))
+    base = int(RESEARCH_DEF_BY_KEY.get(key, RESEARCH_DEF_BY_KEY["colonization_tech"]).base_cost)
     cost = int(base * (float(target_level) ** 1.5))
     return max(0, int(cost))
 
@@ -179,6 +174,25 @@ def get_research():
             "next_level_durations_seconds": durations,
             "rates": rates,
             "queue": queue,
+            "tree": {
+                "branches": [
+                    {
+                        "name": branch,
+                        "items": [
+                            {
+                                "key": d.key,
+                                "name": d.name,
+                                "description": d.description,
+                                "effect_hint": d.effect_hint,
+                                "max_level": d.max_level,
+                            }
+                            for d in RESEARCH_DEFS
+                            if d.branch == branch
+                        ],
+                    }
+                    for branch in sorted({d.branch for d in RESEARCH_DEFS})
+                ]
+            },
         }
     )
 
@@ -205,7 +219,7 @@ def start_research():
 
     data = request.get_json(silent=True) or {}
     key = (data.get("key") or "").strip()
-    if key not in RESEARCH_KEYS:
+    if key not in RESEARCH_DEF_BY_KEY:
         return jsonify({"error": "Invalid research key"}), 400
 
     if _load_queue(user):
@@ -267,7 +281,7 @@ def cancel_research():
 
     key = queue.get("key")
     target_level = int(queue.get("target_level") or 0)
-    refund = calculate_research_cost(str(key), target_level) if key in RESEARCH_KEYS else 0
+    refund = calculate_research_cost(str(key), target_level) if key in RESEARCH_DEF_BY_KEY else 0
     research.research_points = int(research.research_points or 0) + int(refund)
     _save_queue(user, None)
 
@@ -295,7 +309,7 @@ def upgrade_research_legacy(research_type: str):
     user = User.query.get_or_404(user_id)
     research = _get_or_create_research(user_id)
 
-    if research_type not in RESEARCH_KEYS:
+    if research_type not in RESEARCH_DEF_BY_KEY:
         return jsonify({"error": "Invalid research type"}), 400
 
     if _load_queue(user):
@@ -335,46 +349,13 @@ def upgrade_research_legacy(research_type: str):
 
 def get_research_info(research_type):
     """Get information about a research technology"""
-    research_info = {
-        "colonization_tech": {
-            "name": "Colonization Technology",
-            "description": "Allows colonization of planets with higher difficulty ratings",
-            "benefits": [
-                "Unlocks colonization of planets with difficulty up to your research level",
-                "Reduces colonization failure chance",
-                "Enables faster colony establishment",
-            ],
-            "max_level": 10,
-        },
-        "astrophysics": {
-            "name": "Astrophysics",
-            "description": "Advances understanding of space travel and colonization",
-            "benefits": [
-                "Reduces fleet travel time",
-                "Improves exploration efficiency",
-            ],
-            "max_level": 15,
-        },
-        "interstellar_communication": {
-            "name": "Interstellar Communication",
-            "description": "Enhances communication across vast distances",
-            "benefits": [
-                "Increases galaxy visibility range",
-                "Improves fleet coordination",
-            ],
-            "max_level": 12,
-        },
-    }
-
-    return research_info.get(
-        research_type,
-        {
-            "name": "Unknown Research",
-            "description": "Research information not available",
-            "benefits": [],
-            "max_level": 10,
-        },
-    )
+    d = RESEARCH_DEF_BY_KEY.get(research_type)
+    if not d:
+        return {"name": "Unknown Research", "description": "Research information not available", "benefits": [], "max_level": 10}
+    benefits = []
+    if d.effect_hint:
+        benefits.append(d.effect_hint)
+    return {"name": d.name, "description": d.description, "benefits": benefits, "max_level": d.max_level or 10}
 
 
 @research_bp.route("/info/<research_type>", methods=["GET"])

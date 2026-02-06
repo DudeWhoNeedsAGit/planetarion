@@ -6,6 +6,13 @@ const RESEARCH_LABELS = {
   colonization_tech: 'Colonization Tech',
   astrophysics: 'Astrophysics',
   interstellar_communication: 'Interstellar Communication',
+  espionage_tech: 'Espionage Tech',
+  energy_tech: 'Energy Tech',
+  computer_tech: 'Computer Tech',
+  recycler_efficiency: 'Recycler Efficiency',
+  weapons_tech: 'Weapons Tech',
+  shielding_tech: 'Shielding Tech',
+  armour_tech: 'Armor Tech',
 };
 
 function formatSeconds(seconds) {
@@ -63,6 +70,7 @@ export default function ResearchDashboard() {
   const durations = data?.next_level_durations_seconds || {};
   const rates = data?.rates || {};
   const queue = data?.queue || null;
+  const tree = data?.tree?.branches || null;
 
   const queueRemainingSeconds = useMemo(() => {
     if (!queue?.completes_at) return null;
@@ -120,6 +128,50 @@ export default function ResearchDashboard() {
         </div>
       </div>
 
+      {Array.isArray(tree) && tree.length > 0 && (
+        <div className="pa-card p-6" data-testid="research-tree">
+          <h4 className="text-lg font-semibold mb-4 text-white">Research Tree</h4>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {tree.map((branch) => (
+              <div key={branch.name} className="pa-panel p-4">
+                <div className="text-white font-bold mb-3">{branch.name}</div>
+                <div className="space-y-3">
+                  {(branch.items || []).map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`w-full text-left rounded-lg border px-3 py-2 transition ${
+                        selectedKey === item.key ? 'border-blue-400/50 bg-blue-950/30' : 'border-slate-600/30 hover:border-slate-500/40 hover:bg-slate-600/10'
+                      }`}
+                      disabled={Boolean(queue)}
+                      onClick={() => setSelectedKey(item.key)}
+                      data-testid={`research-tree-${item.key}`}
+                      title={item.effect_hint || ''}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-slate-100 font-semibold">{item.name || RESEARCH_LABELS[item.key] || item.key}</div>
+                        <div className="text-xs text-slate-200/80 font-bold">L{levels?.[item.key] ?? 0}</div>
+                      </div>
+                      {item.description && (
+                        <div className="text-xs text-slate-300/70 mt-1">{item.description}</div>
+                      )}
+                      {item.effect_hint && (
+                        <div className="text-[11px] text-slate-200/70 mt-1">{item.effect_hint}</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          {queue && (
+            <div className="mt-3 text-xs text-slate-300/70">
+              Tree selection is disabled while research is running.
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="pa-card p-6">
         <h4 className="text-lg font-semibold mb-4 text-white">Research Queue</h4>
 
@@ -157,7 +209,7 @@ export default function ResearchDashboard() {
               </button>
             </div>
             <div className="mt-3 text-xs text-slate-300/70">
-              Tip: if something is “pending tick”, click “Run tick” to process completions faster in test env.
+              Tip: completions are applied by server ticks; in local dev this should resolve automatically within a few seconds.
             </div>
           </div>
         ) : (
@@ -179,9 +231,9 @@ export default function ResearchDashboard() {
               data-testid="research-select"
               disabled={Boolean(queue)}
             >
-              <option value="colonization_tech">Colonization Tech</option>
-              <option value="astrophysics">Astrophysics</option>
-              <option value="interstellar_communication">Interstellar Communication</option>
+              {Object.entries(RESEARCH_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
             </select>
           </div>
 

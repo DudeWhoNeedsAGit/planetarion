@@ -44,6 +44,32 @@ def is_valid_position(x, y, z, existing_planets, min_distance=25):
 
 def generate_cluster_centers(num_clusters, min_distance, fixed_z=None):
     """Generate centers for galaxy clusters"""
+    # The GalaxyMap UI is currently 2D (X/Y) and uses a fixed Z slice (home planet Z).
+    # For manual testing, a globally spiral-ish layout reads better than evenly-random
+    # placement (which tends to look like a rectangle cloud).
+    layout = (UNIVERSE_CONFIG.get("cluster_center_layout") or "").lower()
+    if not layout and (UNIVERSE_CONFIG.get("cluster_shape") or "").lower() == "spiral":
+        layout = "spiral"
+
+    if layout == "spiral":
+        centers = []
+        max_r = int(min(abs(UNIVERSE_CONFIG["min_coord"]), abs(UNIVERSE_CONFIG["max_coord"])) * 0.75)
+        turns = float(UNIVERSE_CONFIG.get("spiral_turns") or 2.6)
+        cz = int(fixed_z) if fixed_z is not None else 0
+
+        for i in range(max(1, int(num_clusters))):
+            t = 0.0 if num_clusters <= 1 else (i / (num_clusters - 1))
+            theta = t * turns * 2 * math.pi
+            r = max_r * (0.12 + 0.88 * t)
+            x = int(r * math.cos(theta))
+            y = int(r * math.sin(theta))
+
+            x = max(UNIVERSE_CONFIG["min_coord"], min(UNIVERSE_CONFIG["max_coord"], x))
+            y = max(UNIVERSE_CONFIG["min_coord"], min(UNIVERSE_CONFIG["max_coord"], y))
+            centers.append((x, y, cz))
+
+        return centers
+
     centers = []
     max_attempts = 1000
 
@@ -77,10 +103,15 @@ def generate_planet_position(existing_planets, cluster_center=None, is_core_plan
     max_attempts = 100
 
     for attempt in range(max_attempts):
-        if cluster_center and not is_core_planet:
+        if cluster_center:
             # Generate position within cluster
             cx, cy, cz = cluster_center
             radius = UNIVERSE_CONFIG['cluster_radius']
+            if is_core_planet:
+                # Core planets anchor the local experience (home cluster).
+                # If the core is generated "anywhere in the universe", the GalaxyMap can look empty,
+                # colonization difficulty can spike, and local spiral seeding becomes impossible.
+                radius = max(120, int(radius * 0.18))
             shape = (UNIVERSE_CONFIG.get('cluster_shape') or 'square').lower()
 
             if shape == 'disk':
@@ -284,13 +315,24 @@ def create_pirate_camps_around_player(player_planets, num_camps=2):
     return pirate_data
 
 
-def create_local_unowned_planets_on_same_z(existing_planets, center_planet, count=80, radius=1800, max_difficulty=2):
+def create_local_unowned_planets_on_same_z(
+    existing_planets,
+    center_planet,
+    count=80,
+    radius=1800,
+    max_difficulty=2,
+    shape="spiral",
+    spiral_arm_count=3,
+    spiral_turns=1.8,
+    spiral_jitter=0.22,
+):
     """Create extra unowned planets near a player's start location on the same Z slice.
 
     The current GalaxyMap UI is 2D (X/Y) and keeps Z fixed to the player's home Z.
     Without local density on that Z slice, the map can feel empty (only a handful of systems).
 
     `max_difficulty` is used to ensure early colonization progression is possible (e.g. Colonization Tech L1–L2).
+    `shape` controls the *visible* distribution in the GalaxyMap's nearby view. Default is "spiral".
     """
     if not center_planet:
         return []
@@ -299,6 +341,7 @@ def create_local_unowned_planets_on_same_z(existing_planets, center_planet, coun
 
     created = []
     attempts = 0
+    spiral_index = 0
     # When max_difficulty is low, the acceptance rate can drop sharply if `radius` is large.
     # Increase attempts to avoid generating too few local targets for manual play.
     max_attempts = max(2000, count * 200)
@@ -314,13 +357,36 @@ def create_local_unowned_planets_on_same_z(existing_planets, center_planet, coun
         except Exception:
             effective_radius = radius
 
+    shape = (shape or "disk").lower()
+    arms = max(1, int(spiral_arm_count or 3))
+    turns = float(spiral_turns or 1.8)
+    jitter = float(spiral_jitter or 0.0)
+
     while len(created) < count and attempts < max_attempts:
         attempts += 1
-        # Sample a point in a disk for better spread.
-        angle = random.uniform(0, 2 * math.pi)
-        r = effective_radius * math.sqrt(random.random())
-        x = int(center_planet.x + r * math.cos(angle))
-        y = int(center_planet.y + r * math.sin(angle))
+
+        if shape == "spiral":
+            # Use a deterministic-ish arm spiral so the shape is *actually visible* in the map.
+            # Random t sampling tends to look like a disk with mild arm bias.
+            i = spiral_index
+            spiral_index += 1
+
+            t = (i + 1) / max(1, int(count))
+            t = min(1.0, max(0.0, t))
+
+            arm_index = i % arms
+            theta = (t * turns * 2 * math.pi) + (arm_index * (2 * math.pi / arms))
+            theta += random.uniform(-jitter, jitter) * (0.25 + 0.75 * t)
+
+            r = effective_radius * (t ** 0.9)
+            x = int(center_planet.x + r * math.cos(theta))
+            y = int(center_planet.y + r * math.sin(theta))
+        else:
+            # Sample a point in a disk for better spread.
+            angle = random.uniform(0, 2 * math.pi)
+            r = effective_radius * math.sqrt(random.random())
+            x = int(center_planet.x + r * math.cos(angle))
+            y = int(center_planet.y + r * math.sin(angle))
         z = int(center_planet.z)
 
         # Keep within universe bounds.
@@ -585,6 +651,10 @@ def populate_database():
                         count=extra_count,
                         radius=2000,
                         max_difficulty=2,
+                        shape="spiral",
+                        spiral_arm_count=3,
+                        spiral_turns=2.2,
+                        spiral_jitter=0.18,
                     )
                     if extra:
                         for p in extra:

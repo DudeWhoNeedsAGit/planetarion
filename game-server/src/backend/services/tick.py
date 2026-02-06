@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import inspect
 from backend.database import db
 from backend.models import Planet, Fleet, TickLog, User, Research
+from backend.services.commander_xp import CommanderXPService
 from flask import current_app
 import math
 from backend.config import get_planet_storage_caps
@@ -290,6 +291,7 @@ def process_research_queue(tick_start_time: datetime) -> None:
     tick semantics (events resolve on the next tick at/after their scheduled time).
     """
     tick_now = tick_start_time  # naive UTC (run_tick uses datetime.utcnow()).
+    from backend.services.research_defs import RESEARCH_DEF_BY_KEY
     users = User.query.all()
     for user in users:
         raw = getattr(user, "research_queue", None)
@@ -321,7 +323,7 @@ def process_research_queue(tick_start_time: datetime) -> None:
         if completes_at and completes_at.tzinfo is not None:
             completes_at = completes_at.astimezone(timezone.utc).replace(tzinfo=None)
 
-        if not key or key not in ("colonization_tech", "astrophysics", "interstellar_communication"):
+        if not key or key not in RESEARCH_DEF_BY_KEY:
             user.research_queue = None
             continue
         if not completes_at:
@@ -345,15 +347,26 @@ def process_research_queue(tick_start_time: datetime) -> None:
         user.research_queue = None
 
         home = Planet.query.filter_by(user_id=user.id).order_by(Planet.is_home_planet.desc(), Planet.id.asc()).first()
-        db.session.add(
-            TickLog(
-                tick_number=0,
-                planet_id=home.id if home else None,
-                event_type="research_complete",
-                event_description=f"Research completed: {key} → Level {target_level}",
-                timestamp=datetime.utcnow(),
-            )
+        tick_log = TickLog(
+            tick_number=0,
+            planet_id=home.id if home else None,
+            event_type="research_complete",
+            event_description=f"Research completed: {key} → Level {target_level}",
+            timestamp=datetime.utcnow(),
         )
+        db.session.add(tick_log)
+
+        # Commander XP (idempotent per TickLog row if possible).
+        try:
+            db.session.flush()
+            CommanderXPService.award_xp(
+                user_id=int(user.id),
+                xp=50 + max(0, int(target_level) - 1) * 25,
+                source_type="research_complete",
+                source_id=str(getattr(tick_log, "id", None) or f"{key}:{target_level}"),
+            )
+        except Exception:
+            pass
 
     db.session.commit()
 

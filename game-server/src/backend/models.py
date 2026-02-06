@@ -11,6 +11,13 @@ class User(db.Model):
     alliance_id = db.Column(db.Integer, db.ForeignKey('alliances.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
+    last_seen_at = db.Column(db.DateTime)
+
+    # Commander profile (MVP; cosmetics are derived from level unless explicitly set).
+    commander_level = db.Column(db.Integer, default=1)
+    commander_xp = db.Column(db.BigInteger, default=0)
+    portrait_key = db.Column(db.String(64))
+    frame_key = db.Column(db.String(64))
 
     # Exploration data
     explored_systems = db.Column(db.Text)  # JSON string of explored coordinates
@@ -216,6 +223,22 @@ class TickLog(db.Model):
         return f'<TickLog tick:{self.tick_number} event:{self.event_type}>'
 
 
+class CommanderXPEvent(db.Model):
+    __tablename__ = "commander_xp_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    source_type = db.Column(db.String(32), nullable=False)
+    source_id = db.Column(db.String(128), nullable=False)
+    xp_awarded = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "source_type", "source_id", name="uq_commander_xp_event"),
+        db.Index("ix_commander_xp_event_user_source", "user_id", "source_type"),
+    )
+
+
 class ChatMessage(db.Model):
     __tablename__ = 'chat_messages'
 
@@ -280,6 +303,7 @@ class Research(db.Model):
     weapons_tech = db.Column(db.Integer, default=0)
     shielding_tech = db.Column(db.Integer, default=0)
     armour_tech = db.Column(db.Integer, default=0)
+    recycler_efficiency = db.Column(db.Integer, default=0)
 
     # Research points
     research_points = db.Column(db.BigInteger, default=0)

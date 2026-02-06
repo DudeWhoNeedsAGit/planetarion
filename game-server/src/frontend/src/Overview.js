@@ -8,6 +8,13 @@ function Overview({ user, planets, onNavigateSection }) {
   const [debrisSummary, setDebrisSummary] = useState({ count: 0, total: 0 });
   const [researchSummary, setResearchSummary] = useState({ points: 0, queue: null, nextSuggestionKey: null });
   const sseHealthyRef = useRef(false);
+  const [suggestionsHidden, setSuggestionsHidden] = useState(() => {
+    try {
+      return localStorage.getItem('pa:commanderSuggestionsHidden') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
 
   const mergeActivity = (prev, next) => {
     const byId = new Map();
@@ -240,8 +247,30 @@ function Overview({ user, planets, onNavigateSection }) {
 
       {/* Commander Suggestions */}
       <div className="pa-card p-6" data-testid="commander-suggestions">
-        <h3 className="text-xl font-bold mb-4 text-white">Commander Suggestions</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3 className="text-xl font-bold text-white">Commander Suggestions</h3>
+          <button
+            type="button"
+            className="pa-btn-ghost px-3 py-1 text-sm"
+            data-testid="commander-suggestions-toggle"
+            onClick={() => {
+              setSuggestionsHidden((v) => {
+                const next = !v;
+                try {
+                  localStorage.setItem('pa:commanderSuggestionsHidden', String(next));
+                } catch (e) {
+                  // ignore
+                }
+                return next;
+              });
+            }}
+          >
+            {suggestionsHidden ? 'Show' : 'Hide'}
+          </button>
+        </div>
+
+        {!suggestionsHidden && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div className="pa-panel p-4">
             <div className="text-white font-semibold mb-1">♻️ Recycle known debris</div>
             <div className="text-slate-200/80 mb-3">
@@ -312,6 +341,7 @@ function Overview({ user, planets, onNavigateSection }) {
             </button>
           </div>
         </div>
+        )}
       </div>
 
       {/* Resource Breakdown */}
@@ -369,19 +399,6 @@ function Overview({ user, planets, onNavigateSection }) {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Next Steps */}
-      <div className="pa-card p-6">
-        <h3 className="text-xl font-bold mb-4 text-white">Next Steps</h3>
-        <ul className="space-y-2 text-slate-200/80 text-sm">
-          <li>🌌 Open Galaxy Map, find enemies / pirates / allies.</li>
-          <li>🔬 Build a Research Lab to generate research points.</li>
-          <li>🕵️ Build espionage probes and send an Espionage mission to scout targets.</li>
-          <li>⚔️ Attack an enemy (or pirates) and check the Combat Center for reports.</li>
-          <li>♻️ After combat, send recyclers to collect debris.</li>
-          <li>⏱️ If something says “pending tick”, click “Run tick” (test env) or POST `/api/tick`.</li>
-        </ul>
       </div>
 
       {/* Recent Activity Placeholder */}
