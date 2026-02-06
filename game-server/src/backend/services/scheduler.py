@@ -16,6 +16,11 @@ class GameScheduler:
                 from .tick import run_tick
                 run_tick()
 
+        def run_pirate_ai_with_context():
+            with app.app_context():
+                from .pirate_ai import PirateAIDirector
+                PirateAIDirector.run_hourly()
+
         interval_seconds = app.config.get("TICK_SCHEDULER_INTERVAL_SECONDS", 5) or 0
         try:
             interval_seconds = int(interval_seconds)
@@ -35,6 +40,30 @@ class GameScheduler:
             name='Game Tick',
             replace_existing=True
         )
+
+        # Pirate AI (hourly; per-player director)
+        try:
+            if bool(app.config.get("PIRATE_AI_ENABLED")):
+                pirate_interval = app.config.get("PIRATE_AI_INTERVAL_SECONDS", 3600) or 3600
+                try:
+                    pirate_interval = int(pirate_interval)
+                except (TypeError, ValueError):
+                    pirate_interval = 3600
+                pirate_interval = max(1, pirate_interval)
+
+                self.scheduler.add_job(
+                    func=run_pirate_ai_with_context,
+                    trigger=IntervalTrigger(seconds=pirate_interval),
+                    id="pirate_ai",
+                    name="Pirate AI",
+                    replace_existing=True,
+                )
+                app.logger.info(f"Pirate AI scheduler enabled - runs every {pirate_interval} seconds")
+            else:
+                app.logger.info("Pirate AI scheduler disabled (PIRATE_AI_ENABLED=false)")
+        except Exception:
+            # Never block the tick scheduler path.
+            pass
 
         # Register shutdown handler
         atexit.register(self.shutdown)

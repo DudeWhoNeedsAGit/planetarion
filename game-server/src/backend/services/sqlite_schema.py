@@ -190,3 +190,32 @@ def ensure_commander_xp_event_table(db_engine) -> None:
                 "CREATE INDEX IF NOT EXISTS ix_commander_xp_event_user_source ON commander_xp_events (user_id, source_type)"
             )
         )
+
+
+def ensure_pirate_ai_state_table(db_engine) -> None:
+    """Ensure per-player Pirate AI state table exists for SQLite DBs."""
+    if db_engine.dialect.name != "sqlite":
+        return
+
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS pirate_ai_state (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    last_action_at DATETIME,
+                    cooldown_until DATETIME,
+                    threat_level REAL DEFAULT 0.0,
+                    raids_last_24h INTEGER DEFAULT 0,
+                    raids_window_start_at DATETIME,
+                    last_target_planet_id INTEGER,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY(user_id) REFERENCES users (id),
+                    FOREIGN KEY(last_target_planet_id) REFERENCES planets (id)
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_pirate_ai_state_user_id ON pirate_ai_state (user_id)"))

@@ -395,6 +395,7 @@ def create_app(config_name=None):
                         ensure_research_fraction_columns,
                         ensure_research_tech_columns,
                         ensure_commander_xp_event_table,
+                        ensure_pirate_ai_state_table,
                     )
                     ensure_planet_storage_columns(db.engine)
                     ensure_planet_trait_columns(db.engine)
@@ -405,6 +406,7 @@ def create_app(config_name=None):
                     ensure_research_fraction_columns(db.engine)
                     ensure_research_tech_columns(db.engine)
                     ensure_commander_xp_event_table(db.engine)
+                    ensure_pirate_ai_state_table(db.engine)
                     print("✅ SQLite schema ensured (planet storage columns)")
                 except Exception as e:
                     print(f"⚠️ SQLite schema ensure failed: {e}")
@@ -432,6 +434,7 @@ def create_app(config_name=None):
                         ensure_research_fraction_columns,
                         ensure_research_tech_columns,
                         ensure_commander_xp_event_table,
+                        ensure_pirate_ai_state_table,
                     )
                     ensure_planet_storage_columns(db.engine)
                     ensure_planet_trait_columns(db.engine)
@@ -442,6 +445,7 @@ def create_app(config_name=None):
                     ensure_research_fraction_columns(db.engine)
                     ensure_research_tech_columns(db.engine)
                     ensure_commander_xp_event_table(db.engine)
+                    ensure_pirate_ai_state_table(db.engine)
                 except Exception:
                     # Tests recreate DB frequently; missing migration isn't fatal here.
                     pass

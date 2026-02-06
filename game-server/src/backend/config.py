@@ -95,6 +95,46 @@ class Config:
     except (TypeError, ValueError):
         RESEARCH_DURATION_SECONDS_PER_LEVEL = 60
 
+    # Pirate AI (Encounter Director) — disabled by default until tuned.
+    PIRATE_AI_ENABLED = os.getenv("PLANETARION_PIRATE_AI_ENABLED", "").lower() in ("1", "true", "yes", "on")
+    try:
+        PIRATE_AI_INTERVAL_SECONDS = max(1, int(os.getenv("PLANETARION_PIRATE_AI_INTERVAL_SECONDS", "3600")))
+    except (TypeError, ValueError):
+        PIRATE_AI_INTERVAL_SECONDS = 3600
+    try:
+        PIRATE_AI_MAX_RAIDS_PER_24H = max(0, int(os.getenv("PLANETARION_PIRATE_AI_MAX_RAIDS_PER_24H", "2")))
+    except (TypeError, ValueError):
+        PIRATE_AI_MAX_RAIDS_PER_24H = 2
+    try:
+        PIRATE_AI_COOLDOWN_SECONDS = max(0, int(os.getenv("PLANETARION_PIRATE_AI_COOLDOWN_SECONDS", str(6 * 3600))))
+    except (TypeError, ValueError):
+        PIRATE_AI_COOLDOWN_SECONDS = 6 * 3600
+
+    try:
+        PIRATE_AI_PEAK_START_HOUR = int(os.getenv("PLANETARION_PIRATE_AI_PEAK_START_HOUR", "18"))
+    except (TypeError, ValueError):
+        PIRATE_AI_PEAK_START_HOUR = 18
+    try:
+        PIRATE_AI_PEAK_END_HOUR = int(os.getenv("PLANETARION_PIRATE_AI_PEAK_END_HOUR", "20"))
+    except (TypeError, ValueError):
+        PIRATE_AI_PEAK_END_HOUR = 20
+
+    try:
+        PIRATE_AI_PEAK_PROB_MULT = float(os.getenv("PLANETARION_PIRATE_AI_PEAK_PROB_MULT", "1.5"))
+    except (TypeError, ValueError):
+        PIRATE_AI_PEAK_PROB_MULT = 1.5
+    try:
+        PIRATE_AI_PEAK_POWER_MULT = float(os.getenv("PLANETARION_PIRATE_AI_PEAK_POWER_MULT", "1.25"))
+    except (TypeError, ValueError):
+        PIRATE_AI_PEAK_POWER_MULT = 1.25
+    try:
+        PIRATE_AI_DIFFICULTY_FACTOR = float(os.getenv("PLANETARION_PIRATE_AI_DIFFICULTY_FACTOR", "0.8"))
+    except (TypeError, ValueError):
+        PIRATE_AI_DIFFICULTY_FACTOR = 0.8
+
+    # Deterministic RNG salt (falls back to SECRET_KEY if unset).
+    PIRATE_AI_SECRET_SALT = os.getenv("PLANETARION_PIRATE_AI_SECRET_SALT")
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""

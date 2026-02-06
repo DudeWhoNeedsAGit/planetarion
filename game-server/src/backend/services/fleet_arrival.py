@@ -677,11 +677,61 @@ class FleetArrivalService:
                 combat_result = CombatEngine.calculate_battle(fleet, defending_fleet, target_planet)
                 CombatEngine.process_combat_result(combat_result, fleet, defending_fleet, target_planet)
             else:
-                # Attack on undefended planet
-                print(f"DEBUG: Attacking undefended planet {target_planet.id}")
-                from backend.services.combat_engine import CombatEngine
-                combat_result = CombatEngine.calculate_planet_attack(fleet, target_planet)
-                CombatEngine.process_planet_attack_result(combat_result, fleet, target_planet)
+                # Attack on undefended planet.
+                #
+                # For pirate raids (attacker == pirates NPC), we still want a CombatReport and
+                # debris via ship losses (MVP spec). If the defender has no stationed fleet,
+                # synthesize a minimal defending fleet from the planet's legacy ship columns.
+                attacker_username = getattr(getattr(fleet, "owner", None), "username", None)
+                is_pirate_attacker = attacker_username == "pirates"
+
+                if is_pirate_attacker:
+                    print(f"DEBUG: Pirate raid against undefended planet {target_planet.id}; creating defender inventory fleet")
+                    defending_fleet = (
+                        Fleet.query.filter_by(
+                            user_id=target_planet.user_id,
+                            start_planet_id=target_planet.id,
+                            status="stationed",
+                            mission="inventory",
+                        )
+                        .order_by(Fleet.id.asc())
+                        .first()
+                    )
+                    if not defending_fleet:
+                        defending_fleet = Fleet(
+                            user_id=target_planet.user_id,
+                            mission="inventory",
+                            status="stationed",
+                            start_planet_id=target_planet.id,
+                            target_planet_id=target_planet.id,
+                            departure_time=arrival_processed_at,
+                            arrival_time=arrival_processed_at,
+                            eta=0,
+                        )
+                        for ship_col in (
+                            "small_cargo",
+                            "large_cargo",
+                            "light_fighter",
+                            "heavy_fighter",
+                            "cruiser",
+                            "battleship",
+                            "colony_ship",
+                        ):
+                            amount = int(getattr(target_planet, ship_col, 0) or 0)
+                            if amount > 0:
+                                setattr(defending_fleet, ship_col, amount)
+                                setattr(target_planet, ship_col, 0)
+                        db.session.add(defending_fleet)
+                        db.session.flush()
+
+                    from backend.services.combat_engine import CombatEngine
+                    combat_result = CombatEngine.calculate_battle(fleet, defending_fleet)
+                    CombatEngine.process_combat_result(combat_result, fleet, defending_fleet, target_planet)
+                else:
+                    print(f"DEBUG: Attacking undefended planet {target_planet.id}")
+                    from backend.services.combat_engine import CombatEngine
+                    combat_result = CombatEngine.calculate_planet_attack(fleet, target_planet)
+                    CombatEngine.process_planet_attack_result(combat_result, fleet, target_planet)
 
             # After combat, fleet returns home.
             if fleet.departure_time and fleet.arrival_time:

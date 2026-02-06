@@ -247,6 +247,13 @@ class CombatEngine:
         """Process the results of a combat engagement"""
         print("DEBUG: Processing combat result")
 
+        pirate_user = None
+        try:
+            pirate_user = User.query.filter_by(username="pirates").first()
+        except Exception:
+            pirate_user = None
+        is_pirate_attacker = bool(pirate_user and getattr(attacker_fleet, "user_id", None) == pirate_user.id)
+
         def _maybe_rename_captured_planet(*, previous_owner_username: str | None, attacker_username: str):
             # Normalize NPC/testing names to something that feels like a real captured colony.
             # Examples today: "Pirate Camp ...", "Enemy Base ...".
@@ -289,12 +296,13 @@ class CombatEngine:
             ]
             defender_remaining = sum(int(getattr(defender_fleet, f, 0) or 0) for f in ship_fields)
             if defender_remaining == 0:
-                planet.user_id = attacker_fleet.user_id
-                _maybe_rename_captured_planet(previous_owner_username=previous_owner_username, attacker_username=attacker_username)
+                # Pirate raids are encounters, not conquest. Pirates should not capture player planets (MVP).
+                if not is_pirate_attacker:
+                    planet.user_id = attacker_fleet.user_id
+                    _maybe_rename_captured_planet(previous_owner_username=previous_owner_username, attacker_username=attacker_username)
 
             # Pirate loot: if the defender is the pirate NPC, steal a percentage of resources.
             try:
-                pirate_user = User.query.filter_by(username="pirates").first()
                 if pirate_user and getattr(defender_fleet, "user_id", None) == pirate_user.id:
                     origin = Planet.query.get(getattr(attacker_fleet, "start_planet_id", None))
                     if origin:
@@ -423,8 +431,15 @@ class CombatEngine:
         """Process the results of a planet attack"""
         print("DEBUG: Processing planet attack result")
 
+        pirate_user = None
+        try:
+            pirate_user = User.query.filter_by(username="pirates").first()
+        except Exception:
+            pirate_user = None
+        is_pirate_attacker = bool(pirate_user and getattr(fleet, "user_id", None) == pirate_user.id)
+
         # Update fleet combat statistics
-        if combat_result.get('planet_captured', False):
+        if combat_result.get('planet_captured', False) and not is_pirate_attacker:
             fleet.combat_victories += 1
             previous_owner_username = getattr(getattr(planet, "owner", None), "username", None)
             attacker_username = getattr(getattr(fleet, "owner", None), "username", f"user_{fleet.user_id}")

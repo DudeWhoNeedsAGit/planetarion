@@ -39,6 +39,31 @@ class User(db.Model):
         return f'<User {self.username}>'
 
 
+class PirateAIState(db.Model):
+    __tablename__ = "pirate_ai_state"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True, index=True)
+
+    last_action_at = db.Column(db.DateTime)
+    cooldown_until = db.Column(db.DateTime)
+
+    threat_level = db.Column(db.Float, default=0.0)
+    raids_last_24h = db.Column(db.Integer, default=0)
+    raids_window_start_at = db.Column(db.DateTime)
+
+    last_target_planet_id = db.Column(db.Integer, db.ForeignKey("planets.id"), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("pirate_ai_state", uselist=False))
+    last_target_planet = db.relationship("Planet", foreign_keys=[last_target_planet_id])
+
+    def __repr__(self):
+        return f"<PirateAIState user:{self.user_id} threat:{self.threat_level} raids24h:{self.raids_last_24h}>"
+
+
 class Planet(db.Model):
     __tablename__ = 'planets'
 
