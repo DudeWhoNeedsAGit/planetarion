@@ -1,0 +1,11 @@
+# Docs asset sources (large binaries)
+# Keep the canonical in-game assets tracked under `game-server/src/frontend/public/`.
+docs/assets/mp3/*.mp3
+
+# Portrait generation outputs (keep README tracked)
+docs/assets/images/portrait/**/*.png
+docs/assets/images/portrait/**/_backup_pre_rembg_*/
+docs/assets/images/portrait/**/_originals_*/
+docs/assets/images/portrait/**/_backup_pre_rembg_*
+docs/assets/images/portrait/**/*.TMP
+docs/assets/images/portrait/**/*~*.TMP
