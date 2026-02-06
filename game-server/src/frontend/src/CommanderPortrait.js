@@ -51,7 +51,13 @@ function initialsFromUsername(username) {
   return s.slice(0, 1).toUpperCase();
 }
 
-export default function CommanderPortrait({ username, level = 1, portraitKey = null, size = 44, className = '' }) {
+export default function CommanderPortrait({
+  username,
+  level = 1,
+  portraitKey = null,
+  size = 44,
+  className = '',
+}) {
   const tier = useMemo(() => tierForLevel(level), [level]);
   const palette = useMemo(() => frameStyleForTier(tier), [tier]);
   const initials = useMemo(() => initialsFromUsername(username), [username]);
@@ -106,7 +112,12 @@ export default function CommanderPortrait({ username, level = 1, portraitKey = n
   };
 
   return (
-    <div className={`relative ${className}`} style={outerStyle} data-testid="commander-portrait" aria-label={`Commander portrait, level ${level}`}>
+    <div
+      className={`relative ${className}`}
+      style={outerStyle}
+      data-testid="commander-portrait"
+      aria-label={`Commander portrait, level ${level}`}
+    >
       {/* Underlay (so you never see an "empty" circle during image load) */}
       <div
         aria-hidden="true"

@@ -172,21 +172,63 @@ function Overview({ user, planets, onNavigateSection }) {
     deuterium: sum.deuterium + (planet.production_rates?.deuterium_per_hour || 0)
   }), { metal: 0, crystal: 0, deuterium: 0 });
 
-  const totalBuildings = planets.reduce((sum, planet) => ({
-    metal_mine: sum.metal_mine + planet.structures.metal_mine,
-    crystal_mine: sum.crystal_mine + planet.structures.crystal_mine,
-    deuterium_synthesizer: sum.deuterium_synthesizer + planet.structures.deuterium_synthesizer,
-    solar_plant: sum.solar_plant + planet.structures.solar_plant,
-    fusion_reactor: sum.fusion_reactor + planet.structures.fusion_reactor
-  }), { metal_mine: 0, crystal_mine: 0, deuterium_synthesizer: 0, solar_plant: 0, fusion_reactor: 0 });
+	  const totalBuildings = planets.reduce((sum, planet) => ({
+	    metal_mine: sum.metal_mine + planet.structures.metal_mine,
+	    crystal_mine: sum.crystal_mine + planet.structures.crystal_mine,
+	    deuterium_synthesizer: sum.deuterium_synthesizer + planet.structures.deuterium_synthesizer,
+	    solar_plant: sum.solar_plant + planet.structures.solar_plant,
+	    fusion_reactor: sum.fusion_reactor + planet.structures.fusion_reactor
+	  }), { metal_mine: 0, crystal_mine: 0, deuterium_synthesizer: 0, solar_plant: 0, fusion_reactor: 0 });
 
-  return (
-    <div className="space-y-6">
-      {/* Welcome Section */}
-      <div className="pa-card p-6 bg-gradient-to-r from-blue-600/20 to-teal-500/10 text-white">
-        <h2 className="text-2xl font-bold mb-2">Welcome back, {user.username}!</h2>
-        <p className="text-slate-200/80">Your empire spans {planets.length} planet{planets.length !== 1 ? 's' : ''} across the galaxy.</p>
-      </div>
+	  const idleGains = user?.idle_gains || null;
+	  const formatDuration = (seconds) => {
+	    const s = Math.max(0, Number(seconds || 0));
+	    const m = Math.floor(s / 60);
+	    const h = Math.floor(m / 60);
+	    if (h > 0) return `${h}h ${m % 60}m`;
+	    if (m > 0) return `${m}m`;
+	    return `${Math.floor(s)}s`;
+	  };
+	  const shouldShowIdleSummary = () => {
+	    if (!idleGains) return false;
+	    if (Number(idleGains.duration_seconds || 0) < 120) return false;
+	    const r = idleGains.resources || {};
+	    const hasRes = (r.metal || 0) + (r.crystal || 0) + (r.deuterium || 0) > 0;
+	    const hasRp = Number(idleGains.research_points || 0) > 0;
+	    const ev = idleGains.events || {};
+	    const hasEvents = Number(ev.fleets_resolved || 0) + Number(ev.research_completed || 0) > 0;
+	    return hasRes || hasRp || hasEvents;
+	  };
+
+		  return (
+		    <div className="space-y-6">
+		      {/* Welcome Section */}
+		      <div className="pa-card p-6 bg-gradient-to-r from-blue-600/20 to-teal-500/10 text-white">
+		        <h2 className="text-2xl font-bold mb-2">Empire Overview</h2>
+		        <p className="text-slate-200/80">Your empire spans {planets.length} planet{planets.length !== 1 ? 's' : ''} across the galaxy.</p>
+		        {shouldShowIdleSummary() && (
+		          <div className="text-sm text-slate-200/85 mt-3" data-testid="overview-idle-summary">
+		            While you were away ({formatDuration(idleGains.duration_seconds)}):{' '}
+		            <span className="text-slate-50 font-semibold">
+		              +{Number(idleGains.resources?.metal || 0).toLocaleString()}M
+		            </span>{' '}
+		            <span className="text-slate-50 font-semibold">
+		              +{Number(idleGains.resources?.crystal || 0).toLocaleString()}C
+		            </span>{' '}
+		            <span className="text-slate-50 font-semibold">
+		              +{Number(idleGains.resources?.deuterium || 0).toLocaleString()}D
+		            </span>
+		            {Number(idleGains.research_points || 0) > 0 && (
+		              <>
+		                {' • '}
+		                <span className="text-slate-50 font-semibold">
+		                  +{Number(idleGains.research_points || 0).toLocaleString()} RP
+		                </span>
+		              </>
+		            )}
+		          </div>
+		        )}
+		      </div>
 
       {/* Quick Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

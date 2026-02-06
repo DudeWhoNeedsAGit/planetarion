@@ -63,16 +63,46 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
     return `${Math.floor(s)}s`;
   };
 
-  const shouldShowIdleSummary = () => {
-    if (!idleGains) return false;
-    if (Number(idleGains.duration_seconds || 0) < 120) return false;
-    const r = idleGains.resources || {};
-    const hasRes = (r.metal || 0) + (r.crystal || 0) + (r.deuterium || 0) > 0;
-    const hasRp = Number(idleGains.research_points || 0) > 0;
-    const ev = idleGains.events || {};
-    const hasEvents = Number(ev.fleets_resolved || 0) + Number(ev.research_completed || 0) > 0;
-    return hasRes || hasRp || hasEvents;
-  };
+		  const shouldShowIdleSummary = () => {
+		    if (!idleGains) return false;
+		    if (Number(idleGains.duration_seconds || 0) < 120) return false;
+		    const r = idleGains.resources || {};
+		    const hasRes = (r.metal || 0) + (r.crystal || 0) + (r.deuterium || 0) > 0;
+		    const hasRp = Number(idleGains.research_points || 0) > 0;
+		    const ev = idleGains.events || {};
+		    const hasEvents = Number(ev.fleets_resolved || 0) + Number(ev.research_completed || 0) > 0;
+		    return hasRes || hasRp || hasEvents;
+		  };
+
+		  const renderCommanderXpBar = () => {
+		    const xpProgress = user?.commander_xp_progress || null;
+		    if (!xpProgress) return null;
+		    const into = Math.max(0, Number(xpProgress.into_level ?? 0));
+		    const toNext = Math.max(0, Number(xpProgress.to_next ?? 0));
+		    if (!(toNext > 0)) return null;
+		    const pct = Math.max(0, Math.min(100, Math.floor((into / toNext) * 100)));
+
+		    return (
+		      <div className="mt-1.5" data-testid="commander-xp-bar">
+		        <div className="flex items-center justify-between text-[11px] text-slate-300/80">
+		          <span>XP</span>
+		          <span className="text-slate-100/90 font-semibold">
+		            {into.toLocaleString()} / {toNext.toLocaleString()} • {pct}%
+		          </span>
+		        </div>
+		        <div className="mt-1 h-2 rounded-full bg-slate-900/60 border border-slate-200/10 overflow-hidden">
+		          <div
+		            className="h-full rounded-full"
+		            style={{
+		              width: `${pct}%`,
+		              background: 'rgba(37, 99, 235, 0.85)',
+		              boxShadow: '0 0 16px rgba(37, 99, 235, 0.35)',
+		            }}
+		          />
+		        </div>
+		      </div>
+		    );
+		  };
 
   useEffect(() => {
     fetchPlanets(); // Initial fetch
@@ -1262,19 +1292,35 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
           </div>
 	          <div className="flex items-center gap-4 flex-wrap justify-between sm:justify-end w-full sm:w-auto">
 	            <div className="flex items-center gap-3 min-w-[260px]">
-	              <CommanderPortrait
-	                username={user.username}
-	                level={user.commander_level || 1}
-	                portraitKey={portraitKey}
-	                size={portraitSize}
-	              />
-	              <div className="min-w-0">
-	                <div className="text-slate-200/90 font-medium truncate">Welcome, {user.username}!</div>
-	                {shouldShowIdleSummary() && (
-                  <div className="text-xs text-slate-300/80 mt-0.5" data-testid="idle-summary">
-                    While you were away ({formatDuration(idleGains.duration_seconds)}):{' '}
-                    <span className="text-slate-100/95 font-semibold">
-                      +{Number(idleGains.resources?.metal || 0).toLocaleString()}M
+		              <CommanderPortrait
+		                username={user.username}
+		                level={user.commander_level || 1}
+		                xp={user.commander_xp || 0}
+		                xpProgress={user.commander_xp_progress || null}
+		                portraitKey={portraitKey}
+		                size={portraitSize}
+		              />
+		              <div className="min-w-0">
+		                <div className="flex items-center gap-2 min-w-0">
+		                  <span
+		                    className="px-2 py-0.5 rounded-full text-[11px] font-extrabold tracking-wide uppercase"
+		                    style={{
+		                      background: 'rgba(2, 6, 23, 0.65)',
+		                      border: '1px solid rgba(148, 163, 184, 0.20)',
+		                      color: 'rgba(226, 232, 240, 0.92)',
+		                      boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
+		                    }}
+		                  >
+		                    Commander
+		                  </span>
+		                  <div className="text-slate-100/95 font-semibold truncate">{user.username}</div>
+		                </div>
+		                {renderCommanderXpBar()}
+		                {shouldShowIdleSummary() && (
+	                  <div className="text-xs text-slate-300/80 mt-0.5" data-testid="idle-summary">
+	                    While you were away ({formatDuration(idleGains.duration_seconds)}):{' '}
+	                    <span className="text-slate-100/95 font-semibold">
+	                      +{Number(idleGains.resources?.metal || 0).toLocaleString()}M
                     </span>{' '}
                     <span className="text-slate-100/95 font-semibold">
                       +{Number(idleGains.resources?.crystal || 0).toLocaleString()}C
