@@ -20,7 +20,33 @@ UNIVERSE_CONFIG = {
     'num_clusters': 8,   # Number of galaxy clusters
     'cluster_radius': 800,  # Radius of each cluster
     'cluster_spacing': 3000,  # Minimum distance between clusters
+    # Cluster shape controls how planets are distributed around each cluster center.
+    # - "square": legacy behavior (uniform in a square; tends to look like a rectangle blob)
+    # - "disk": uniform in a circle (no hard edges)
+    # - "spiral": biased along spiral arms within a disk (visually "galaxy-like")
+    'cluster_shape': 'spiral',
+    'spiral_arm_count': 3,
+    'spiral_turns': 2.6,
+    'spiral_jitter': 0.18,  # radians; randomized angular offset
 }
+
+def build_harness_setup_contract(*, setup_id, deterministic, counts):
+    """Build a normalized setup payload for test harness reuse."""
+    return {
+        "ok": True,
+        "contract_version": "scenario-pack.v1",
+        "setup": {
+            "id": str(setup_id),
+            "deterministic": bool(deterministic),
+        },
+        "counts": {
+            "users": int(counts.get("users", 0)),
+            "planets": int(counts.get("planets", 0)),
+            "fleets": int(counts.get("fleets", 0)),
+            "alliances": int(counts.get("alliances", 0)),
+            "tick_logs": int(counts.get("tick_logs", 0)),
+        },
+    }
 
 def calculate_distance(x1, y1, z1, x2, y2, z2):
     """Calculate 3D distance between two points"""
@@ -34,8 +60,34 @@ def is_valid_position(x, y, z, existing_planets, min_distance=25):
             return False
     return True
 
-def generate_cluster_centers(num_clusters, min_distance):
+def generate_cluster_centers(num_clusters, min_distance, fixed_z=None):
     """Generate centers for galaxy clusters"""
+    # The GalaxyMap UI is currently 2D (X/Y) and uses a fixed Z slice (home planet Z).
+    # For manual testing, a globally spiral-ish layout reads better than evenly-random
+    # placement (which tends to look like a rectangle cloud).
+    layout = (UNIVERSE_CONFIG.get("cluster_center_layout") or "").lower()
+    if not layout and (UNIVERSE_CONFIG.get("cluster_shape") or "").lower() == "spiral":
+        layout = "spiral"
+
+    if layout == "spiral":
+        centers = []
+        max_r = int(min(abs(UNIVERSE_CONFIG["min_coord"]), abs(UNIVERSE_CONFIG["max_coord"])) * 0.75)
+        turns = float(UNIVERSE_CONFIG.get("spiral_turns") or 2.6)
+        cz = int(fixed_z) if fixed_z is not None else 0
+
+        for i in range(max(1, int(num_clusters))):
+            t = 0.0 if num_clusters <= 1 else (i / (num_clusters - 1))
+            theta = t * turns * 2 * math.pi
+            r = max_r * (0.12 + 0.88 * t)
+            x = int(r * math.cos(theta))
+            y = int(r * math.sin(theta))
+
+            x = max(UNIVERSE_CONFIG["min_coord"], min(UNIVERSE_CONFIG["max_coord"], x))
+            y = max(UNIVERSE_CONFIG["min_coord"], min(UNIVERSE_CONFIG["max_coord"], y))
+            centers.append((x, y, cz))
+
+        return centers
+
     centers = []
     max_attempts = 1000
 
@@ -43,7 +95,7 @@ def generate_cluster_centers(num_clusters, min_distance):
         for attempt in range(max_attempts):
             x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
             y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
-            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = int(fixed_z) if fixed_z is not None else random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
 
             # Check distance from other cluster centers
             valid = True
@@ -59,28 +111,59 @@ def generate_cluster_centers(num_clusters, min_distance):
             # If we can't find a valid position, place it randomly
             x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
             y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
-            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = int(fixed_z) if fixed_z is not None else random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
             centers.append((x, y, z))
 
     return centers
 
-def generate_planet_position(existing_planets, cluster_center=None, is_core_planet=False):
+def generate_planet_position(existing_planets, cluster_center=None, is_core_planet=False, fixed_z=None):
     """Generate a valid planet position"""
     max_attempts = 100
 
     for attempt in range(max_attempts):
-        if cluster_center and not is_core_planet:
+        if cluster_center:
             # Generate position within cluster
             cx, cy, cz = cluster_center
             radius = UNIVERSE_CONFIG['cluster_radius']
-            x = cx + random.randint(-radius, radius)
-            y = cy + random.randint(-radius, radius)
-            z = cz + random.randint(-radius, radius)
+            if is_core_planet:
+                # Core planets anchor the local experience (home cluster).
+                # If the core is generated "anywhere in the universe", the GalaxyMap can look empty,
+                # colonization difficulty can spike, and local spiral seeding becomes impossible.
+                radius = max(120, int(radius * 0.18))
+            shape = (UNIVERSE_CONFIG.get('cluster_shape') or 'square').lower()
+
+            if shape == 'disk':
+                angle = random.uniform(0, 2 * math.pi)
+                r = radius * math.sqrt(random.random())
+                x = int(cx + r * math.cos(angle))
+                y = int(cy + r * math.sin(angle))
+            elif shape == 'spiral':
+                arms = max(1, int(UNIVERSE_CONFIG.get('spiral_arm_count') or 3))
+                turns = float(UNIVERSE_CONFIG.get('spiral_turns') or 2.6)
+                jitter = float(UNIVERSE_CONFIG.get('spiral_jitter') or 0.0)
+
+                t = random.random()  # 0..1 from center to edge
+                arm_index = random.randint(0, arms - 1)
+                # Place along a spiral arm with some noise.
+                theta = (t * turns * 2 * math.pi) + (arm_index * (2 * math.pi / arms)) + random.uniform(-jitter, jitter)
+                r = (t ** 0.85) * radius
+
+                x = int(cx + r * math.cos(theta))
+                y = int(cy + r * math.sin(theta))
+            else:
+                # "square" legacy behavior
+                x = cx + random.randint(-radius, radius)
+                y = cy + random.randint(-radius, radius)
+
+            if fixed_z is not None:
+                z = int(fixed_z)
+            else:
+                z = cz + random.randint(-radius, radius)
         else:
             # Generate random position across universe
             x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
             y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
-            z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+            z = int(fixed_z) if fixed_z is not None else random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
 
         # Ensure coordinates are within bounds
         x = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], x))
@@ -93,7 +176,7 @@ def generate_planet_position(existing_planets, cluster_center=None, is_core_plan
     # If we can't find a valid position, place it with minimal distance check
     x = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
     y = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
-    z = random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
+    z = int(fixed_z) if fixed_z is not None else random.randint(UNIVERSE_CONFIG['min_coord'], UNIVERSE_CONFIG['max_coord'])
     return x, y, z
 
 def create_enemy_planets_around_player(player_planets, num_enemies=5):
@@ -135,7 +218,8 @@ def create_enemy_planets_around_player(player_planets, num_enemies=5):
             # Generate position around player planet
             distance = random.randint(500, 1000)  # 500-1000 units away
             angle = random.uniform(0, 2 * math.pi)
-            height_offset = random.randint(-200, 200)  # Some vertical variation
+            # Keep enemies on the same Z slice as the player for a denser, more navigable 2D map.
+            height_offset = 0
 
             enemy_x = int(player_planet.x + distance * math.cos(angle))
             enemy_y = int(player_planet.y + distance * math.sin(angle))
@@ -203,14 +287,15 @@ def create_pirate_camps_around_player(player_planets, num_camps=2):
         pirates_pw = bcrypt.hashpw('pirates'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         pirates = User(username="pirates", email="pirates@example.com", password_hash=pirates_pw)
         db.session.add(pirates)
-        db.session.commit()
+        db.session.flush()
 
     pirate_data = []
     for player_planet in player_planets[: max(1, len(player_planets))]:
         for i in range(num_camps):
             angle = random.uniform(0, 2 * math.pi)
             distance = random.randint(300, 900)
-            height_offset = random.randint(-200, 200)
+            # Keep pirate camps on the same Z slice as the player for a denser, more navigable 2D map.
+            height_offset = 0
 
             x = int(player_planet.x + distance * math.cos(angle))
             y = int(player_planet.y + distance * math.sin(angle))
@@ -247,6 +332,116 @@ def create_pirate_camps_around_player(player_planets, num_camps=2):
     db.session.commit()
     return pirate_data
 
+
+def create_local_unowned_planets_on_same_z(
+    existing_planets,
+    center_planet,
+    count=80,
+    radius=1800,
+    max_difficulty=2,
+    shape="spiral",
+    spiral_arm_count=3,
+    spiral_turns=1.8,
+    spiral_jitter=0.22,
+):
+    """Create extra unowned planets near a player's start location on the same Z slice.
+
+    The current GalaxyMap UI is 2D (X/Y) and keeps Z fixed to the player's home Z.
+    Without local density on that Z slice, the map can feel empty (only a handful of systems).
+
+    `max_difficulty` is used to ensure early colonization progression is possible (e.g. Colonization Tech L1–L2).
+    `shape` controls the *visible* distribution in the GalaxyMap's nearby view. Default is "spiral".
+    """
+    if not center_planet:
+        return []
+
+    from backend.services.planet_traits import PlanetTraitService
+
+    created = []
+    attempts = 0
+    spiral_index = 0
+    # When max_difficulty is low, the acceptance rate can drop sharply if `radius` is large.
+    # Increase attempts to avoid generating too few local targets for manual play.
+    max_attempts = max(2000, count * 200)
+
+    # Use a slightly larger spacing locally so markers don't look like a blob.
+    local_min_distance = max(UNIVERSE_CONFIG['min_distance'], 80)
+
+    effective_radius = radius
+    if max_difficulty is not None:
+        try:
+            # Very rough heuristic: keep sampling focused so low-difficulty targets are actually generated.
+            effective_radius = min(radius, max(200, int(max_difficulty) * 450))
+        except Exception:
+            effective_radius = radius
+
+    shape = (shape or "disk").lower()
+    arms = max(1, int(spiral_arm_count or 3))
+    turns = float(spiral_turns or 1.8)
+    jitter = float(spiral_jitter or 0.0)
+
+    while len(created) < count and attempts < max_attempts:
+        attempts += 1
+
+        if shape == "spiral":
+            # Use a deterministic-ish arm spiral so the shape is *actually visible* in the map.
+            # Random t sampling tends to look like a disk with mild arm bias.
+            i = spiral_index
+            spiral_index += 1
+
+            t = (i + 1) / max(1, int(count))
+            t = min(1.0, max(0.0, t))
+
+            arm_index = i % arms
+            theta = (t * turns * 2 * math.pi) + (arm_index * (2 * math.pi / arms))
+            theta += random.uniform(-jitter, jitter) * (0.25 + 0.75 * t)
+
+            r = effective_radius * (t ** 0.9)
+            x = int(center_planet.x + r * math.cos(theta))
+            y = int(center_planet.y + r * math.sin(theta))
+        else:
+            # Sample a point in a disk for better spread.
+            angle = random.uniform(0, 2 * math.pi)
+            r = effective_radius * math.sqrt(random.random())
+            x = int(center_planet.x + r * math.cos(angle))
+            y = int(center_planet.y + r * math.sin(angle))
+        z = int(center_planet.z)
+
+        # Keep within universe bounds.
+        x = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], x))
+        y = max(UNIVERSE_CONFIG['min_coord'], min(UNIVERSE_CONFIG['max_coord'], y))
+
+        if max_difficulty is not None:
+            try:
+                difficulty = PlanetTraitService.calculate_colonization_difficulty(x, y, z)
+            except Exception:
+                difficulty = None
+            if isinstance(difficulty, int) and difficulty > int(max_difficulty):
+                continue
+
+        if not is_valid_position(x, y, z, existing_planets + created, local_min_distance):
+            continue
+
+        planet = Planet(
+            name=f"Uncharted {random.choice(['Belt', 'Rock', 'World', 'Orbit'])} {random.randint(100, 999)}",
+            x=x,
+            y=y,
+            z=z,
+            user_id=None,
+            metal=random.randint(500, 5000),
+            crystal=random.randint(250, 2500),
+            deuterium=random.randint(0, 1500),
+            metal_mine=0,
+            crystal_mine=0,
+            deuterium_synthesizer=0,
+            solar_plant=0,
+            fusion_reactor=0,
+            created_at=fake.date_time_this_year()
+        )
+        created.append(planet)
+
+    return created
+
 @populate_bp.route('/populate', methods=['POST'])
 def populate_database():
     """Populate the database with realistic test data"""
@@ -254,6 +449,7 @@ def populate_database():
     from flask import request
     import os
     from flask import current_app
+    from backend.models import Research
 
     # Safety: this endpoint clears and recreates data, so only allow it in testing.
     if (current_app.config.get('FLASK_ENV') != 'testing') and (os.getenv('FLASK_ENV') != 'testing'):
@@ -335,15 +531,27 @@ def populate_database():
         ]
 
         print("DEBUG: Generating galaxy clusters...")
+        # GalaxyMap is currently 2D (X/Y) and keeps Z fixed. In testing we keep the
+        # entire populated universe on a single Z slice to improve density and
+        # reduce wasted "depth" data the player can't reach/see.
+        fixed_z = 0
+        try:
+            if users and any(u.username == 'e2etestuser' for u in users):
+                fixed_z = None  # will be set after we pick the test user's cluster
+        except Exception:
+            fixed_z = 0
+
         cluster_centers = generate_cluster_centers(
             UNIVERSE_CONFIG['num_clusters'],
-            UNIVERSE_CONFIG['cluster_spacing']
+            UNIVERSE_CONFIG['cluster_spacing'],
+            fixed_z=fixed_z,
         )
         print(f"DEBUG: Generated {len(cluster_centers)} galaxy clusters")
 
         # Assign users to clusters - ensure e2etestuser gets a dedicated cluster
         user_clusters = {}
         test_user_cluster = cluster_centers[0]  # Reserve first cluster for test user
+        fixed_z = test_user_cluster[2]
 
         for i, user in enumerate(users):
             if user.username == 'e2etestuser':
@@ -352,7 +560,8 @@ def populate_database():
             else:
                 # Start from cluster 1 for other users
                 cluster_idx = (i % (len(cluster_centers) - 1)) + 1
-                user_clusters[user.id] = cluster_centers[cluster_idx]
+                cx, cy, _cz = cluster_centers[cluster_idx]
+                user_clusters[user.id] = (cx, cy, fixed_z)
 
         print("DEBUG: Generating planets with proper spacing...")
 
@@ -369,7 +578,8 @@ def populate_database():
                     x, y, z = generate_planet_position(
                         planets + test_user_positions,  # Include already generated positions
                         cluster_center,
-                        is_core_planet=(i == 0)  # First planet is core planet
+                        is_core_planet=(i == 0),  # First planet is core planet
+                        fixed_z=fixed_z,
                     )
                     test_user_positions.append(type('MockPlanet', (), {'x': x, 'y': y, 'z': z})())
 
@@ -412,7 +622,8 @@ def populate_database():
                     x, y, z = generate_planet_position(
                         planets,
                         cluster_center,
-                        is_core_planet=(i == 0)  # First planet is core planet
+                        is_core_planet=(i == 0),  # First planet is core planet
+                        fixed_z=fixed_z,
                     )
 
                     name = f"{planet_names[i % len(planet_names)]} {user.username}"
@@ -441,6 +652,155 @@ def populate_database():
         print(f"DEBUG: Minimum planet spacing: {UNIVERSE_CONFIG['min_distance']} units")
 
         db.session.commit()
+
+        # Add extra unowned planets on the same Z slice near the test user to make the
+        # 2D GalaxyMap feel populated without requiring a 3D depth selector.
+        try:
+            test_user = User.query.filter_by(username='e2etestuser').first()
+            if test_user:
+                test_home = Planet.query.filter_by(user_id=test_user.id).order_by(Planet.id.asc()).first()
+                # Minimal mode is used by fast tests that assert the smallest possible dataset.
+                # Keep it truly minimal: only the single test-user planet should exist.
+                if not minimal:
+                    extra_count = 120
+                    extra = create_local_unowned_planets_on_same_z(
+                        planets,
+                        test_home,
+                        count=extra_count,
+                        radius=2000,
+                        max_difficulty=2,
+                        shape="spiral",
+                        spiral_arm_count=3,
+                        spiral_turns=2.2,
+                        spiral_jitter=0.18,
+                    )
+                    if extra:
+                        for p in extra:
+                            planets.append(p)
+                            db.session.add(p)
+                        db.session.commit()
+                        print(f"DEBUG: Added {len(extra)} extra unowned planets near e2etestuser on Z={test_home.z}")
+        except Exception as e:
+            print(f"WARNING: Failed to add local unowned planets: {e}")
+
+        # Seed the E2E test user with generous assets for manual "play a round" workflows.
+        # Keep this out of minimal mode so fast unit/integration tests remain small and predictable.
+        if not minimal:
+            try:
+                test_user = User.query.filter_by(username='e2etestuser').first()
+                if test_user:
+                    # Boost research points + baseline tech so colonization/recycling/espionage flows are unblocked.
+                    research = Research.query.filter_by(user_id=test_user.id).first()
+                    if not research:
+                        research = Research(user_id=test_user.id)
+                        db.session.add(research)
+                        db.session.flush()
+
+                    research.research_points = max(int(research.research_points or 0), 10_000_000)
+                    if hasattr(research, "research_points_fraction"):
+                        research.research_points_fraction = 0.0
+
+                    # Keep tech levels unchanged so E2E durations stay short/deterministic.
+                    # Manual "power" adjustments should go through explicit admin endpoints.
+
+                    # Ensure the player's planets have ample resources and storage for manual play.
+                    test_planets = (
+                        Planet.query.filter_by(user_id=test_user.id)
+                        .order_by(Planet.id.asc())
+                        .all()
+                    )
+                    for planet in test_planets:
+                        planet.metal = max(int(planet.metal or 0), 100_000_000)
+                        planet.crystal = max(int(planet.crystal or 0), 80_000_000)
+                        planet.deuterium = max(int(planet.deuterium or 0), 50_000_000)
+
+                        # Storage level 6 => ~113M cap (10M * 1.5^6), enough to hold the seeded resources.
+                        planet.metal_storage = max(int(getattr(planet, "metal_storage", 0) or 0), 6)
+                        planet.crystal_storage = max(int(getattr(planet, "crystal_storage", 0) or 0), 6)
+                        planet.deuterium_tank = max(int(getattr(planet, "deuterium_tank", 0) or 0), 6)
+
+                        planet.research_lab = max(int(getattr(planet, "research_lab", 0) or 0), 12)
+
+                    # Provide a large inventory fleet on the first planet (home-by-convention) with ships
+                    # useful for recycling/colonizing/espionage and general play.
+                    if test_planets:
+                        home = test_planets[0]
+                        now = datetime.utcnow()
+
+                        inventory = (
+                            Fleet.query.filter_by(
+                                user_id=test_user.id,
+                                start_planet_id=home.id,
+                                status="stationed",
+                                mission="inventory",
+                            )
+                            .order_by(Fleet.id.asc())
+                            .first()
+                        )
+                        if not inventory:
+                            inventory = Fleet(
+                                user_id=test_user.id,
+                                mission="inventory",
+                                status="stationed",
+                                start_planet_id=home.id,
+                                target_planet_id=home.id,
+                                departure_time=now,
+                                arrival_time=now,
+                                eta=0,
+                            )
+                            db.session.add(inventory)
+                            db.session.flush()
+
+                        def _ensure_ship_min(fleet: Fleet, ship_type: str, desired: int) -> None:
+                            current = int(getattr(fleet, ship_type, 0) or 0)
+                            setattr(fleet, ship_type, max(current, int(desired)))
+
+                        # "Sizable" starting stock.
+                        _ensure_ship_min(inventory, "small_cargo", 2_000)
+                        _ensure_ship_min(inventory, "large_cargo", 1_000)
+                        _ensure_ship_min(inventory, "light_fighter", 5_000)
+                        _ensure_ship_min(inventory, "heavy_fighter", 2_500)
+                        _ensure_ship_min(inventory, "cruiser", 1_500)
+                        _ensure_ship_min(inventory, "battleship", 800)
+                        _ensure_ship_min(inventory, "battlecruiser", 500)
+                        _ensure_ship_min(inventory, "bomber", 250)
+                        _ensure_ship_min(inventory, "destroyer", 150)
+
+                        _ensure_ship_min(inventory, "colony_ship", 50)
+                        _ensure_ship_min(inventory, "recycler", 5_000)
+                        _ensure_ship_min(inventory, "espionage_probe", 1_000)
+
+                        # Create a few ready-to-send specialized fleets, deducting from inventory for consistency.
+                        def _spawn_stationed_fleet(ships: dict) -> None:
+                            fleet = Fleet(
+                                user_id=test_user.id,
+                                mission="stationed",
+                                status="stationed",
+                                start_planet_id=home.id,
+                                target_planet_id=home.id,
+                                departure_time=now,
+                                arrival_time=now,
+                                eta=0,
+                                **ships,
+                            )
+                            db.session.add(fleet)
+                            # Deduct ships from inventory fleet.
+                            for ship_type, count in ships.items():
+                                if not count:
+                                    continue
+                                current = int(getattr(inventory, ship_type, 0) or 0)
+                                setattr(inventory, ship_type, max(0, current - int(count)))
+
+                        _spawn_stationed_fleet({"espionage_probe": 200})
+                        _spawn_stationed_fleet({"recycler": 2_000, "small_cargo": 200})
+                        _spawn_stationed_fleet({"colony_ship": 10, "large_cargo": 50, "small_cargo": 100, "light_fighter": 50})
+
+                    db.session.commit()
+                    print("DEBUG: Seeded e2etestuser with extra resources, research points, and fleets for manual play")
+            except Exception as e:
+                # Keep populate robust even if schema changes or optional tables are missing.
+                db.session.rollback()
+                print(f"WARNING: Failed to seed e2etestuser manual-play assets: {e}")
 
         # Generate alliances
         alliances = []
@@ -471,12 +831,13 @@ def populate_database():
 
         db.session.commit()
 
-        # Generate fleets
+        # Generate fleets (bulk insert to avoid row-by-row inserts)
         missions = ['attack', 'transport', 'deploy', 'espionage', 'recycle']
         ship_types = ['small_cargo', 'large_cargo', 'light_fighter', 'heavy_fighter',
                       'cruiser', 'battleship']
 
         num_fleets = 1 if minimal else 500
+        fleets_to_create = []
         for _ in range(num_fleets):
             user = random.choice(users)
             user_planets = [p for p in planets if p.user_id == user.id]
@@ -508,12 +869,15 @@ def populate_database():
             for ship_type in ship_types:
                 setattr(fleet, ship_type, random.randint(0, 1000))
 
-            db.session.add(fleet)
+            fleets_to_create.append(fleet)
 
+        if fleets_to_create:
+            db.session.bulk_save_objects(fleets_to_create)
         db.session.commit()
 
-        # Generate tick logs
+        # Generate tick logs (bulk insert to avoid row-by-row inserts)
         num_tick_logs = 1 if minimal else 1000
+        tick_logs_to_create = []
         for _ in range(num_tick_logs):
             planet = random.choice(planets)
             tick_number = random.randint(1, 10000)
@@ -527,7 +891,10 @@ def populate_database():
                 crystal_change=random.randint(-500, 2500),
                 deuterium_change=random.randint(-200, 1000)
             )
-            db.session.add(tick_log)
+            tick_logs_to_create.append(tick_log)
+
+        if tick_logs_to_create:
+            db.session.bulk_save_objects(tick_logs_to_create)
 
         # Create enemy planets with defensive fleets around test user for combat testing
         if not minimal:
@@ -560,14 +927,30 @@ def populate_database():
 
         db.session.commit()
 
-        return jsonify({
-            'message': 'Database populated successfully',
-            'users': len(users),
-            'planets': len(planets),
-            'fleets': num_fleets,
-            'alliances': len(alliances),
-            'tick_logs': num_tick_logs
-        }), 200
+        counts = {
+            "users": User.query.count(),
+            "planets": Planet.query.count(),
+            "fleets": Fleet.query.count(),
+            "alliances": Alliance.query.count(),
+            "tick_logs": TickLog.query.count(),
+        }
+        payload = {
+            "message": "Database populated successfully",
+            # Backward-compatible flat fields.
+            "users": counts["users"],
+            "planets": counts["planets"],
+            "fleets": counts["fleets"],
+            "alliances": counts["alliances"],
+            "tick_logs": counts["tick_logs"],
+        }
+        payload.update(
+            build_harness_setup_contract(
+                setup_id="populate",
+                deterministic=(deterministic or os.getenv("FLASK_ENV") == "testing"),
+                counts=counts,
+            )
+        )
+        return jsonify(payload), 200
 
     except Exception as e:
         db.session.rollback()

@@ -170,7 +170,16 @@ def get_nearby_systems(center_x, center_y, center_z):
 
         min_x, max_x = center_x - range_limit, center_x + range_limit
         min_y, max_y = center_y - range_limit, center_y + range_limit
-        min_z, max_z = center_z - range_limit, center_z + range_limit
+
+        # GalaxyMap is currently 2D (X/Y) and locked to the player's Z slice for performance and clarity.
+        # Default: only populate the current Z plane (z_band=0).
+        # Future: allow a small Z band if/when the UI supports depth navigation.
+        z_band = request.args.get('z_band', 0, type=int)
+        z_band = int(z_band or 0)
+        if z_band <= 0:
+            min_z, max_z = center_z, center_z
+        else:
+            min_z, max_z = center_z - z_band, center_z + z_band
 
         explored_systems = set()
         user = User.query.get(user_id)
@@ -278,6 +287,7 @@ def get_nearby_systems(center_x, center_y, center_z):
             'meta': {
                 'center': {'x': center_x, 'y': center_y, 'z': center_z},
                 'range': range_limit,
+                'z_band': z_band,
                 'limit': limit,
                 'offset': offset,
             }

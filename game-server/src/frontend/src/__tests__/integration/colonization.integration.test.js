@@ -6,6 +6,12 @@ const request = require('supertest');
 const enabled = process.env.PLANETARION_SUPERTEST === '1';
 const api = request('http://localhost:5000');
 
+if (enabled) {
+  // In development mode, fleet travel uses real-time (default min 30s).
+  // Keep these tests robust by allowing for real-time waiting.
+  jest.setTimeout(120_000);
+}
+
 async function resetTwoPlayerScenario() {
   const devToken = process.env.PLANETARION_DEV_ADMIN_TOKEN || 'planetarion-dev';
   const res = await api
@@ -27,6 +33,22 @@ async function login(username, password = 'testpassword123') {
 async function runTick() {
   const res = await api.post('/api/tick').send({});
   expect(res.status).toBe(200);
+}
+
+async function sleep(ms) {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+async function waitForFleetLegThenTick({ auth, fleetId, minWaitSeconds = 0 }) {
+  const list = await api.get('/api/fleet').set(auth);
+  expect(list.status).toBe(200);
+  const fleet = (Array.isArray(list.body) ? list.body : []).find((f) => String(f.id) === String(fleetId));
+  expect(fleet).toBeTruthy();
+
+  const eta = Number(fleet.eta || 0) || 0;
+  const waitSeconds = Math.max(minWaitSeconds, eta) + 1;
+  if (waitSeconds > 0) await sleep(waitSeconds * 1000);
+  await runTick();
 }
 
 (enabled ? describe : describe.skip)('Colonization loop (JS)', () => {
@@ -52,9 +74,10 @@ async function runTick() {
       throw new Error(`Colonize send failed: ${send.status} ${JSON.stringify(send.body)}`);
     }
 
-    // Resolve colonization and return.
-    await runTick();
-    await runTick();
+    // Leg 1: travel + resolve colonization.
+    await waitForFleetLegThenTick({ auth, fleetId: alphaFleetId });
+    // Leg 2: return.
+    await waitForFleetLegThenTick({ auth, fleetId: alphaFleetId });
 
     const planets = await api.get('/api/planet').set(auth);
     expect(planets.status).toBe(200);

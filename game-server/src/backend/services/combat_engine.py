@@ -17,6 +17,7 @@ from datetime import datetime
 from backend.database import db
 from backend.models import Fleet, Planet, CombatReport, DebrisField, User, TickLog
 from backend.config import COMBAT_SHIP_STATS
+from backend.services.commander_xp import CommanderXPService, xp_from_ship_losses
 
 
 class CombatEngine:
@@ -129,7 +130,7 @@ class CombatEngine:
         }
 
     @staticmethod
-    def _calculate_firepower(attacker_ships, defender_ships, side):
+    def _calculate_firepower(attacker_ships, defender_ships, _side):
         """Calculate total firepower including rapid fire bonuses"""
         total_fire = 0
 
@@ -246,6 +247,13 @@ class CombatEngine:
         """Process the results of a combat engagement"""
         print("DEBUG: Processing combat result")
 
+        pirate_user = None
+        try:
+            pirate_user = User.query.filter_by(username="pirates").first()
+        except Exception:
+            pirate_user = None
+        is_pirate_attacker = bool(pirate_user and getattr(attacker_fleet, "user_id", None) == pirate_user.id)
+
         def _maybe_rename_captured_planet(*, previous_owner_username: str | None, attacker_username: str):
             # Normalize NPC/testing names to something that feels like a real captured colony.
             # Examples today: "Pirate Camp ...", "Enemy Base ...".
@@ -288,12 +296,13 @@ class CombatEngine:
             ]
             defender_remaining = sum(int(getattr(defender_fleet, f, 0) or 0) for f in ship_fields)
             if defender_remaining == 0:
-                planet.user_id = attacker_fleet.user_id
-                _maybe_rename_captured_planet(previous_owner_username=previous_owner_username, attacker_username=attacker_username)
+                # Pirate raids are encounters, not conquest. Pirates should not capture player planets (MVP).
+                if not is_pirate_attacker:
+                    planet.user_id = attacker_fleet.user_id
+                    _maybe_rename_captured_planet(previous_owner_username=previous_owner_username, attacker_username=attacker_username)
 
             # Pirate loot: if the defender is the pirate NPC, steal a percentage of resources.
             try:
-                pirate_user = User.query.filter_by(username="pirates").first()
                 if pirate_user and getattr(defender_fleet, "user_id", None) == pirate_user.id:
                     origin = Planet.query.get(getattr(attacker_fleet, "start_planet_id", None))
                     if origin:
@@ -346,6 +355,12 @@ class CombatEngine:
         )
         db.session.add(battle_report)
 
+        # Flush so we can use battle_report.id as an idempotency source key.
+        try:
+            db.session.flush()
+        except Exception:
+            pass
+
         # Create tick log entry
         attacker_username = getattr(getattr(attacker_fleet, 'owner', None), 'username', f'user_{attacker_fleet.user_id}')
         defender_username = getattr(getattr(defender_fleet, 'owner', None), 'username', f'user_{defender_fleet.user_id}')
@@ -358,6 +373,37 @@ class CombatEngine:
             event_description=f'Combat between {attacker_username} and {defender_username}. Winner: {winner_username}'
         )
         db.session.add(tick_log)
+
+        # Commander XP (idempotent per combat report).
+        try:
+            report_id = getattr(battle_report, "id", None)
+            sid = str(report_id) if report_id is not None else f"fleet:{getattr(attacker_fleet, 'id', 'unknown')}"
+
+            attacker_xp = xp_from_ship_losses(combat_result.get("defender_losses"))
+            defender_xp = xp_from_ship_losses(combat_result.get("attacker_losses"))
+
+            if combat_result.get("winner") == "attacker":
+                attacker_xp += 50
+                defender_xp += 10
+            else:
+                attacker_xp += 10
+                defender_xp += 50
+
+            CommanderXPService.award_xp(
+                user_id=int(attacker_fleet.user_id),
+                xp=int(attacker_xp),
+                source_type="combat",
+                source_id=f"{sid}:attacker",
+            )
+            CommanderXPService.award_xp(
+                user_id=int(defender_fleet.user_id),
+                xp=int(defender_xp),
+                source_type="combat",
+                source_id=f"{sid}:defender",
+            )
+        except Exception:
+            # XP is non-critical; avoid breaking combat resolution.
+            pass
 
         db.session.commit()
         print("DEBUG: Combat result processing complete")
@@ -385,8 +431,15 @@ class CombatEngine:
         """Process the results of a planet attack"""
         print("DEBUG: Processing planet attack result")
 
+        pirate_user = None
+        try:
+            pirate_user = User.query.filter_by(username="pirates").first()
+        except Exception:
+            pirate_user = None
+        is_pirate_attacker = bool(pirate_user and getattr(fleet, "user_id", None) == pirate_user.id)
+
         # Update fleet combat statistics
-        if combat_result.get('planet_captured', False):
+        if combat_result.get('planet_captured', False) and not is_pirate_attacker:
             fleet.combat_victories += 1
             previous_owner_username = getattr(getattr(planet, "owner", None), "username", None)
             attacker_username = getattr(getattr(fleet, "owner", None), "username", f"user_{fleet.user_id}")
@@ -406,6 +459,18 @@ class CombatEngine:
                 event_description=f'Planet {planet.name} captured by {attacker_username}'
             )
             db.session.add(tick_log)
+
+            # Commander XP (idempotent per TickLog row if possible).
+            try:
+                db.session.flush()
+                CommanderXPService.award_xp(
+                    user_id=int(fleet.user_id),
+                    xp=250,
+                    source_type="planet_capture",
+                    source_id=str(getattr(tick_log, "id", None) or f"planet:{planet.id}:fleet:{fleet.id}"),
+                )
+            except Exception:
+                pass
 
         fleet.last_combat_time = datetime.utcnow()
         db.session.commit()

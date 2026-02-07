@@ -1,0 +1,48 @@
+@keyframes galaxyTwinkle {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes galaxyFloat {
+  0% {
+    transform: translateY(0px) translateX(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) translateX(6px) rotate(180deg);
+  }
+  100% {
+    transform: translateY(0px) translateX(0px) rotate(360deg);
+  }
+}
+
+.star {
+  position: absolute;
+  border-radius: 9999px;
+  background: white;
+  opacity: 0.6;
+  animation-name: galaxyTwinkle;
+  animation-duration: var(--twinkle-duration, 3s);
+  animation-delay: var(--twinkle-delay, 0s);
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 9999px;
+  background: white;
+  opacity: 0.12;
+  animation-name: galaxyFloat;
+  animation-duration: var(--float-duration, 14s);
+  animation-delay: var(--float-delay, 0s);
+  animation-iteration-count: infinite;
+  animation-timing-function: linear;
+}
+

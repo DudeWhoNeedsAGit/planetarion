@@ -107,6 +107,31 @@ def test_pending_tick_state_is_possible(client, auth_headers, db_session, sample
     fleet = Fleet.query.get(fleet_id)
     assert fleet.arrival_time <= datetime.utcnow()
 
+def test_travel_guard_normalizes_stationed_timestamp_drift(app, db_session, sample_user, sample_planet):
+    from backend.models import Fleet
+
+    bad = Fleet(
+        user_id=sample_user.id,
+        mission="stationed",
+        status="stationed",
+        start_planet_id=sample_planet.id,
+        target_planet_id=sample_planet.id,
+        departure_time=datetime.utcnow(),
+        arrival_time=datetime.utcnow() + timedelta(minutes=10),  # invalid for stationed
+        eta=0,
+    )
+    db_session.add(bad)
+    db_session.commit()
+
+    # Tick invokes FleetTravelGuard first.
+    _run_tick(app)
+
+    fixed = Fleet.query.get(bad.id)
+    assert fixed.status == "stationed"
+    assert fixed.mission == "stationed"
+    assert fixed.eta == 0
+    assert fixed.arrival_time <= datetime.utcnow()
+
 
 def test_transport_flow_unloads_then_returns(app, client, auth_headers, db_session, sample_user, sample_planet):
     _disable_production(db_session, sample_planet)

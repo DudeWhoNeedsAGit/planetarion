@@ -1,215 +1,365 @@
 """
-Research Management Routes
+Research Management Routes (MVP)
 
-This module handles research progression and technology upgrades:
-- Research point generation and spending
-- Technology level progression
-- Research requirements and prerequisites
-- Research queue management
+Implements:
+- Research point balance (stored on Research.research_points)
+- One active research project per user (stored as JSON on User.research_queue)
+- Start / cancel research
+- Tick-driven completion (see backend/services/tick.py)
 
-All endpoints require JWT authentication and operate on the user's research.
+Notes:
+- Research points are accrued during ticks for determinism.
+- GET endpoints return computed RP rates (per hour / per tick) for UI display.
 """
 
-from flask import Blueprint, request, jsonify
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+
+from flask import Blueprint, jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
+
 from backend.database import db
-from backend.models import User, Research, Planet
-from datetime import datetime
+from backend.models import User, Research, Planet, TickLog
+from backend.services.research_defs import RESEARCH_DEF_BY_KEY, RESEARCH_DEFS, RESEARCH_KEYS as ALL_RESEARCH_KEYS
 
 research_bp = Blueprint('research', __name__, url_prefix='/api/research')
 
-@research_bp.route('', methods=['GET'])
-@jwt_required()
-def get_research():
-    """Get user's current research status"""
-    print("DEBUG: Research GET endpoint called")
-    user_id = int(get_jwt_identity())
-    print(f"DEBUG: User ID from JWT: {user_id}")
+RESEARCH_KEYS = ALL_RESEARCH_KEYS
 
-    # Get or create research record
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _to_iso_z(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_iso_z(raw: str | None) -> datetime | None:
+    if not raw or not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def _get_or_create_research(user_id: int) -> Research:
     research = Research.query.filter_by(user_id=user_id).first()
     if not research:
-        research = Research(user_id=user_id)
+        research = Research(user_id=user_id, research_points=0)
         db.session.add(research)
         db.session.commit()
+    return research
 
-    # Calculate current research points
-    research_points = calculate_research_points(user_id)
-    research.research_points = research_points
 
-    print("DEBUG: Research GET endpoint successful")
-    return jsonify({
-        'research_points': research.research_points,
-        'levels': {
-            'colonization_tech': research.colonization_tech,
-            'astrophysics': research.astrophysics,
-            'interstellar_communication': research.interstellar_communication
-        },
-        'next_level_costs': {
-            'colonization_tech': calculate_research_cost('colonization_tech', research.colonization_tech + 1),
-            'astrophysics': calculate_research_cost('astrophysics', research.astrophysics + 1),
-            'interstellar_communication': calculate_research_cost('interstellar_communication', research.interstellar_communication + 1)
-        }
-    })
+def _energy_ratio(planet: Planet) -> float:
+    energy_production = (planet.solar_plant or 0) * 20 + (planet.fusion_reactor or 0) * 50
+    energy_consumption = (
+        (planet.metal_mine or 0) * 10
+        + (planet.crystal_mine or 0) * 10
+        + (planet.deuterium_synthesizer or 0) * 20
+        + (getattr(planet, "research_lab", 0) or 0) * 15
+    )
+    if energy_consumption <= 0:
+        return 1.0
+    return max(0.0, min(1.0, energy_production / energy_consumption))
 
-@research_bp.route('/upgrade/<research_type>', methods=['POST'])
-@jwt_required()
-def upgrade_research(research_type):
-    """Upgrade a specific research technology"""
-    print("DEBUG: Research upgrade endpoint called")
-    print(f"DEBUG: Research type: {research_type}")
-    user_id = int(get_jwt_identity())
-    print(f"DEBUG: User ID from JWT: {user_id}")
 
-    # Validate research type
-    valid_types = ['colonization_tech', 'astrophysics', 'interstellar_communication']
-    if research_type not in valid_types:
-        return jsonify({'error': 'Invalid research type'}), 400
+def calculate_rp_rates(user_id: int) -> dict:
+    planets = Planet.query.filter_by(user_id=user_id).all()
+    per_level = int(current_app.config.get("RESEARCH_RP_PER_HOUR_PER_LAB_LEVEL", 10) or 10)
 
-    # Get or create research record
-    research = Research.query.filter_by(user_id=user_id).first()
-    if not research:
-        research = Research(user_id=user_id)
-        db.session.add(research)
-        db.session.commit()
+    rp_per_hour = 0.0
+    for p in planets:
+        lvl = int(getattr(p, "research_lab", 0) or 0)
+        if lvl <= 0:
+            continue
+        rp_per_hour += float(lvl * per_level) * _energy_ratio(p)
 
-    # Get current level
-    current_level = getattr(research, research_type)
+    # This project uses an accelerated tick time scale (resources divide by 72).
+    rp_per_tick = rp_per_hour / 72.0
+    return {"rp_per_hour": rp_per_hour, "rp_per_tick": rp_per_tick}
 
-    # Calculate upgrade cost
-    upgrade_cost = calculate_research_cost(research_type, current_level + 1)
 
-    # Check if user has enough research points
-    if research.research_points < upgrade_cost:
-        return jsonify({
-            'error': 'Insufficient research points',
-            'required': upgrade_cost,
-            'available': research.research_points
-        }), 400
-
-    # Perform upgrade
-    setattr(research, research_type, current_level + 1)
-    research.research_points -= upgrade_cost
-
-    db.session.commit()
-
-    return jsonify({
-        'message': f'{research_type} upgraded to level {current_level + 1}',
-        'new_level': current_level + 1,
-        'research_points_remaining': research.research_points,
-        'next_upgrade_cost': calculate_research_cost(research_type, current_level + 2)
-    })
-
-@research_bp.route('/points', methods=['GET'])
-@jwt_required()
-def get_research_points():
-    """Get current research points (real-time calculation)"""
-    print("DEBUG: Research points endpoint called")
-    user_id = int(get_jwt_identity())
-    print(f"DEBUG: User ID from JWT: {user_id}")
-
-    research_points = calculate_research_points(user_id)
-
-    return jsonify({
-        'research_points': research_points,
-        'last_updated': datetime.utcnow().isoformat()
-    })
-
-def calculate_research_cost(research_type, target_level):
-    """Calculate research cost for a specific technology and level"""
+def calculate_research_cost(key: str, target_level: int) -> int:
     if target_level <= 0:
         return 0
 
-    # Base costs for each research type
-    base_costs = {
-        'colonization_tech': 100,
-        'astrophysics': 150,
-        'interstellar_communication': 200
+    # Legacy formula (covered by existing unit tests):
+    #   cost = base * (level ** 1.5)
+    base = int(RESEARCH_DEF_BY_KEY.get(key, RESEARCH_DEF_BY_KEY["colonization_tech"]).base_cost)
+    cost = int(base * (float(target_level) ** 1.5))
+    return max(0, int(cost))
+
+
+def calculate_research_points(user_id: int) -> int:
+    """Legacy helper used by unit tests.
+
+    Returns the user's *per-hour* research point generation based on all owned
+    planets and their research lab level, scaled by energy efficiency.
+    """
+    rates = calculate_rp_rates(int(user_id))
+    return int(rates.get("rp_per_hour") or 0)
+
+
+def calculate_research_duration_seconds(key: str, target_level: int) -> int:
+    per_level = int(current_app.config.get("RESEARCH_DURATION_SECONDS_PER_LEVEL", 60) or 60)
+    return max(0, int(per_level * max(1, target_level)))
+
+
+def _get_home_planet_id(user_id: int) -> int | None:
+    home = Planet.query.filter_by(user_id=user_id).order_by(Planet.is_home_planet.desc(), Planet.id.asc()).first()
+    return home.id if home else None
+
+
+def _load_queue(user: User) -> dict | None:
+    raw = getattr(user, "research_queue", None)
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def _save_queue(user: User, payload: dict | None) -> None:
+    user.research_queue = json.dumps(payload) if payload else None
+
+
+def _serialize_queue(queue: dict | None) -> dict | None:
+    if not queue:
+        return None
+    return {
+        "key": queue.get("key"),
+        "target_level": queue.get("target_level"),
+        "started_at": queue.get("started_at"),
+        "completes_at": queue.get("completes_at"),
     }
 
-    base_cost = base_costs.get(research_type, 100)
 
-    # Exponential cost increase: cost = base * (level ^ 1.5)
-    cost = int(base_cost * (target_level ** 1.5))
+@research_bp.route("", methods=["GET"])
+@jwt_required()
+def get_research():
+    user_id = int(get_jwt_identity())
+    _ = User.query.get_or_404(user_id)
+    research = _get_or_create_research(user_id)
 
-    return cost
+    levels = {k: int(getattr(research, k) or 0) for k in RESEARCH_KEYS}
+    costs = {k: calculate_research_cost(k, levels[k] + 1) for k in RESEARCH_KEYS}
+    durations = {k: calculate_research_duration_seconds(k, levels[k] + 1) for k in RESEARCH_KEYS}
+    rates = calculate_rp_rates(user_id)
 
-def calculate_research_points(user_id):
-    """Calculate total research points from all user's planets"""
-    user_planets = Planet.query.filter_by(user_id=user_id).all()
+    user = User.query.get(user_id)
+    queue = _serialize_queue(_load_queue(user)) if user else None
 
-    total_points = 0
-    for planet in user_planets:
-        # Research points based on research lab level
-        if planet.research_lab and planet.research_lab > 0:
-            # Base points per lab level
-            base_points = planet.research_lab * 10
+    # Backward-compatible response keys:
+    return jsonify(
+        {
+            "research_points": int(research.research_points or 0),
+            "levels": levels,
+            "next_level_costs": costs,
+            "next_level_durations_seconds": durations,
+            "rates": rates,
+            "queue": queue,
+            "tree": {
+                "branches": [
+                    {
+                        "name": branch,
+                        "items": [
+                            {
+                                "key": d.key,
+                                "name": d.name,
+                                "description": d.description,
+                                "effect_hint": d.effect_hint,
+                                "max_level": d.max_level,
+                            }
+                            for d in RESEARCH_DEFS
+                            if d.branch == branch
+                        ],
+                    }
+                    for branch in sorted({d.branch for d in RESEARCH_DEFS})
+                ]
+            },
+        }
+    )
 
-            # Apply energy efficiency
-            energy_production = planet.solar_plant * 20 + planet.fusion_reactor * 50
-            energy_consumption = (planet.metal_mine * 10 +
-                                planet.crystal_mine * 10 +
-                                planet.deuterium_synthesizer * 20 +
-                                planet.research_lab * 15)  # Research labs consume energy
 
-            energy_ratio = min(1.0, energy_production / energy_consumption) if energy_consumption > 0 else 1.0
+@research_bp.route("/points", methods=["GET"])
+@jwt_required()
+def get_research_points():
+    user_id = int(get_jwt_identity())
+    research = _get_or_create_research(user_id)
+    return jsonify(
+        {
+            "research_points": int(research.research_points or 0),
+            "last_updated": _to_iso_z(_utcnow()),
+        }
+    )
 
-            # Calculate points for this tick (5 seconds = 1/72 hour)
-            tick_points = max(1, int(base_points * energy_ratio / 72)) if planet.research_lab > 0 else 0
 
-            total_points += tick_points
+@research_bp.route("/start", methods=["POST"])
+@jwt_required()
+def start_research():
+    user_id = int(get_jwt_identity())
+    user = User.query.get_or_404(user_id)
+    research = _get_or_create_research(user_id)
 
-    return total_points
+    data = request.get_json(silent=True) or {}
+    key = (data.get("key") or "").strip()
+    if key not in RESEARCH_DEF_BY_KEY:
+        return jsonify({"error": "Invalid research key"}), 400
+
+    if _load_queue(user):
+        return jsonify({"error": "Research already in progress"}), 400
+
+    current_level = int(getattr(research, key) or 0)
+    target_level = current_level + 1
+    cost = calculate_research_cost(key, target_level)
+    if int(research.research_points or 0) < cost:
+        return jsonify({"error": "Insufficient research points", "required": cost, "available": int(research.research_points or 0)}), 400
+
+    research.research_points = int(research.research_points or 0) - cost
+
+    now = _utcnow()
+    duration = calculate_research_duration_seconds(key, target_level)
+    completes_at = now + timedelta(seconds=duration)
+
+    queue = {
+        "key": key,
+        "target_level": target_level,
+        "started_at": _to_iso_z(now),
+        "completes_at": _to_iso_z(completes_at),
+    }
+    _save_queue(user, queue)
+
+    planet_id = _get_home_planet_id(user_id)
+    db.session.add(
+        TickLog(
+            tick_number=0,
+            planet_id=planet_id,
+            event_type="research_start",
+            event_description=f"Research started: {key} → Level {target_level} (cost {cost} RP)",
+            timestamp=datetime.utcnow(),
+        )
+    )
+
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": "Research started",
+            "queue": _serialize_queue(queue),
+            "research_points_remaining": int(research.research_points or 0),
+        }
+    )
+
+
+@research_bp.route("/cancel", methods=["POST"])
+@jwt_required()
+def cancel_research():
+    """Cancel the active research project (MVP: 100% RP refund)."""
+    user_id = int(get_jwt_identity())
+    user = User.query.get_or_404(user_id)
+    research = _get_or_create_research(user_id)
+
+    queue = _load_queue(user)
+    if not queue:
+        return jsonify({"error": "No research in progress"}), 400
+
+    key = queue.get("key")
+    target_level = int(queue.get("target_level") or 0)
+    refund = calculate_research_cost(str(key), target_level) if key in RESEARCH_DEF_BY_KEY else 0
+    research.research_points = int(research.research_points or 0) + int(refund)
+    _save_queue(user, None)
+
+    planet_id = _get_home_planet_id(user_id)
+    db.session.add(
+        TickLog(
+            tick_number=0,
+            planet_id=planet_id,
+            event_type="research_cancel",
+            event_description=f"Research cancelled: {key} → Level {target_level} (refund {refund} RP)",
+            timestamp=datetime.utcnow(),
+        )
+    )
+
+    db.session.commit()
+
+    return jsonify({"message": "Research cancelled", "refund": int(refund), "research_points": int(research.research_points or 0)})
+
+
+@research_bp.route("/upgrade/<research_type>", methods=["POST"])
+@jwt_required()
+def upgrade_research_legacy(research_type: str):
+    """Legacy endpoint: upgrade immediately (kept for older tests)."""
+    user_id = int(get_jwt_identity())
+    user = User.query.get_or_404(user_id)
+    research = _get_or_create_research(user_id)
+
+    if research_type not in RESEARCH_DEF_BY_KEY:
+        return jsonify({"error": "Invalid research type"}), 400
+
+    if _load_queue(user):
+        return jsonify({"error": "Research already in progress"}), 400
+
+    current_level = int(getattr(research, research_type) or 0)
+    target_level = current_level + 1
+    cost = calculate_research_cost(research_type, target_level)
+    if int(research.research_points or 0) < cost:
+        return jsonify({"error": "Insufficient research points", "required": cost, "available": int(research.research_points or 0)}), 400
+
+    research.research_points = int(research.research_points or 0) - cost
+    setattr(research, research_type, target_level)
+
+    planet_id = _get_home_planet_id(user_id)
+    db.session.add(
+        TickLog(
+            tick_number=0,
+            planet_id=planet_id,
+            event_type="research_complete",
+            event_description=f"Research completed: {research_type} → Level {target_level}",
+            timestamp=datetime.utcnow(),
+        )
+    )
+
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": f"{research_type} upgraded to level {target_level}",
+            "new_level": target_level,
+            "research_points_remaining": int(research.research_points or 0),
+            "next_upgrade_cost": calculate_research_cost(research_type, target_level + 1),
+        }
+    )
+
 
 def get_research_info(research_type):
     """Get information about a research technology"""
-    research_info = {
-        'colonization_tech': {
-            'name': 'Colonization Technology',
-            'description': 'Allows colonization of planets with higher difficulty ratings',
-            'benefits': [
-                'Unlocks colonization of planets with difficulty up to your research level',
-                'Reduces colonization failure chance',
-                'Enables faster colony establishment'
-            ],
-            'max_level': 10
-        },
-        'astrophysics': {
-            'name': 'Astrophysics',
-            'description': 'Advances understanding of space travel and colonization',
-            'benefits': [
-                '+2 colony limit per level',
-                'Reduces fleet travel time',
-                'Improves exploration efficiency'
-            ],
-            'max_level': 15
-        },
-        'interstellar_communication': {
-            'name': 'Interstellar Communication',
-            'description': 'Enhances communication across vast distances',
-            'benefits': [
-                'Enables alliance communications',
-                'Improves fleet coordination',
-                'Reduces communication delays'
-            ],
-            'max_level': 12
-        }
-    }
+    d = RESEARCH_DEF_BY_KEY.get(research_type)
+    if not d:
+        return {"name": "Unknown Research", "description": "Research information not available", "benefits": [], "max_level": 10}
+    benefits = []
+    if d.effect_hint:
+        benefits.append(d.effect_hint)
+    return {"name": d.name, "description": d.description, "benefits": benefits, "max_level": d.max_level or 10}
 
-    return research_info.get(research_type, {
-        'name': 'Unknown Research',
-        'description': 'Research information not available',
-        'benefits': [],
-        'max_level': 10
-    })
 
-@research_bp.route('/info/<research_type>', methods=['GET'])
+@research_bp.route("/info/<research_type>", methods=["GET"])
 @jwt_required()
 def get_research_details(research_type):
-    """Get detailed information about a research technology"""
-    print("DEBUG: Research info endpoint called")
-    print(f"DEBUG: Research type: {research_type}")
-
     info = get_research_info(research_type)
-
     return jsonify(info)

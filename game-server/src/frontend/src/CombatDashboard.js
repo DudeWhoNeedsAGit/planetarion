@@ -1,11 +1,17 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import BattleReports, { BattleReportDetailModal } from './BattleReports';
 import './CombatDashboard.css';
 
-const CombatDashboard = ({ user, onNavigateSection }) => {
+const CombatDashboard = ({ user, planets = [], onNavigateSection }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedReport, setSelectedReport] = useState(null);
+  const [recycleConfig, setRecycleConfig] = useState(null);
+
+  const ownedPlanets = useMemo(() => {
+    // Dashboard passes owned planets from `/api/planet`.
+    return Array.isArray(planets) ? planets : [];
+  }, [planets]);
 
   const formatTimeAgo = (timestamp) => {
     const now = new Date();
@@ -46,10 +52,12 @@ const CombatDashboard = ({ user, onNavigateSection }) => {
             onNavigate={setActiveTab}
             onSelectReport={setSelectedReport}
             onNavigateSection={onNavigateSection}
+            planets={ownedPlanets}
+            onConfigureRecycle={(payload) => setRecycleConfig(payload)}
           />
         );
       case 'battles':
-        return <BattleReports user={user} />;
+        return <BattleReports user={user} onNavigateSection={onNavigateSection} />;
       case 'spy':
         return <SpyReports />;
       case 'statistics':
@@ -100,6 +108,33 @@ const CombatDashboard = ({ user, onNavigateSection }) => {
           formatTimeAgo={formatTimeAgo}
           calculateTotalLosses={calculateTotalLosses}
           userId={user?.id}
+          onNavigateSection={onNavigateSection}
+        />
+      )}
+
+      {recycleConfig && (
+        <RecycleConfigModal
+          config={recycleConfig}
+          planets={ownedPlanets}
+          onClose={() => setRecycleConfig(null)}
+          onConfirm={({ startPlanetId, focus }) => {
+            const targetPlanetId = recycleConfig?.target_planet_id;
+            if (!targetPlanetId) return;
+            const preset = {
+              mission: 'recycle',
+              target_planet_id: targetPlanetId,
+              start_planet_id: startPlanetId || null,
+              recycle_focus: focus || 'proportional',
+            };
+            localStorage.setItem('fleetSendPreset', JSON.stringify(preset));
+            try {
+              window.dispatchEvent(new CustomEvent('planetarion:fleetSendPreset', { detail: preset }));
+            } catch (e) {
+              console.warn('Failed to dispatch fleetSendPreset event:', e);
+            }
+            setRecycleConfig(null);
+            onNavigateSection?.('fleets');
+          }}
         />
       )}
     </div>
@@ -168,7 +203,120 @@ const SpyReports = () => {
   );
 };
 
-const CombatOverview = ({ user, onNavigate, onSelectReport, onNavigateSection }) => {
+const RecycleConfigModal = ({ config, planets, onClose, onConfirm }) => {
+  const [startPlanetId, setStartPlanetId] = useState(() => {
+    const first = (Array.isArray(planets) && planets.length > 0) ? planets[0] : null;
+    return first?.id ?? '';
+  });
+  const [focus, setFocus] = useState('proportional');
+
+  const targetLabel = config?.target_label || 'debris field';
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-6" data-testid="combat-recycle-config-modal">
+      <div className="pa-modal p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold text-white">Send recyclers</h3>
+          <button className="pa-btn-ghost px-3 py-2 text-sm" onClick={onClose} aria-label="Close">
+            Close
+          </button>
+        </div>
+
+        <div className="text-sm text-slate-200/80 mb-4">
+          Target: <span className="text-white font-medium">{targetLabel}</span>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-slate-200/90 mb-2">Source planet (where recyclers depart)</label>
+          <select
+            className="pa-input"
+            data-testid="combat-recycle-source-planet"
+            value={startPlanetId}
+            onChange={(e) => setStartPlanetId(e.target.value)}
+          >
+            {(Array.isArray(planets) ? planets : []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {(p.is_home_planet ? '🏠 ' : '🌍 ') + p.name} ({p.x}:{p.y}:{p.z})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-slate-200/90 mb-2">Recycling focus</label>
+          <div className="space-y-2 text-sm text-slate-200/90">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="recycle-focus"
+                value="proportional"
+                checked={focus === 'proportional'}
+                onChange={() => setFocus('proportional')}
+                data-testid="combat-recycle-focus-proportional"
+              />
+              <span>Proportional (split capacity across available debris)</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="recycle-focus"
+                value="metal"
+                checked={focus === 'metal'}
+                onChange={() => setFocus('metal')}
+                data-testid="combat-recycle-focus-metal"
+              />
+              <span>Metal only</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="recycle-focus"
+                value="crystal"
+                checked={focus === 'crystal'}
+                onChange={() => setFocus('crystal')}
+                data-testid="combat-recycle-focus-crystal"
+              />
+              <span>Crystal only</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="recycle-focus"
+                value="deuterium"
+                checked={focus === 'deuterium'}
+                onChange={() => setFocus('deuterium')}
+                data-testid="combat-recycle-focus-deuterium"
+              />
+              <span>Deuterium only</span>
+            </label>
+          </div>
+          <div className="mt-2 text-xs text-slate-300/70">
+            Tip: pick “Metal only”/“Crystal only” for strategic focus, or keep proportional for automatic cleanup.
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            className="flex-1 pa-btn-primary py-2 px-4"
+            data-testid="combat-recycle-continue"
+            onClick={() => onConfirm({ startPlanetId: startPlanetId ? parseInt(startPlanetId, 10) : null, focus })}
+          >
+            Continue
+          </button>
+          <button
+            className="flex-1 pa-btn-secondary py-2 px-4"
+            data-testid="combat-recycle-cancel"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CombatOverview = ({ user, planets, onNavigate, onSelectReport, onNavigateSection, onConfigureRecycle }) => {
   const [stats, setStats] = useState({
     totalVictories: 0,
     totalDefeats: 0,
@@ -256,6 +404,16 @@ const CombatOverview = ({ user, onNavigate, onSelectReport, onNavigateSection })
         />
       </div>
 
+      <div className="overview-section" style={{ marginTop: '16px' }}>
+        <div className="pa-panel p-4 text-sm text-slate-200/90">
+          <div className="font-semibold text-white mb-1">Gameplay rules (MVP)</div>
+          <ul className="text-slate-200/80" style={{ paddingLeft: '18px', listStyle: 'disc' }}>
+            <li>Winning a battle does not always grant ownership. A planet is captured only when the defender is eliminated/undefended (Option A).</li>
+            <li>Debris fields appear from battles you participated in (or explored intel) and must be recycled to turn into resources.</li>
+          </ul>
+        </div>
+      </div>
+
       <div className="overview-sections">
         <div className="overview-section">
           <h3>Recent Battles</h3>
@@ -327,15 +485,10 @@ const CombatOverview = ({ user, onNavigate, onSelectReport, onNavigateSection })
                         data-testid="combat-send-recyclers"
                         onClick={() => {
                           if (!planet?.id) return;
-                          const preset = { mission: 'recycle', target_planet_id: planet.id };
-                          localStorage.setItem('fleetSendPreset', JSON.stringify(preset));
-                          try {
-                            window.dispatchEvent(new CustomEvent('planetarion:fleetSendPreset', { detail: preset }));
-                          } catch (e) {
-                            // Non-fatal: localStorage fallback still works.
-                            console.warn('Failed to dispatch fleetSendPreset event:', e);
-                          }
-                          onNavigateSection?.('fleets');
+                          const label = planet?.name
+                            ? `${planet.name}${planet.coordinates ? ` (${planet.coordinates})` : ''}`
+                            : `Planet ${planet?.id || ''}`;
+                          onConfigureRecycle?.({ target_planet_id: planet.id, target_label: label, planets });
                         }}
                       >
                         Send recyclers

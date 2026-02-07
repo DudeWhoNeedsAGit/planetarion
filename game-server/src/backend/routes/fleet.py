@@ -10,19 +10,35 @@ This module handles all fleet-related operations including:
 All endpoints require JWT authentication and operate on the user's own fleets.
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet, Fleet, Research, TickLog
 from backend.config import get_forced_travel_time_seconds, get_min_travel_time_seconds
-from backend.services.fleet_arrival import FleetArrivalService, COLONIZATION_ERRORS, MISSION_ERRORS
+from backend.services.fleet_arrival import FleetArrivalService, COLONIZATION_ERRORS
 from backend.services.fleet_state_machine import FleetStateMachine, FleetStateError
+from backend.services.economy_sinks import fleet_upkeep_deuterium_per_tick, fleet_upkeep_deuterium_per_hour
 from datetime import datetime, timedelta, timezone
 import math
 
 fleet_mgmt_bp = Blueprint('fleet_mgmt', __name__, url_prefix='/api/fleet')
 
 INVENTORY_FLEET_MISSION = 'inventory'
+FLEET_SHIP_KEYS = (
+    'small_cargo',
+    'large_cargo',
+    'light_fighter',
+    'heavy_fighter',
+    'cruiser',
+    'battleship',
+    'colony_ship',
+    'recycler',
+    'espionage_probe',
+    'bomber',
+    'destroyer',
+    'deathstar',
+    'battlecruiser',
+)
 
 def _iso_utc(dt: datetime | None) -> str | None:
     """Return ISO-8601 UTC timestamp with 'Z' suffix.
@@ -53,11 +69,38 @@ def serialize_fleet_ships(fleet):
     }
 
 
+def _parse_ship_transfer_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('Invalid ships payload')
+
+    parsed = {}
+    for ship_type, raw_count in payload.items():
+        if ship_type not in FLEET_SHIP_KEYS:
+            raise ValueError(f'Invalid ship type: {ship_type}')
+
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            raise ValueError(f'Invalid count for {ship_type}')
+
+        if count < 0:
+            raise ValueError(f'Invalid count for {ship_type}')
+        if count == 0:
+            continue
+        parsed[ship_type] = count
+
+    if not parsed:
+        raise ValueError('At least one ship must be specified')
+
+    return parsed
+
+
 def serialize_fleet(fleet, planet_dict=None):
     # Import here to avoid circular imports
     from backend.services.fleet_travel import FleetTravelService
 
     planet_dict = planet_dict or {}
+    upkeep_tick = fleet_upkeep_deuterium_per_tick(fleet, current_app.config)
     return {
         'id': fleet.id,
         'mission': fleet.mission,
@@ -69,6 +112,11 @@ def serialize_fleet(fleet, planet_dict=None):
         'arrival_time': _iso_utc(fleet.arrival_time),
         'eta': fleet.eta,
         'travel_info': FleetTravelService.calculate_travel_info(fleet),
+        'upkeep': {
+            'deuterium_per_tick': upkeep_tick,
+            'deuterium_per_hour': fleet_upkeep_deuterium_per_hour(fleet, current_app.config),
+            'enabled': bool(current_app.config.get("ECONOMY_SINKS_ENABLED", False)),
+        },
         'start_planet': get_planet_info(fleet.start_planet_id, planet_dict),
         'target_planet': get_planet_info(fleet.target_planet_id, planet_dict) if fleet.target_planet_id and fleet.target_planet_id > 0 else None
     }
@@ -80,8 +128,13 @@ def get_user_fleets():
     user_id = int(get_jwt_identity())
     print(f"DEBUG: User ID from JWT: {user_id}")
 
+    include_inventory = request.args.get('include_inventory', '0').lower() in ('1', 'true', 'yes')
+
     print("DEBUG: Querying fleets for user...")
-    fleets = Fleet.query.filter_by(user_id=user_id).all()
+    query = Fleet.query.filter_by(user_id=user_id)
+    if not include_inventory:
+        query = query.filter(Fleet.mission != INVENTORY_FLEET_MISSION)
+    fleets = query.all()
     print(f"DEBUG: Found {len(fleets)} fleets for user")
 
     # Get planet information for display
@@ -306,6 +359,127 @@ def dissolve_fleet(fleet_id: int):
 
     return jsonify({'message': 'Fleet dissolved successfully'}), 200
 
+@fleet_mgmt_bp.route('/<int:fleet_id>/split', methods=['POST'])
+@jwt_required()
+def split_fleet(fleet_id: int):
+    """
+    Split ships from one stationed fleet into a new stationed fleet on the same planet.
+
+    The new fleet is always created with mission='stationed' to avoid creating duplicate
+    inventory fleets.
+    """
+    user_id = int(get_jwt_identity())
+    payload = request.get_json() or {}
+    ships_raw = payload.get('ships')
+
+    source_fleet = Fleet.query.filter_by(id=fleet_id, user_id=user_id).first()
+    if not source_fleet:
+        return jsonify({'error': 'Fleet not found'}), 404
+
+    if source_fleet.status != 'stationed':
+        return jsonify({'error': 'Only stationed fleets can be split'}), 400
+
+    try:
+        ships = _parse_ship_transfer_payload(ships_raw)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    for ship_type, count in ships.items():
+        available = getattr(source_fleet, ship_type, 0) or 0
+        if available < count:
+            return jsonify({
+                'error': f'Not enough {ship_type} ships available. Requested: {count}, Available: {available}'
+            }), 400
+
+    new_fleet = Fleet(
+        user_id=user_id,
+        mission='stationed',
+        status='stationed',
+        start_planet_id=source_fleet.start_planet_id,
+        target_planet_id=source_fleet.start_planet_id,
+        departure_time=datetime.utcnow(),
+        arrival_time=datetime.utcnow(),
+    )
+    db.session.add(new_fleet)
+    db.session.flush()
+
+    for ship_type, count in ships.items():
+        source_value = getattr(source_fleet, ship_type, 0) or 0
+        target_value = getattr(new_fleet, ship_type, 0) or 0
+        setattr(source_fleet, ship_type, source_value - count)
+        setattr(new_fleet, ship_type, target_value + count)
+
+    db.session.commit()
+
+    planets = Planet.query.filter_by(user_id=user_id).all()
+    planet_dict = {p.id: p for p in planets}
+
+    return jsonify({
+        'message': 'Fleet split successfully',
+        'source_fleet': serialize_fleet(source_fleet, planet_dict),
+        'new_fleet': serialize_fleet(new_fleet, planet_dict),
+    }), 200
+
+
+@fleet_mgmt_bp.route('/<int:fleet_id>/transfer', methods=['POST'])
+@jwt_required()
+def transfer_fleet_ships(fleet_id: int):
+    """Transfer ships between two stationed fleets on the same planet."""
+    user_id = int(get_jwt_identity())
+    payload = request.get_json() or {}
+    ships_raw = payload.get('ships')
+    target_fleet_id = payload.get('target_fleet_id')
+
+    source_fleet = Fleet.query.filter_by(id=fleet_id, user_id=user_id).first()
+    if not source_fleet:
+        return jsonify({'error': 'Fleet not found'}), 404
+    if source_fleet.status != 'stationed':
+        return jsonify({'error': 'Only stationed fleets can transfer ships'}), 400
+
+    try:
+        target_fleet_id = int(target_fleet_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid target_fleet_id'}), 400
+
+    target_fleet = Fleet.query.filter_by(id=target_fleet_id, user_id=user_id).first()
+    if not target_fleet:
+        return jsonify({'error': 'Target fleet not found'}), 404
+    if target_fleet.id == source_fleet.id:
+        return jsonify({'error': 'Cannot transfer ships to the same fleet'}), 400
+    if target_fleet.status != 'stationed':
+        return jsonify({'error': 'Target fleet must be stationed'}), 400
+    if target_fleet.start_planet_id != source_fleet.start_planet_id:
+        return jsonify({'error': 'Fleets must be stationed on the same planet'}), 400
+
+    try:
+        ships = _parse_ship_transfer_payload(ships_raw)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    for ship_type, count in ships.items():
+        available = getattr(source_fleet, ship_type, 0) or 0
+        if available < count:
+            return jsonify({
+                'error': f'Not enough {ship_type} ships available. Requested: {count}, Available: {available}'
+            }), 400
+
+    for ship_type, count in ships.items():
+        source_value = getattr(source_fleet, ship_type, 0) or 0
+        target_value = getattr(target_fleet, ship_type, 0) or 0
+        setattr(source_fleet, ship_type, source_value - count)
+        setattr(target_fleet, ship_type, target_value + count)
+
+    db.session.commit()
+
+    planets = Planet.query.filter_by(user_id=user_id).all()
+    planet_dict = {p.id: p for p in planets}
+
+    return jsonify({
+        'message': 'Fleet transfer completed',
+        'source_fleet': serialize_fleet(source_fleet, planet_dict),
+        'target_fleet': serialize_fleet(target_fleet, planet_dict),
+    }), 200
+
 @fleet_mgmt_bp.route('/send', methods=['POST'])
 @jwt_required()
 def send_fleet():
@@ -380,6 +554,18 @@ def send_fleet():
         if not target_planet.user_id:
             return jsonify({'error': 'Cannot attack unowned planet. Use colonization instead.'}), 400
 
+        # PvP protection: block attacks against protected players, but never block attacks on pirates NPC.
+        target_owner = User.query.get(target_planet.user_id) if target_planet.user_id else None
+        target_owner_name = str(getattr(target_owner, 'username', '') or '').lower()
+        target_protection_until = getattr(target_owner, 'protection_until', None)
+        if (
+            target_owner
+            and target_owner_name != 'pirates'
+            and target_protection_until is not None
+            and target_protection_until > datetime.utcnow()
+        ):
+            return jsonify({'error': 'Target player is under protection'}), 400
+
         fleet.mission = 'attack'
         fleet.target_planet_id = target_planet_id
         fleet.status = 'traveling'
@@ -416,9 +602,16 @@ def send_fleet():
         if fleet.recycler <= 0:
             return jsonify({'error': 'Fleet must contain recycler ships for recycle mission'}), 400
 
+        recycle_focus = (data.get('recycle_focus') or data.get('recycle_resource') or 'proportional')
+        recycle_focus = str(recycle_focus).strip().lower()
+        if recycle_focus not in ('proportional', 'metal', 'crystal', 'deuterium'):
+            return jsonify({'error': 'Invalid recycle_focus'}), 400
+
         fleet.mission = 'recycle'
         fleet.target_planet_id = target_planet_id
         fleet.status = 'traveling'
+        # Store recycler focus without altering schema. (This field is otherwise used for colonization/exploration coords.)
+        fleet.target_coordinates = f"recycle:{recycle_focus}"
 
     elif data['mission'] in ('transport', 'deploy'):
         if target_planet_id is None:
@@ -558,7 +751,7 @@ def send_fleet():
 
         if colonization_difficulty > user_research_level:
             return jsonify({
-                'error': COLONIZATION_ERRORS['insufficient_research'],
+                'error': f'{COLONIZATION_ERRORS["insufficient_research"]} (requires L{colonization_difficulty}, you have L{user_research_level})',
                 'required_level': colonization_difficulty,
                 'current_level': user_research_level
             }), 400

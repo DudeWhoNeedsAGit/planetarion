@@ -13,7 +13,7 @@ const formatNumber = (value) => {
   return n.toLocaleString();
 };
 
-const BattleReports = ({ user }) => {
+const BattleReports = ({ user, onNavigateSection }) => {
   const [reports, setReports] = useState([]);
   const [selectedReport, setSelectedReport] = useState(null);
   const [filter, setFilter] = useState('all'); // all, victories, defeats, recent
@@ -120,6 +120,7 @@ const BattleReports = ({ user }) => {
           formatTimeAgo={formatTimeAgo}
           calculateTotalLosses={calculateTotalLosses}
           userId={user?.id}
+          onNavigateSection={onNavigateSection}
         />
       )}
     </div>
@@ -164,7 +165,7 @@ const BattleReportCard = ({ report, userId, onClick, formatTimeAgo, calculateTot
   );
 };
 
-export const BattleReportDetailModal = ({ report, onClose, formatTimeAgo, calculateTotalLosses, userId }) => {
+export const BattleReportDetailModal = ({ report, onClose, formatTimeAgo, calculateTotalLosses, userId, onNavigateSection }) => {
   const [roundDetails, setRoundDetails] = useState([]);
 
   useEffect(() => {
@@ -184,6 +185,32 @@ export const BattleReportDetailModal = ({ report, onClose, formatTimeAgo, calcul
   const winnerName = report?.winner?.username || 'Unknown';
   const planetName = report?.planet?.name || 'Unknown';
   const coords = report?.planet?.coordinates ? report.planet.coordinates : '';
+  const targetPlanetId = report?.planet?.id || null;
+
+  const dispatchFleetPreset = (preset) => {
+    try {
+      localStorage.setItem('fleetSendPreset', JSON.stringify(preset));
+      window.dispatchEvent(new CustomEvent('planetarion:fleetSendPreset', { detail: preset }));
+    } catch (e) {
+      // ignore
+    }
+    onClose?.();
+    onNavigateSection?.('fleets');
+  };
+
+  const openTargetInGalaxy = () => {
+    const raw = String(coords || '');
+    const parts = raw.split(':').map((v) => parseInt(v, 10));
+    if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+      try {
+        localStorage.setItem('planetarion:galaxy:focus', JSON.stringify({ x: parts[0], y: parts[1], z: parts[2] }));
+      } catch (e) {
+        // ignore
+      }
+    }
+    onClose?.();
+    onNavigateSection?.('galaxy');
+  };
 
   return (
     <div className="battle-report-detail modal">
@@ -238,6 +265,44 @@ export const BattleReportDetailModal = ({ report, onClose, formatTimeAgo, calcul
             {report.debris_recycled && (
               <p className="recycled-notice">Already collected</p>
             )}
+          </div>
+        </div>
+
+        <div className="mt-4 p-3 border border-slate-500/25 rounded-md bg-slate-900/40" data-testid="combat-outcome-cta-card">
+          <div className="text-sm text-slate-200/90 font-semibold mb-2">Next action</div>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              className="pa-btn-primary px-3 py-2 text-sm"
+              data-testid="combat-cta-send-recyclers"
+              disabled={!targetPlanetId}
+              onClick={() => {
+                if (!targetPlanetId) return;
+                dispatchFleetPreset({ mission: 'recycle', target_planet_id: targetPlanetId });
+              }}
+            >
+              Send recyclers
+            </button>
+            <button
+              type="button"
+              className="pa-btn-secondary px-3 py-2 text-sm"
+              data-testid="combat-cta-attack-again"
+              disabled={!targetPlanetId}
+              onClick={() => {
+                if (!targetPlanetId) return;
+                dispatchFleetPreset({ mission: 'attack', target_planet_id: targetPlanetId });
+              }}
+            >
+              Attack again
+            </button>
+            <button
+              type="button"
+              className="pa-btn-secondary px-3 py-2 text-sm"
+              data-testid="combat-cta-open-target-galaxy"
+              onClick={openTargetInGalaxy}
+            >
+              Open target
+            </button>
           </div>
         </div>
 

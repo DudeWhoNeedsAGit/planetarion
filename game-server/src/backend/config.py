@@ -11,6 +11,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Repo-relative roots (avoid leaking local absolute paths in defaults/docs).
+# config.py lives at: game-server/src/backend/config.py
+GAME_SERVER_ROOT = Path(__file__).resolve().parents[2]
+INSTANCE_DIR = GAME_SERVER_ROOT / "instance"
+
+def _default_sqlite_uri(filename: str) -> str:
+    return f"sqlite:////{(INSTANCE_DIR / filename).as_posix()}"
+
 def get_min_travel_time_seconds():
     """Minimum fleet travel time in seconds.
 
@@ -78,6 +86,70 @@ class Config:
     except (TypeError, ValueError):
         TICK_SCHEDULER_INTERVAL_SECONDS = 5
 
+    # Research MVP tuning
+    # Tick scale in this project is accelerated (resources use divisor=72).
+    RESEARCH_RP_PER_HOUR_PER_LAB_LEVEL = int(os.getenv("PLANETARION_RESEARCH_RP_PER_HOUR_PER_LAB_LEVEL", "10"))
+    # Duration per target level (real-time seconds). Kept low in testing for fast feedback loops.
+    try:
+        RESEARCH_DURATION_SECONDS_PER_LEVEL = max(0, int(os.getenv("PLANETARION_RESEARCH_DURATION_SECONDS_PER_LEVEL", "60")))
+    except (TypeError, ValueError):
+        RESEARCH_DURATION_SECONDS_PER_LEVEL = 60
+
+    # Pirate AI (Encounter Director) — disabled by default until tuned.
+    PIRATE_AI_ENABLED = os.getenv("PLANETARION_PIRATE_AI_ENABLED", "").lower() in ("1", "true", "yes", "on")
+    try:
+        PIRATE_AI_INTERVAL_SECONDS = max(1, int(os.getenv("PLANETARION_PIRATE_AI_INTERVAL_SECONDS", "3600")))
+    except (TypeError, ValueError):
+        PIRATE_AI_INTERVAL_SECONDS = 3600
+    try:
+        PIRATE_AI_MAX_RAIDS_PER_24H = max(0, int(os.getenv("PLANETARION_PIRATE_AI_MAX_RAIDS_PER_24H", "2")))
+    except (TypeError, ValueError):
+        PIRATE_AI_MAX_RAIDS_PER_24H = 2
+    try:
+        PIRATE_AI_COOLDOWN_SECONDS = max(0, int(os.getenv("PLANETARION_PIRATE_AI_COOLDOWN_SECONDS", str(6 * 3600))))
+    except (TypeError, ValueError):
+        PIRATE_AI_COOLDOWN_SECONDS = 6 * 3600
+
+    try:
+        PIRATE_AI_PEAK_START_HOUR = int(os.getenv("PLANETARION_PIRATE_AI_PEAK_START_HOUR", "18"))
+    except (TypeError, ValueError):
+        PIRATE_AI_PEAK_START_HOUR = 18
+    try:
+        PIRATE_AI_PEAK_END_HOUR = int(os.getenv("PLANETARION_PIRATE_AI_PEAK_END_HOUR", "20"))
+    except (TypeError, ValueError):
+        PIRATE_AI_PEAK_END_HOUR = 20
+
+    try:
+        PIRATE_AI_PEAK_PROB_MULT = float(os.getenv("PLANETARION_PIRATE_AI_PEAK_PROB_MULT", "1.5"))
+    except (TypeError, ValueError):
+        PIRATE_AI_PEAK_PROB_MULT = 1.5
+    try:
+        PIRATE_AI_PEAK_POWER_MULT = float(os.getenv("PLANETARION_PIRATE_AI_PEAK_POWER_MULT", "1.25"))
+    except (TypeError, ValueError):
+        PIRATE_AI_PEAK_POWER_MULT = 1.25
+    try:
+        PIRATE_AI_DIFFICULTY_FACTOR = float(os.getenv("PLANETARION_PIRATE_AI_DIFFICULTY_FACTOR", "0.8"))
+    except (TypeError, ValueError):
+        PIRATE_AI_DIFFICULTY_FACTOR = 0.8
+
+    # Deterministic RNG salt (falls back to SECRET_KEY if unset).
+    PIRATE_AI_SECRET_SALT = os.getenv("PLANETARION_PIRATE_AI_SECRET_SALT")
+
+    # Economy sinks (fleet upkeep lite) - disabled by default for safe rollout.
+    ECONOMY_SINKS_ENABLED = os.getenv("PLANETARION_ECONOMY_SINKS_ENABLED", "").lower() in ("1", "true", "yes", "on")
+    try:
+        FLEET_UPKEEP_DEUTERIUM_PER_WEIGHT_PER_TICK = max(
+            0.0, float(os.getenv("PLANETARION_FLEET_UPKEEP_DEUTERIUM_PER_WEIGHT_PER_TICK", "0.001"))
+        )
+    except (TypeError, ValueError):
+        FLEET_UPKEEP_DEUTERIUM_PER_WEIGHT_PER_TICK = 0.001
+    FLEET_UPKEEP_EXCLUDE_INVENTORY = os.getenv("PLANETARION_FLEET_UPKEEP_EXCLUDE_INVENTORY", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""
@@ -97,7 +169,11 @@ class TestingConfig(Config):
     FLASK_ENV = 'testing'
 
     # Use environment variable for database (allows central control)
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:////home/yves/repos/planetarion/game-server/instance/test_e2e.db')
+    # IMPORTANT:
+    # - `instance/test_e2e.db` is used for manual dev server + Playwright UI runs (make test-env / e2e-ui).
+    # - pytest should NOT share that file, otherwise running tests will wipe your manual-play DB.
+    # Keep pytest on a separate default DB file, while still allowing overrides via DATABASE_URL.
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', _default_sqlite_uri("test_pytest.db"))
 
     # Test JWT secret
     JWT_SECRET_KEY = 'test-jwt-secret-key'
@@ -112,6 +188,9 @@ class TestingConfig(Config):
     # (prevents background tick side-effects during pytest runs).
     if not os.getenv("PLANETARION_TICK_SCHEDULER_ENABLED"):
         TICK_SCHEDULER_ENABLED = False
+
+    # Faster research completion in tests/E2E.
+    RESEARCH_DURATION_SECONDS_PER_LEVEL = int(os.getenv("PLANETARION_RESEARCH_DURATION_SECONDS_PER_LEVEL", "2"))
 
 
 class ProductionConfig(Config):

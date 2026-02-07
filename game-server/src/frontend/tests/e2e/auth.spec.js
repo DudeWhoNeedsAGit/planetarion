@@ -31,7 +31,7 @@ test.describe('Authentication', () => {
     await page.click('button[type="submit"]');
 
     // Should show error message
-    await expect(page.locator('text=Login failed').or(page.locator('.bg-red-600'))).toBeVisible();
+    await expect(page.getByTestId('auth-error')).toBeVisible();
   });
 
   test('should show error for registration with existing username', async ({ page }) => {
@@ -48,7 +48,7 @@ test.describe('Authentication', () => {
     await page.click('button[type="submit"]');
 
     // Should show error message
-    await expect(page.locator('text=Registration failed').or(page.locator('.bg-red-600'))).toBeVisible();
+    await expect(page.getByTestId('auth-error')).toBeVisible();
   });
 
   test('should validate password confirmation on registration', async ({ page }) => {

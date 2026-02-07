@@ -10,8 +10,26 @@ test.describe('Dashboard', () => {
   test('should display dashboard with user info', async ({ page }) => {
     // Check header
     await expect(page.locator('h1')).toContainText('Planetarion');
-    await expect(page.locator('text=Welcome, e2etestuser!')).toBeVisible();
+    await expect(page.locator('text=Empire Overview')).toBeVisible();
     await expect(page.getByTestId('logout-button')).toBeVisible();
+    await expect(page.getByTestId('quest-helper')).toBeVisible();
+    await expect(page.getByTestId('quest-helper-progress')).toBeVisible();
+  });
+
+  test('quest helper next action navigates away from overview', async ({ page }) => {
+    await expect(page.locator('text=Empire Overview')).toBeVisible();
+    const nextAction = page.getByTestId('quest-helper-next-action');
+    if (!(await nextAction.isVisible())) {
+      test.skip(true, 'Quest arc already complete in current snapshot.');
+    }
+    await nextAction.click();
+    const movedToSection =
+      (await page.getByTestId('section-shipyard').count()) > 0 ||
+      (await page.getByTestId('section-planets').count()) > 0 ||
+      (await page.getByTestId('section-fleets').count()) > 0 ||
+      (await page.getByTestId('section-combat').count()) > 0;
+    const galaxyOpened = (await page.getByTestId('galaxy-modal').count()) > 0;
+    expect(movedToSection || galaxyOpened).toBeTruthy();
   });
 
   test('should navigate between sections', async ({ page }) => {
@@ -20,8 +38,7 @@ test.describe('Dashboard', () => {
     await expect(page.getByTestId('nav-planets')).toBeVisible();
     await expect(page.getByTestId('nav-fleets')).toBeVisible();
     await expect(page.getByTestId('nav-research')).toBeVisible();
-    await expect(page.getByTestId('nav-alliance')).toBeVisible();
-    await expect(page.getByTestId('nav-messages')).toBeVisible();
+    await expect(page.getByTestId('nav-more')).toBeVisible();
 
     await goToSection(page, 'planets');
     await expect(page.locator('text=Your Planets')).toBeVisible();
@@ -30,10 +47,10 @@ test.describe('Dashboard', () => {
     await expect(page.getByTestId('fleet-management')).toBeVisible();
 
     await goToSection(page, 'research');
-    await expect(page.locator('text=Research Lab')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /research lab/i })).toBeVisible();
 
     await goToSection(page, 'overview');
-    await expect(page.locator('text=Welcome back, e2etestuser!')).toBeVisible();
+    await expect(page.locator('text=Empire Overview')).toBeVisible();
   });
 
   test('should display planet information', async ({ page }) => {
@@ -61,15 +78,10 @@ test.describe('Dashboard', () => {
   test('should display research placeholder', async ({ page }) => {
     await goToSection(page, 'research');
 
-    // Check for research placeholder content
-    await expect(page.locator('text=Research Lab')).toBeVisible();
-    await expect(page.locator('text=Research system coming soon')).toBeVisible();
-
-    // Check for technology list
-    const technologies = ['Energy Technology', 'Laser Technology', 'Ion Technology'];
-    for (const tech of technologies) {
-      await expect(page.locator(`text=${tech}`)).toBeVisible();
-    }
+    // Research MVP: ensure the dashboard renders key UI sections.
+    await expect(page.getByRole('heading', { name: /research lab/i })).toBeVisible();
+    await expect(page.getByTestId('research-points')).toBeVisible();
+    await expect(page.getByTestId('research-queue-empty')).toBeVisible();
   });
 
   test('should display alliance placeholder', async ({ page }) => {

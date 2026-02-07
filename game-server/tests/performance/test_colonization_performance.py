@@ -115,6 +115,15 @@ class TestColonizationPerformance:
 
     def test_concurrent_users_colonization_load(self, db_session):
         """Test colonization performance under concurrent user load"""
+        # SQLite + a shared SQLAlchemy session is not thread-safe; this test is meant
+        # for a real DB (Postgres/MySQL) where each worker has its own session/connection.
+        try:
+            dialect = db_session.get_bind().dialect.name
+        except Exception:
+            dialect = None
+        if dialect == "sqlite":
+            pytest.skip("Concurrent DB performance test is not supported on SQLite test DB.")
+
         num_users = 5
         fleets_per_user = 3
 
@@ -391,7 +400,8 @@ class TestColonizationPerformance:
 
             # Measure query time
             start_time = time.time()
-            fleets = db_session.query(db_session.query().entity).filter_by(user_id=user.id).all()
+            from backend.models import Fleet
+            fleets = db_session.query(Fleet).filter_by(user_id=user.id).all()
             query_time = time.time() - start_time
             query_times.append(query_time)
 
@@ -430,7 +440,10 @@ class TestColonizationPerformance:
 
     def test_api_endpoint_performance(self):
         """Test API endpoint performance under load"""
-        # This test requires running backend server
+        # This test requires a running backend server.
+        if os.environ.get("PLANETARION_PERF_API", "").lower() not in ("1", "true", "yes"):
+            pytest.skip("API performance tests require a running backend (set PLANETARION_PERF_API=1).")
+
         auth_data = login_as_test_user()
 
         # Test fleet creation API performance

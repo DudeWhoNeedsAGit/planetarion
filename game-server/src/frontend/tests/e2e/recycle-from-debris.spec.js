@@ -1,8 +1,21 @@
 const { test, expect } = require('@playwright/test');
 const { apiLogin, loginViaLocalStorage } = require('./helpers/testSession');
 
+async function restoreSnapshot(request) {
+  const devToken = process.env.PLANETARION_DEV_ADMIN_TOKEN || 'planetarion-dev';
+  const res = await request.post('http://localhost:5000/api/admin/db/restore', {
+    headers: { 'X-Planetarion-Dev-Token': devToken },
+  });
+  expect(res.ok()).toBeTruthy();
+}
+
 test.describe('Recycle From Combat Debris', () => {
+  test.setTimeout(120000);
+
   test('build recyclers → click Send recyclers in Combat → collect + return + deposit', async ({ page, request }) => {
+    // Keep this spec deterministic even when running in the full suite.
+    await restoreSnapshot(request);
+
     const token = await apiLogin(request, 'e2etestuser', 'testpassword123');
     const headers = { Authorization: `Bearer ${token}` };
 
@@ -87,9 +100,12 @@ test.describe('Recycle From Combat Debris', () => {
     const targetPlanetId = debrisTarget.planet.id;
     const targetCoords = debrisTarget.planet.coordinates;
     const debrisResources = debrisTarget.resources || {};
-    const expectedMetal = Math.min(Number(debrisResources.metal || 0), 5000);
-    const expectedCrystal = Math.min(Number(debrisResources.crystal || 0), 5000);
-    const expectedDeut = Math.min(Number(debrisResources.deuterium || 0), 5000);
+    const totalDebris =
+      Number(debrisResources.metal || 0) +
+      Number(debrisResources.crystal || 0) +
+      Number(debrisResources.deuterium || 0);
+    // We built 10 recyclers → capacity 10,000 total (1000 each).
+    const expectedTotalCollected = Math.min(totalDebris, 10000);
 
     // UI: login and click "Send recyclers" from the Combat debris list.
     await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
@@ -102,6 +118,11 @@ test.describe('Recycle From Combat Debris', () => {
     const debrisCard = debrisList.locator('[data-testid="combat-debris-field"]', { hasText: targetCoords }).first();
     await expect(debrisCard).toBeVisible({ timeout: 60000 });
     await debrisCard.getByTestId('combat-send-recyclers').evaluate((el) => el.click());
+
+    // Combat now asks for an explicit source planet + recycling focus before navigating to Fleets.
+    const recycleCfg = page.getByTestId('combat-recycle-config-modal');
+    await expect(recycleCfg).toBeVisible({ timeout: 60000 });
+    await recycleCfg.getByTestId('combat-recycle-continue').click();
 
     // Should navigate to Fleets and open send modal preset to recycle.
     await expect(page.getByTestId('fleet-send-modal')).toBeVisible({ timeout: 60000 });
@@ -132,8 +153,7 @@ test.describe('Recycle From Combat Debris', () => {
     const afterCrystal = Number(afterStartPlanet?.resources?.crystal ?? afterStartPlanet?.crystal ?? 0);
     const afterDeut = Number(afterStartPlanet?.resources?.deuterium ?? afterStartPlanet?.deuterium ?? 0);
 
-    expect(afterMetal - beforeMetal).toBeGreaterThanOrEqual(expectedMetal);
-    expect(afterCrystal - beforeCrystal).toBeGreaterThanOrEqual(expectedCrystal);
-    expect(afterDeut - beforeDeut).toBeGreaterThanOrEqual(expectedDeut);
+    const gainedTotal = (afterMetal - beforeMetal) + (afterCrystal - beforeCrystal) + (afterDeut - beforeDeut);
+    expect(gainedTotal).toBeGreaterThanOrEqual(expectedTotalCollected);
   });
 });

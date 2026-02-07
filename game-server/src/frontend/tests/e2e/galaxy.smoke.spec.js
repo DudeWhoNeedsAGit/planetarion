@@ -37,7 +37,35 @@ test.describe('Galaxy Map UI Smoke', () => {
     const systemMarkers = page.locator('[data-test-marker="system-marker"]');
     await expect(systemMarkers.first()).toBeVisible({ timeout: 60000 });
 
-    await systemMarkers.first().click();
+    // SVG markers can confuse Playwright's click hit-testing when the viewBox
+    // changes; dispatching the event is stable and still verifies wiring.
+    await systemMarkers.first().dispatchEvent('click');
     await expect(page.getByRole('heading', { name: /^🌌 System/i })).toBeVisible({ timeout: 60000 });
+  });
+
+  test('minimap click recenters and wheel zoom has no passive warning', async ({ page }) => {
+    const consoleLines = [];
+    page.on('console', (msg) => consoleLines.push(msg.text()));
+
+    await page.getByTestId('nav-galaxy').click();
+    await expect(page.getByTestId('galaxy-modal')).toBeVisible();
+    await expect(page.getByText('Loading Galaxy Data...')).not.toBeVisible({ timeout: 60000 });
+
+    const centerLine = page.getByText(/Center:\s*-?\d+:-?\d+:-?\d+/);
+    const before = await centerLine.textContent();
+
+    await page.getByTestId('galaxy-minimap-map').click({ position: { x: 12, y: 12 } });
+
+    await expect(centerLine).not.toHaveText(before || '', { timeout: 15000 });
+
+    const viewport = page.getByTestId('galaxy-viewport');
+    await viewport.hover();
+    await page.mouse.wheel(0, 120);
+
+    // Give the wheel handler time to run and log.
+    await page.waitForTimeout(250);
+
+    const passiveWarning = consoleLines.find((l) => l.includes('Unable to preventDefault inside passive event listener'));
+    expect(passiveWarning).toBeFalsy();
   });
 });

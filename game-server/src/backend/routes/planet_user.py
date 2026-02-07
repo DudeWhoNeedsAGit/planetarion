@@ -10,11 +10,13 @@ All endpoints require JWT authentication and operate only on the user's owned pl
 Building upgrades include resource cost calculations and production rate updates.
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
-from backend.models import User, Planet
+from backend.models import User, Planet, PlanetRenameLog, TickLog, Fleet
+from datetime import datetime
 from backend.config import get_planet_storage_caps
+from backend.services.economy_sinks import upkeep_by_start_planet_per_tick
 
 planet_mgmt_bp = Blueprint('planet_mgmt', __name__, url_prefix='/api/planet')
 
@@ -31,12 +33,14 @@ ALLOWED_BUILDINGS = {
 }
 
 
-def _planet_to_dict(planet):
+def _planet_to_dict(planet, upkeep_per_tick=0):
     caps = get_planet_storage_caps(planet)
     return {
         'id': planet.id,
         'user_id': planet.user_id,
         'name': planet.name,
+        'is_home_planet': bool(getattr(planet, 'is_home_planet', False)),
+        'colonized_at': planet.colonized_at.isoformat() if getattr(planet, 'colonized_at', None) else None,
         'x': planet.x,
         'y': planet.y,
         'z': planet.z,
@@ -77,7 +81,7 @@ def _planet_to_dict(planet):
             'deuterium_tank': getattr(planet, 'deuterium_tank', 0),
             'research_lab': getattr(planet, 'research_lab', 0),
         },
-        'production_rates': calculate_production_rates(planet),
+        'production_rates': calculate_production_rates(planet, upkeep_per_tick=upkeep_per_tick),
     }
 
 
@@ -88,7 +92,8 @@ def get_user_planets():
     User.query.get_or_404(user_id)
 
     planets = Planet.query.filter_by(user_id=user_id).all()
-    return jsonify([_planet_to_dict(planet) for planet in planets])
+    upkeep_map = upkeep_by_start_planet_per_tick(Fleet.query.filter_by(user_id=user_id).all(), current_app.config)
+    return jsonify([_planet_to_dict(planet, upkeep_per_tick=upkeep_map.get(planet.id, 0)) for planet in planets])
 
 @planet_mgmt_bp.route('/<int:planet_id>', methods=['GET'])
 @jwt_required()
@@ -96,7 +101,8 @@ def get_planet(planet_id):
     user_id = int(get_jwt_identity())
     planet = Planet.query.filter_by(id=planet_id, user_id=user_id).first_or_404()
 
-    return jsonify(_planet_to_dict(planet))
+    upkeep_map = upkeep_by_start_planet_per_tick(Fleet.query.filter_by(user_id=user_id).all(), current_app.config)
+    return jsonify(_planet_to_dict(planet, upkeep_per_tick=upkeep_map.get(planet.id, 0)))
 
 
 @planet_mgmt_bp.route('/buildings', methods=['PUT'])
@@ -191,7 +197,61 @@ def update_buildings():
         }
     )
 
-def calculate_production_rates(planet):
+
+@planet_mgmt_bp.route('/rename', methods=['PUT'])
+@jwt_required()
+def rename_planet():
+    """Rename a planet exactly once (per planet)."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+
+    planet_id = data.get('planet_id')
+    new_name = (data.get('new_name') or '').strip()
+
+    try:
+        planet_id = int(planet_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid planet_id'}), 400
+
+    if not new_name:
+        return jsonify({'error': 'New name is required'}), 400
+    if len(new_name) > 32:
+        return jsonify({'error': 'Name too long (max 32 chars)'}), 400
+    if any(ch in new_name for ch in ['\n', '\r', '\t']):
+        return jsonify({'error': 'Invalid name'}), 400
+
+    planet = Planet.query.filter_by(id=planet_id, user_id=user_id).first_or_404()
+
+    already = PlanetRenameLog.query.filter_by(planet_id=planet.id).first()
+    if already:
+        return jsonify({'error': 'This planet has already been renamed once'}), 400
+
+    old_name = planet.name
+    planet.name = new_name
+
+    db.session.add(PlanetRenameLog(
+        planet_id=planet.id,
+        user_id=user_id,
+        old_name=old_name,
+        new_name=new_name,
+    ))
+
+    db.session.add(TickLog(
+        tick_number=0,
+        planet_id=planet.id,
+        event_type='planet_rename',
+        event_description=f'Planet renamed: "{old_name}" → "{new_name}"',
+        timestamp=datetime.utcnow(),
+    ))
+
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Planet renamed',
+        'planet': _planet_to_dict(planet),
+    }), 200
+
+def calculate_production_rates(planet, upkeep_per_tick=0):
     """Calculate resource production rates based on buildings"""
     # Simplified production formulas
     metal_rate = planet.metal_mine * 30 * (1.1 ** planet.metal_mine)  # Base production with exponential growth
@@ -214,10 +274,14 @@ def calculate_production_rates(planet):
         crystal_rate *= energy_ratio
         deuterium_rate *= energy_ratio
 
+    upkeep_tick = max(0, int(upkeep_per_tick or 0))
+    upkeep_hour = upkeep_tick * 72
     return {
         'metal_per_hour': int(metal_rate),
         'crystal_per_hour': int(crystal_rate),
         'deuterium_per_hour': int(deuterium_rate),
+        'deuterium_upkeep_per_hour': int(upkeep_hour),
+        'net_deuterium_per_hour': int(deuterium_rate) - int(upkeep_hour),
         'energy_production': energy_production,
         'energy_consumption': energy_consumption
     }

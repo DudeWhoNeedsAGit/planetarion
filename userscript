@@ -1,0 +1,221 @@
+// ==UserScript==
+// @name         Grok / AI Prompt Blaster
+// @namespace    http://yourname/
+// @match        https://*.x.ai/*
+// @match        https://chat.openai.com/*
+// @match        https://chatgpt.com/*
+// @grant        none
+// @version      1.0
+// @author       Grok + Gemini
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    const STYLE = "dark sci‑fi UI, Planetarion branding, sleek futuristic, high readability at small sizes";
+
+    const STYLE_TEMPLATE = "A badass {style} game UI asset featuring {subject}, {details}, cohesive sci‑fi branding, strict color palette: #0B1B3A #1E293B #334155 #E5E7EB, accent palette: #2563EB #14B8A6 #F59E0B #EF4444 #A855F7 #22C55E, consistent icon line weight, soft bevel, subtle glow, crisp edges, clean readable composition, high contrast, minimal clutter, generous negative space for UI text overlays, ultra detailed, cinematic lighting, 8k, masterpiece";
+
+    const VARIATIONS = [
+        ["Recycler Mission launched banner", "16:9, recyclers launching from orbit, blue/teal accent, empty safe area for text overlay"],
+        ["Recycler Return payout banner", "16:9, cargo bay unloading glowing ingots, celebratory particles, empty safe area for amount overlay"],
+        ["Planet Captured banner", "16:9, planet with flag/marker overlay, heroic lighting, empty safe area for CTA 'Rename planet'"],
+        ["Colonization Successful banner", "16:9, colony domes at sunrise, hopeful mood, empty safe area for CTA 'Open planet'"],
+        ["Planet Rename modal background", "4:3 or 1.6:1 panel background, subtle texture, clean frame, no text, UI-friendly"],
+        ["Minimap frame", "1:1 square UI frame, subtle sci‑fi bezel, inner safe area for dots, clean readable edges"],
+        ["Marker icon - Pirate", "1:1 icon, red accent, simple pirate skull/flare motif, flat + slight depth, readable at 16–24px"],
+        ["Marker icon - Other Player", "1:1 icon, yellow accent, radar blip / chevron motif, readable at 16–24px"],
+        ["Marker icon - My Planet", "1:1 icon, blue accent, home/planet ring motif, readable at 16–24px"],
+        ["Galaxy Tooltip card background", "3:2 card background, subtle gradient, space texture, empty safe area for text"],
+        ["Fleet Traveling status badge", "1:1 icon, motion streaks, neutral/blue accent, minimal and readable"],
+        ["Fleet Arrived status badge", "1:1 icon, checkmark + beacon glow, green accent, minimal and readable"],
+        ["Fleet Returning status badge", "1:1 icon, U-turn arrow + trail, neutral/teal accent, minimal and readable"],
+        ["Fleet Recall warning badge", "1:1 icon, exclamation + dashed path, amber accent, minimal and readable"],
+        ["Research Complete banner", "16:9, circuitry + blueprint overlay, bright highlight, empty safe area for tech name"],
+        ["Tech icon - Astrophysics", "1:1 icon, star chart + compass motif, blue accent, readable at 48–96px"],
+        ["Tech icon - Colonization Tech", "1:1 icon, planet + expansion ring motif, teal accent, readable at 48–96px"],
+        ["Ship icon - Small Cargo", "1:1 icon, compact cargo ship silhouette, utilitarian, subtle blue highlight, readable at 24–64px"],
+        ["Ship icon - Large Cargo", "1:1 icon, bulky cargo hauler silhouette, larger mass, subtle blue highlight, readable at 24–64px"],
+        ["Ship icon - Light Fighter", "1:1 icon, small agile fighter silhouette, sharp wings, subtle cyan highlight, readable at 24–64px"],
+        ["Ship icon - Heavy Fighter", "1:1 icon, heavier fighter silhouette, thicker hull, subtle cyan highlight, readable at 24–64px"],
+        ["Ship icon - Cruiser", "1:1 icon, medium warship silhouette, long hull with dorsal spine, subtle teal highlight, readable at 24–64px"],
+        ["Ship icon - Battleship", "1:1 icon, capital ship silhouette, imposing profile, subtle teal highlight, readable at 24–64px"],
+        ["Ship icon - Battlecruiser", "1:1 icon, advanced capital ship silhouette, aggressive contours, subtle teal highlight, readable at 24–64px"],
+        ["Ship icon - Bomber", "1:1 icon, heavy strike craft silhouette, bomb bay motif, subtle amber highlight, readable at 24–64px"],
+        ["Ship icon - Destroyer", "1:1 icon, angular destroyer silhouette, forward cannon motif, subtle red highlight, readable at 24–64px"],
+        ["Ship icon - Deathstar", "1:1 icon, ominous super-weapon silhouette, spherical with trench, subtle red highlight, readable at 24–64px"],
+        ["Ship icon - Colony Ship", "1:1 icon, colony ship silhouette, ring/antenna habitat modules, subtle green highlight, readable at 24–64px"],
+        ["Ship icon - Recycler", "1:1 icon, recycler silhouette, claw/drone arms motif, subtle green highlight, readable at 24–64px"],
+        ["Ship icon - Espionage Probe", "1:1 icon, small probe silhouette, antenna/sensor dish motif, subtle purple highlight, readable at 24–64px"],
+        ["Building icon - Metal Mine", "1:1 icon, industrial mine headframe + conveyor motif, metal-gray + blue accent, readable at 24–64px"],
+        ["Building icon - Crystal Mine", "1:1 icon, crystal excavation rig + shard motif, crystal-blue accent, readable at 24–64px"],
+        ["Building icon - Deuterium Synthesizer", "1:1 icon, refinery/synth tower with droplet motif, teal accent, readable at 24–64px"],
+        ["Building icon - Solar Plant", "1:1 icon, solar array panels with sun glow motif, yellow accent, readable at 24–64px"],
+        ["Building icon - Fusion Reactor", "1:1 icon, reactor core ring with plasma glow, orange/amber accent, readable at 24–64px"],
+        ["Building icon - Metal Storage", "1:1 icon, stacked ingot crates / warehouse motif, neutral gray accent, readable at 24–64px"],
+        ["Building icon - Crystal Storage", "1:1 icon, secure vault with crystal shard motif, blue accent, readable at 24–64px"],
+        ["Building icon - Deuterium Tank", "1:1 icon, cylindrical tank with droplet gauge motif, teal accent, readable at 24–64px"],
+        ["Building icon - Research Lab", "1:1 icon, lab tower with atom/circuit motif, purple/blue accent, readable at 24–64px"],
+        ["Resource payout burst (generic)", "1:1 icon, abstract shards + glow, neutral/gold accent, usable near numbers"]
+    ];
+
+    const FULL_PROMPTS = VARIATIONS.map(([subject, details]) => {
+        let p = STYLE_TEMPLATE;
+        p = p.replace(/{style}/g, STYLE);
+        p = p.replace(/{subject}/g, subject);
+        p = p.replace(/{details}/g, details);
+        return p;
+    });
+
+    const DELAY_BETWEEN = 240000;
+
+    const INPUT_SELECTOR  = 'div.ProseMirror';
+    const SUBMIT_SELECTOR = '#composer-submit-button';
+
+    let running = false;
+    let paused  = false;
+    let index   = 0;
+    let timer   = null;
+
+    function getInput() { return document.querySelector(INPUT_SELECTOR); }
+    function getSubmitBtn() { return document.querySelector(SUBMIT_SELECTOR); }
+
+    function sendNext() {
+    if (!running || paused) return;
+
+    if (index >= FULL_PROMPTS.length) {
+        console.log("[Blaster] All prompts sent.");
+        running = false;
+        updateButtons();
+        return;
+    }
+
+    const input = getInput();
+    const btn = getSubmitBtn();
+
+    if (!input) {
+        console.error("[Blaster] Input area not found!");
+        return;
+    }
+
+    // 1. Focus and Clear
+    input.focus();
+    input.innerHTML = "";
+
+    // 2. Use execCommand to "type" the text
+    // This is more likely to trigger the site's internal 'state' update
+    document.execCommand('insertText', false, FULL_PROMPTS[index]);
+
+    // 3. Force a 'selectionchange' and 'input' event
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // 4. Wait 2 seconds (as requested)
+    setTimeout(() => {
+        if (!running || paused) return;
+
+        // Re-check button in case it was disabled
+        const submitBtn = getSubmitBtn();
+
+        if (submitBtn && !submitBtn.disabled) {
+            console.log(`[Blaster] Submitting prompt ${index + 1}`);
+            submitBtn.click();
+
+            index++;
+            // 5. Wait 60 seconds for the next one
+            timer = setTimeout(sendNext, 60000);
+        } else {
+            console.warn("[Blaster] Submit button is disabled. Retrying in 5s...");
+            timer = setTimeout(sendNext, 5000);
+        }
+    }, 2000);
+}
+
+    function startBlaster() {
+        if (running && !paused) return;
+        running = true;
+        paused = false;
+        if (!timer) sendNext();
+        updateButtons();
+    }
+
+    function togglePause() {
+        if (!running) return;
+        paused = !paused;
+        if (paused) clearTimeout(timer);
+        else sendNext();
+        updateButtons();
+    }
+
+    function killBlaster() {
+        running = false;
+        paused = false;
+        index = 0;
+        clearTimeout(timer);
+        updateButtons();
+    }
+
+    function updateButtons() {
+        startBtn.textContent = running && !paused ? "Running..." : "Start (F1)";
+        startBtn.style.background = running && !paused ? "#4CAF50" : "#2196F3";
+
+        pauseBtn.textContent = paused ? "Resume (F2)" : "Pause (F2)";
+        pauseBtn.style.background = paused ? "#FFC107" : "#757575";
+
+        killBtn.disabled = !running;
+    }
+
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.bottom = '20px';
+    container.style.right = '20px';
+    container.style.zIndex = '999999';
+    container.style.display = 'flex';
+    container.style.gap = '10px';
+    container.style.background = 'rgba(0,0,0,0.6)';
+    container.style.padding = '10px';
+    container.style.borderRadius = '8px';
+    container.style.backdropFilter = 'blur(4px)';
+
+    const startBtn = document.createElement('button');
+    startBtn.textContent = "Start (F1)";
+    startBtn.style.padding = '10px 16px';
+    startBtn.style.background = '#2196F3';
+    startBtn.style.color = 'white';
+    startBtn.style.border = 'none';
+    startBtn.style.borderRadius = '6px';
+    startBtn.style.cursor = 'pointer';
+    startBtn.onclick = startBlaster;
+
+    const pauseBtn = document.createElement('button');
+    pauseBtn.textContent = "Pause (F2)";
+    pauseBtn.style.padding = '10px 16px';
+    pauseBtn.style.background = '#757575';
+    pauseBtn.style.color = 'white';
+    pauseBtn.style.border = 'none';
+    pauseBtn.style.borderRadius = '6px';
+    pauseBtn.style.cursor = 'pointer';
+    pauseBtn.onclick = togglePause;
+
+    const killBtn = document.createElement('button');
+    killBtn.textContent = "Kill";
+    killBtn.style.padding = '10px 16px';
+    killBtn.style.background = '#F44336';
+    killBtn.style.color = 'white';
+    killBtn.style.border = 'none';
+    killBtn.style.borderRadius = '6px';
+    killBtn.style.cursor = 'pointer';
+    killBtn.disabled = true;
+    killBtn.onclick = killBlaster;
+
+    container.appendChild(startBtn);
+    container.appendChild(pauseBtn);
+    container.appendChild(killBtn);
+    document.body.appendChild(container);
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'F1') { e.preventDefault(); startBlaster(); }
+        if (e.key === 'F2') { e.preventDefault(); togglePause(); }
+    });
+
+    console.log("[Blaster] Ready - use buttons or F1/F2");
+})();

@@ -123,6 +123,13 @@ cd game-server
 make test-env-tick
 ```
 
+For a full repopulate (and automatic snapshot regeneration):
+
+```bash
+cd game-server
+make test-env-tick FRESH=1
+```
+
 ### Access Points
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:5000
@@ -135,6 +142,14 @@ cd game-server
 make test-env-reset
 make scenario-two-player-reset
 ```
+
+Snapshot workflow:
+- `make test-env-snapshot` creates/overwrites `instance/test_e2e.db.bak` from the current DB.
+- `make test-env-reset` restores `instance/test_e2e.db` from the snapshot via the admin API (fast).
+
+Galaxy population notes (testing):
+- The populate endpoint seeds a 2D galaxy layout (fixed Z slice) and uses a spiral-like distribution so the GalaxyMap is visually readable.
+- `make test-env-tick FRESH=1` repopulates and refreshes the snapshot in one go.
 
 ## 📦 Installation
 

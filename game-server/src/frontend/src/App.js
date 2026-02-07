@@ -10,6 +10,8 @@ import { ToastContainer } from './Toast';
 // Use external IP only for production
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 axios.defaults.baseURL = backendUrl;
+// Prevent "infinite spinners" when the backend is down or the browser has a stuck connection.
+axios.defaults.timeout = Number(process.env.REACT_APP_AXIOS_TIMEOUT_MS || 10000);
 
 // Axios request interceptor - automatically add JWT token to all requests
 axios.interceptors.request.use(
@@ -40,7 +42,7 @@ function AppContent() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [loading, setLoading] = useState(true);
-  const { toasts, removeToast } = useToast();
+  const { toasts, removeToast, showError, showInfo } = useToast();
 
   useEffect(() => {
     checkAuthStatus();
@@ -62,8 +64,24 @@ function AppContent() {
         setUser(response.data);
         setCurrentView('dashboard');
       } catch (error) {
-        localStorage.removeItem('token');
-        setCurrentView('login');
+        const status = error.response?.status;
+        if (status === 401) {
+          localStorage.removeItem('token');
+          setUser(null);
+          setCurrentView('login');
+          showError('Session expired. Please log in again.');
+        } else {
+          // Backend down / transient failure: keep token so we can recover after a restart.
+          showInfo('Backend unreachable. Retrying…');
+          try {
+            await new Promise((r) => setTimeout(r, 1500));
+            const retry = await axios.get('/api/auth/me');
+            setUser(retry.data);
+            setCurrentView('dashboard');
+          } catch (e2) {
+            setCurrentView('login');
+          }
+        }
       }
     } else {
       setCurrentView('login');
@@ -101,25 +119,44 @@ function AppContent() {
     setCurrentView('login');
   };
 
+  const refreshUser = async () => {
+    const response = await axios.get('/api/auth/me');
+    setUser(response.data);
+    return response.data;
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-space-dark flex items-center justify-center">
-        <div className="text-xl">Loading Planetarion...</div>
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="pa-card p-6 text-center">
+          <div className="text-xl font-semibold text-white">Loading Planetarion…</div>
+          <div className="text-sm text-slate-300/90 mt-2">Initializing command systems</div>
+        </div>
       </div>
     );
   }
 
   if (currentView === 'login') {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <>
+        <Login onLogin={handleLogin} />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
+    );
   }
 
   if (currentView === 'register') {
-    return <Register onRegister={handleRegister} />;
+    return (
+      <>
+        <Register onRegister={handleRegister} />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
+    );
   }
 
   return (
     <>
-      <Dashboard user={user} onLogout={handleLogout} />
+      <Dashboard user={user} onLogout={handleLogout} onUserRefresh={refreshUser} />
       <ToastContainer toasts={toasts} removeToast={removeToast} />
     </>
   );

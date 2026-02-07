@@ -11,9 +11,19 @@ class User(db.Model):
     alliance_id = db.Column(db.Integer, db.ForeignKey('alliances.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
+    last_seen_at = db.Column(db.DateTime)
+
+    # Commander profile (MVP; cosmetics are derived from level unless explicitly set).
+    commander_level = db.Column(db.Integer, default=1)
+    commander_xp = db.Column(db.BigInteger, default=0)
+    portrait_key = db.Column(db.String(64))
+    frame_key = db.Column(db.String(64))
 
     # Exploration data
     explored_systems = db.Column(db.Text)  # JSON string of explored coordinates
+
+    # Research queue (MVP: one active project per user; JSON string)
+    research_queue = db.Column(db.Text)
 
     # Player lifecycle / protection (for respawn loop)
     eliminated_at = db.Column(db.DateTime)
@@ -27,6 +37,44 @@ class User(db.Model):
 
     def __repr__(self):
         return f'<User {self.username}>'
+
+
+class PirateAIState(db.Model):
+    __tablename__ = "pirate_ai_state"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True, index=True)
+
+    last_action_at = db.Column(db.DateTime)
+    cooldown_until = db.Column(db.DateTime)
+
+    threat_level = db.Column(db.Float, default=0.0)
+    raids_last_24h = db.Column(db.Integer, default=0)
+    raids_window_start_at = db.Column(db.DateTime)
+
+    last_target_planet_id = db.Column(db.Integer, db.ForeignKey("planets.id"), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("pirate_ai_state", uselist=False))
+    last_target_planet = db.relationship("Planet", foreign_keys=[last_target_planet_id])
+
+    def __repr__(self):
+        return f"<PirateAIState user:{self.user_id} threat:{self.threat_level} raids24h:{self.raids_last_24h}>"
+
+
+class PirateAIConfigOverride(db.Model):
+    __tablename__ = "pirate_ai_config_overrides"
+
+    id = db.Column(db.Integer, primary_key=True)
+    config_key = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    config_value = db.Column(db.String(128), nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<PirateAIConfigOverride {self.config_key}={self.config_value}>"
 
 
 class Planet(db.Model):
@@ -72,6 +120,12 @@ class Planet(db.Model):
     base_attack_bonus = db.Column(db.Float, default=0.0)
     colonization_difficulty = db.Column(db.Integer, default=1)  # 1-5 scale
 
+    # Planet classification and environmental traits (used by colonization/perf tests and gameplay UI)
+    planet_type = db.Column(db.String(32), default="terrestrial")
+    temperature = db.Column(db.Integer, default=20)
+    size = db.Column(db.Integer, default=10000)
+    habitability = db.Column(db.Float, default=100.0)
+
     # Research lab for research point generation
     research_lab = db.Column(db.Integer, default=0)
 
@@ -83,6 +137,23 @@ class Planet(db.Model):
 
     def __repr__(self):
         return f'<Planet {self.name} ({self.x}:{self.y}:{self.z})>'
+
+
+class PlanetRenameLog(db.Model):
+    __tablename__ = 'planet_rename_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False, unique=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    renamed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    old_name = db.Column(db.String(100), nullable=False)
+    new_name = db.Column(db.String(100), nullable=False)
+
+    planet = db.relationship('Planet', backref=db.backref('rename_log', uselist=False))
+    user = db.relationship('User', backref='planet_rename_logs')
+
+    def __repr__(self):
+        return f'<PlanetRenameLog planet:{self.planet_id} user:{self.user_id}>'
 
 
 class Fleet(db.Model):
@@ -190,6 +261,22 @@ class TickLog(db.Model):
         return f'<TickLog tick:{self.tick_number} event:{self.event_type}>'
 
 
+class CommanderXPEvent(db.Model):
+    __tablename__ = "commander_xp_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    source_type = db.Column(db.String(32), nullable=False)
+    source_id = db.Column(db.String(128), nullable=False)
+    xp_awarded = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "source_type", "source_id", name="uq_commander_xp_event"),
+        db.Index("ix_commander_xp_event_user_source", "user_id", "source_type"),
+    )
+
+
 class ChatMessage(db.Model):
     __tablename__ = 'chat_messages'
 
@@ -235,8 +322,31 @@ class Research(db.Model):
     astrophysics = db.Column(db.Integer, default=0)
     interstellar_communication = db.Column(db.Integer, default=0)
 
+    # Additional tech fields used by tests / future gameplay (defaults keep MVP behavior).
+    energy_tech = db.Column(db.Integer, default=0)
+    laser_tech = db.Column(db.Integer, default=0)
+    ion_tech = db.Column(db.Integer, default=0)
+    hyperspace_tech = db.Column(db.Integer, default=0)
+    plasma_tech = db.Column(db.Integer, default=0)
+
+    combustion_drive = db.Column(db.Integer, default=0)
+    impulse_drive = db.Column(db.Integer, default=0)
+    hyperspace_drive = db.Column(db.Integer, default=0)
+
+    espionage_tech = db.Column(db.Integer, default=0)
+    computer_tech = db.Column(db.Integer, default=0)
+    intergalactic_research_network = db.Column(db.Integer, default=0)
+    graviton_tech = db.Column(db.Integer, default=0)
+
+    weapons_tech = db.Column(db.Integer, default=0)
+    shielding_tech = db.Column(db.Integer, default=0)
+    armour_tech = db.Column(db.Integer, default=0)
+    recycler_efficiency = db.Column(db.Integer, default=0)
+
     # Research points
     research_points = db.Column(db.BigInteger, default=0)
+    # Fractional RP accumulator so low rates still accrue over time.
+    research_points_fraction = db.Column(db.Float, default=0.0)
 
     # Relationships
     user = db.relationship('User', backref='research_data')

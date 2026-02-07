@@ -19,7 +19,7 @@ const ShipStats = ({ shipType, stats, compact = false }) => {
       'bomber': 'text-orange-400',
       'ultimate': 'text-yellow-400'
     };
-    return colors[role] || 'text-gray-400';
+    return colors[role] || 'text-slate-300/70';
   };
 
   const getRoleIcon = (role) => {
@@ -68,53 +68,53 @@ const ShipStats = ({ shipType, stats, compact = false }) => {
       </div>
 
       {/* Combat Stats */}
-      <div className="bg-gray-700 rounded-lg p-3">
+      <div className="pa-panel p-3">
         <h4 className="text-white font-medium mb-2 flex items-center">
           <span className="mr-2">⚔️</span>
           Combat Statistics
         </h4>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="flex justify-between">
-            <span className="text-gray-400">Firepower:</span>
+            <span className="text-slate-300/70">Firepower:</span>
             <span className="text-red-400 font-medium">{formatNumber(stats.firepower)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">Defense:</span>
+            <span className="text-slate-300/70">Defense:</span>
             <span className="text-blue-400 font-medium">{stats.defense}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">Shield:</span>
+            <span className="text-slate-300/70">Shield:</span>
             <span className="text-green-400 font-medium">{stats.shield}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">Speed:</span>
+            <span className="text-slate-300/70">Speed:</span>
             <span className="text-purple-400 font-medium">{formatNumber(stats.speed)}</span>
           </div>
         </div>
       </div>
 
       {/* Capacity Stats */}
-      <div className="bg-gray-700 rounded-lg p-3">
+      <div className="pa-panel p-3">
         <h4 className="text-white font-medium mb-2 flex items-center">
           <span className="mr-2">📦</span>
           Capacity & Fuel
         </h4>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="flex justify-between">
-            <span className="text-gray-400">Cargo:</span>
+            <span className="text-slate-300/70">Cargo:</span>
             <span className="text-yellow-400 font-medium">{formatNumber(stats.cargo)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">Fuel Use:</span>
+            <span className="text-slate-300/70">Fuel Use:</span>
             <span className="text-orange-400 font-medium">{stats.fuel}/unit</span>
           </div>
         </div>
       </div>
 
       {/* Ship Description */}
-      <div className="bg-gray-700 rounded-lg p-3">
+      <div className="pa-panel p-3">
         <h4 className="text-white font-medium mb-2">📋 Description</h4>
-        <p className="text-gray-300 text-sm leading-relaxed">
+        <p className="text-slate-200/80 text-sm leading-relaxed">
           {stats.description}
         </p>
       </div>

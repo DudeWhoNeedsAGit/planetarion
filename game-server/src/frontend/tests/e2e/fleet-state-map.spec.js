@@ -41,7 +41,8 @@ test.describe('Fleet State Map (UI)', () => {
     expect(match).toBeTruthy();
     const fleetId = match[1];
 
-    await sendButton.click();
+    // DOM click avoids occasional pointer interception from fixed UI overlays.
+    await sendButton.evaluate((el) => el.click());
     await expect(page.getByTestId('fleet-send-modal')).toBeVisible();
 
     await page.getByTestId('fleet-mission-select').selectOption('deploy');
@@ -58,11 +59,11 @@ test.describe('Fleet State Map (UI)', () => {
     await expect(pendingBanner).toBeVisible({ timeout: 60000 });
 
     // Run a tick and ensure the fleet is no longer pending.
-    const runTick = page.getByTestId('run-tick-button');
-    await expect(runTick).toBeVisible();
-    await runTick.click();
-    // Some flows need a second tick (e.g. return leg). Deploy should not, but a second click is harmless.
-    await runTick.click();
+    await request.post('http://localhost:5000/api/tick');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('planetarion:tick')));
+    // Some flows need a second tick (e.g. return leg). Deploy should not, but a second tick is harmless.
+    await request.post('http://localhost:5000/api/tick');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('planetarion:tick')));
 
     // Deployed fleets can move to another planet, so the tile may disappear from the current planet view.
     // Accept either outcome:

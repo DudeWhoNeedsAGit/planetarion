@@ -13,17 +13,17 @@ const AnimatedButton = ({
   const getVariantStyles = () => {
     switch (variant) {
       case 'primary':
-        return 'bg-blue-600 hover:bg-blue-700 text-white';
+        return 'pa-btn-primary';
       case 'secondary':
-        return 'bg-gray-600 hover:bg-gray-700 text-white';
+        return 'pa-btn-secondary';
       case 'success':
-        return 'bg-green-600 hover:bg-green-700 text-white';
+        return 'pa-btn-success';
       case 'danger':
-        return 'bg-red-600 hover:bg-red-700 text-white';
+        return 'pa-btn-danger';
       case 'outline':
-        return 'bg-transparent border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white';
+        return 'pa-btn-ghost';
       default:
-        return 'bg-gray-700 hover:bg-gray-600 text-white';
+        return 'pa-btn-secondary';
     }
   };
 
@@ -52,7 +52,7 @@ const AnimatedButton = ({
 
   return (
     <motion.button
-      className={`relative overflow-hidden rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:cursor-not-allowed ${getVariantStyles()} ${getSizeStyles()} ${className}`}
+      className={`relative overflow-hidden focus:outline-none focus:ring-2 focus:ring-blue-400/70 disabled:cursor-not-allowed ${getVariantStyles()} ${getSizeStyles()} ${className}`}
       variants={buttonVariants}
       initial="idle"
       whileHover={disabled ? "disabled" : "hover"}

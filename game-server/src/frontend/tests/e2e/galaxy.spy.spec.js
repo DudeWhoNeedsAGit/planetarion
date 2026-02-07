@@ -29,17 +29,24 @@ test.describe('Galaxy → Spy Flow', () => {
     await expect(page.getByTestId('galaxy-modal')).toBeVisible();
     await expect(page.getByText('Loading Galaxy Data...')).not.toBeVisible({ timeout: 60000 });
 
-    // Prefer a marker that is known to have colonies owned by someone else (enemy/pirates).
-    // In test env, fog-of-war is disabled so the system details should list planets immediately.
-    const enemyMarker = page.locator('[data-test-marker="system-marker"][title*="Enemy Colony"]').first();
-    if (await enemyMarker.count()) {
-      await enemyMarker.click();
-    } else {
-      await page.locator('[data-test-marker="system-marker"]').first().click();
+    // Use quick-focus to a known pirate candidate in the current loaded scan range.
+    const focusPirate = page.getByTestId('galaxy-focus-nearest-pirate');
+    await expect(focusPirate).toBeVisible({ timeout: 60000 });
+    const disabled = await focusPirate.isDisabled();
+    if (disabled) {
+      test.skip(true, 'No pirate system found in current scan range.');
     }
+    const pirateCoords = (await focusPirate.getAttribute('title')) || '';
+    await focusPirate.click();
+
+    const markerSelector = `[data-test-marker="system-marker"][title="${pirateCoords}"]`;
+    const marker = page.locator(markerSelector).first();
+    await expect(marker).toBeVisible({ timeout: 60000 });
+    // Use an event dispatch (works for SVG markers and avoids pointer interception).
+    await marker.dispatchEvent('click');
     await expect(page.getByRole('heading', { name: /^🌌 System/i })).toBeVisible({ timeout: 60000 });
 
-    const spyButtons = page.getByRole('button', { name: 'Spy' });
+    const spyButtons = page.getByRole('button', { name: /Spy/i });
     await expect(spyButtons.first()).toBeVisible({ timeout: 60000 });
     await expect(spyButtons.first()).toBeEnabled({ timeout: 60000 });
     // DOM click is more reliable than pointer-based click with overlays (chat, scroll containers).

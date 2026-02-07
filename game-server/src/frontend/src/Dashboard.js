@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Navigation from './Navigation';
 import Overview from './Overview';
@@ -8,20 +8,107 @@ import GalaxyMap from './GalaxyMap';
 import CombatDashboard from './CombatDashboard';
 import ChatPanel from './ChatPanel';
 import ShipStats from './ShipStats';
+import ResearchDashboard from './ResearchDashboard';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
+import planetarionLogo from './assets/branding/planetarion-logo.png';
+import CommanderPortrait from './CommanderPortrait';
+import BackgroundMusicToggle from './BackgroundMusicToggle';
 
-function Dashboard({ user, onLogout }) {
+function Dashboard({ user, onLogout, onUserRefresh = null }) {
   const [activeSection, setActiveSection] = useState('overview');
   const [planets, setPlanets] = useState([]);
   const [selectedPlanet, setSelectedPlanet] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [upgrading, setUpgrading] = useState(false);
-  const [ticking, setTicking] = useState(false);
   const [pollingInterval, setPollingInterval] = useState(null);
   const [chatMinimized, setChatMinimized] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameTargetPlanetId, setRenameTargetPlanetId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
   const { showSuccess, showError } = useToast();
-  const showTickButton = process.env.REACT_APP_SHOW_TICK_BUTTON === 'true';
+  const idleGains = user?.idle_gains || null;
+  const [portraitKey, setPortraitKey] = useState(() => user?.portrait_key || 'male');
+  const [portraitSize, setPortraitSize] = useState(() => (window.innerWidth < 640 ? 72 : 108));
+  const selectedPlanetRef = useRef(null);
+
+  useEffect(() => {
+    setPortraitKey(user?.portrait_key || 'male');
+  }, [user?.portrait_key]);
+
+  useEffect(() => {
+    selectedPlanetRef.current = selectedPlanet;
+  }, [selectedPlanet]);
+
+  useEffect(() => {
+    const onResize = () => setPortraitSize(window.innerWidth < 640 ? 72 : 108);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const updatePortraitKey = async (nextKey) => {
+    const key = String(nextKey || '').toLowerCase();
+    setPortraitKey(key);
+    try {
+      await axios.patch('/api/auth/me', { portrait_key: key });
+      if (typeof onUserRefresh === 'function') await onUserRefresh();
+      showSuccess('Commander portrait updated.');
+    } catch (e) {
+      showError('Failed to update commander portrait.');
+    }
+  };
+
+  const formatDuration = (seconds) => {
+    const s = Math.max(0, Number(seconds || 0));
+    const m = Math.floor(s / 60);
+    const h = Math.floor(m / 60);
+    if (h > 0) return `${h}h ${m % 60}m`;
+    if (m > 0) return `${m}m`;
+    return `${Math.floor(s)}s`;
+  };
+
+		  const shouldShowIdleSummary = () => {
+		    if (!idleGains) return false;
+		    if (Number(idleGains.duration_seconds || 0) < 120) return false;
+		    const r = idleGains.resources || {};
+		    const hasRes = (r.metal || 0) + (r.crystal || 0) + (r.deuterium || 0) > 0;
+		    const hasRp = Number(idleGains.research_points || 0) > 0;
+		    const ev = idleGains.events || {};
+		    const hasEvents = Number(ev.fleets_resolved || 0) + Number(ev.research_completed || 0) > 0;
+		    return hasRes || hasRp || hasEvents;
+		  };
+
+		  const renderCommanderXpBar = () => {
+		    const xpProgress = user?.commander_xp_progress || null;
+		    if (!xpProgress) return null;
+		    const into = Math.max(0, Number(xpProgress.into_level ?? 0));
+		    const toNext = Math.max(0, Number(xpProgress.to_next ?? 0));
+		    if (!(toNext > 0)) return null;
+		    const pct = Math.max(0, Math.min(100, Math.floor((into / toNext) * 100)));
+
+		    return (
+		      <div className="mt-1.5" data-testid="commander-xp-bar">
+		        <div className="flex items-center justify-between text-[11px] text-slate-300/80">
+		          <span>XP</span>
+		          <span className="text-slate-100/90 font-semibold">
+		            {into.toLocaleString()} / {toNext.toLocaleString()} • {pct}%
+		          </span>
+		        </div>
+		        <div className="mt-1 h-2 rounded-full bg-slate-900/60 border border-slate-200/10 overflow-hidden">
+		          <div
+		            className="h-full rounded-full"
+		            style={{
+		              width: `${pct}%`,
+		              background: 'rgba(37, 99, 235, 0.85)',
+		              boxShadow: '0 0 16px rgba(37, 99, 235, 0.35)',
+		            }}
+		          />
+		        </div>
+		      </div>
+		    );
+		  };
 
   useEffect(() => {
     fetchPlanets(); // Initial fetch
@@ -38,6 +125,16 @@ function Dashboard({ user, onLogout }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof onUserRefresh !== 'function') return undefined;
+    const interval = setInterval(() => {
+      onUserRefresh().catch(() => {
+        // non-fatal background refresh
+      });
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [onUserRefresh]);
+
   // Update selected planet when planets data changes
   useEffect(() => {
     if (planets.length > 0 && !selectedPlanet) {
@@ -53,36 +150,30 @@ function Dashboard({ user, onLogout }) {
 
   const fetchPlanets = async () => {
     try {
-      const response = await axios.get('/api/planet');
+      setLoadError(null);
+      const response = await axios.get('/api/planet', { timeout: 10000 });
       setPlanets(response.data);
-      if (response.data.length > 0 && !selectedPlanet) {
+      if (response.data.length > 0 && !selectedPlanetRef.current) {
         setSelectedPlanet(response.data[0]);
       }
     } catch (error) {
       console.error('Error fetching planets:', error);
+      const message = error.response?.data?.error || error.message || 'Failed to load planets';
+      setLoadError(message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRunTick = async () => {
-    setTicking(true);
-    try {
-      await axios.post('/api/tick');
-      await fetchPlanets();
-      // Notify other screens (FleetManagement, Combat, etc.) to refresh.
-      try {
-        window.dispatchEvent(new CustomEvent('planetarion:tick'));
-      } catch (e) {
-        // ignore
-      }
-      showSuccess('Tick executed');
-    } catch (error) {
-      showError(error.response?.data?.error || 'Tick failed');
-    } finally {
-      setTicking(false);
-    }
+  const closeRenameModal = () => {
+    setShowRenameModal(false);
+    setRenameTargetPlanetId(null);
+    setRenameValue('');
   };
+
+  const renameTargetPlanet = renameTargetPlanetId != null
+    ? planets.find((p) => p.id === renameTargetPlanetId) || (selectedPlanet?.id === renameTargetPlanetId ? selectedPlanet : null)
+    : null;
 
   const handleBuildingUpgrade = async (buildingType, newLevel) => {
     if (!selectedPlanet) return;
@@ -280,6 +371,7 @@ function Dashboard({ user, onLogout }) {
   const [shipStats, setShipStats] = useState({});
   const [shipRoles, setShipRoles] = useState([]);
   const [selectedShipRole, setSelectedShipRole] = useState('all');
+  const [shipBuildQuantities, setShipBuildQuantities] = useState({});
 
   // Fetch ship data on component mount
   useEffect(() => {
@@ -312,6 +404,22 @@ function Dashboard({ user, onLogout }) {
       selectedPlanet.resources.crystal >= (cost.crystal * quantity) &&
       selectedPlanet.resources.deuterium >= (cost.deuterium * quantity)
     );
+  };
+
+  const getMaxBuildableShipCount = (shipType) => {
+    if (!selectedPlanet || !shipCosts[shipType]) return 0;
+    const cost = shipCosts[shipType];
+    const resources = selectedPlanet.resources || { metal: 0, crystal: 0, deuterium: 0 };
+
+    const limits = [];
+    if ((cost.metal || 0) > 0) limits.push(Math.floor((resources.metal || 0) / cost.metal));
+    if ((cost.crystal || 0) > 0) limits.push(Math.floor((resources.crystal || 0) / cost.crystal));
+    if ((cost.deuterium || 0) > 0) limits.push(Math.floor((resources.deuterium || 0) / cost.deuterium));
+
+    if (limits.length === 0) return 0;
+    const raw = Math.max(0, Math.min(...limits));
+    // Guard against absurd sizes in UI; backend can still accept large numbers if desired.
+    return Math.min(raw, 10_000_000);
   };
 
   const formatShipName = (shipType) => {
@@ -431,45 +539,84 @@ function Dashboard({ user, onLogout }) {
       case 'overview':
         return (
           <div data-testid="section-overview">
-            <Overview user={user} planets={planets} />
+            <Overview user={user} planets={planets} onNavigateSection={setActiveSection} />
           </div>
         );
-      case 'planets':
-        return (
-          <div className="space-y-6" data-testid="section-planets">
-            {/* Planet Selection */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
-                🪐 Your Planets ({planets.length})
-              </h2>
-              <div className="flex space-x-4 overflow-x-auto">
-                {planets.map(planet => {
-                  const isHomePlanet = planet.is_home_planet;
-                  const isColony = !isHomePlanet;
-
-                  return (
-                    <button
-                      key={planet.id}
-                      onClick={() => setSelectedPlanet(planet)}
-                      className={`px-4 py-2 rounded whitespace-nowrap transition-all duration-200 ${
-                        selectedPlanet?.id === planet.id
-                          ? 'bg-blue-600 text-white shadow-lg scale-105'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:scale-102'
-                      } ${isHomePlanet ? 'ring-2 ring-yellow-400' : 'ring-2 ring-green-400'}`}
-                      title={isHomePlanet ? '🏠 Home Planet' : '🌍 Colony'}
-                    >
-                      <span className="flex items-center space-x-2">
-                        <span>{isHomePlanet ? '🏠' : '🌍'}</span>
-                        <span>{planet.name}</span>
-                        <span className="text-xs opacity-75">({planet.x}:{planet.y}:{planet.z})</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+	      case 'planets':
+	        return (
+	          <div className="space-y-6" data-testid="section-planets">
+	            {/* Planet Selection */}
+	            <div className="mb-6">
+	              <div className="flex items-center justify-between gap-4 mb-4">
+	                <h2 className="text-2xl font-bold text-white flex items-center">
+	                  🪐 Your Planets ({planets.length})
+	                </h2>
+	                <button
+	                  type="button"
+	                  className="pa-btn-secondary px-4 py-2"
+	                  disabled={!selectedPlanet || renaming}
+	                  onClick={() => {
+	                    if (!selectedPlanet) return;
+                      setRenameTargetPlanetId(selectedPlanet.id);
+	                    setRenameValue(selectedPlanet.name || '');
+	                    setShowRenameModal(true);
+	                  }}
+	                  data-testid="planet-rename-open"
+	                >
+	                  Rename
+	                </button>
+	              </div>
+              {planets.length > 6 ? (
+                <div className="pa-card p-4">
+                  <label className="block text-sm text-slate-200/90 mb-2">Select planet</label>
+                  <select
+                    className="pa-input"
+                    data-testid="planet-selector-dropdown"
+                    value={selectedPlanet?.id ?? ''}
+                    onChange={(e) => {
+                      const id = parseInt(e.target.value, 10);
+                      const p = planets.find((pl) => pl.id === id);
+                      if (p) setSelectedPlanet(p);
+                    }}
+                  >
+                    {planets.map((planet) => (
+                      <option key={planet.id} value={planet.id}>
+                        {(planet.is_home_planet ? '🏠 ' : '🌍 ') + planet.name} ({planet.x}:{planet.y}:{planet.z})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-2 text-xs text-slate-300/70">
+                    Tip: You have {planets.length} planets — use the dropdown to switch quickly.
+                  </div>
+                </div>
+              ) : (
+                <div className="flex space-x-4 overflow-x-auto overflow-y-hidden max-w-full pb-1" data-testid="planet-selector-buttons">
+                  {planets.map(planet => {
+                    const isHomePlanet = planet.is_home_planet;
+                    return (
+                      <button
+                        key={planet.id}
+                        onClick={() => setSelectedPlanet(planet)}
+                        className={`whitespace-nowrap transition-colors duration-150 ${
+                          selectedPlanet?.id === planet.id
+                            ? 'pa-btn-primary shadow-lg'
+                            : 'pa-btn-secondary'
+                        } ${isHomePlanet ? 'ring-2 ring-yellow-400' : 'ring-2 ring-green-400'}`}
+                        title={isHomePlanet ? '🏠 Home Planet' : '🌍 Colony'}
+                      >
+                        <span className="flex items-center space-x-2">
+                          <span>{isHomePlanet ? '🏠' : '🌍'}</span>
+                          <span>{planet.name}</span>
+                          <span className="text-xs opacity-75">({planet.x}:{planet.y}:{planet.z})</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Planet Summary */}
-              <div className="mt-4 flex items-center space-x-6 text-sm text-gray-400">
+              <div className="mt-4 flex items-center space-x-6 text-sm text-slate-300/70">
                 <span className="flex items-center space-x-1">
                   <span className="w-3 h-3 bg-yellow-400 rounded-full"></span>
                   <span>Home Planet: {planets.filter(p => p.is_home_planet).length}</span>
@@ -484,7 +631,7 @@ function Dashboard({ user, onLogout }) {
             {selectedPlanet && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 	                {/* Resources */}
-	                <div className="bg-gray-800 rounded-lg p-6">
+	                <div className="pa-card p-6">
 	                  <h3 className="text-xl font-bold mb-4 text-white">Resources</h3>
 	                  <div className="space-y-3">
 	                    <div className="flex justify-between items-center">
@@ -492,7 +639,7 @@ function Dashboard({ user, onLogout }) {
 	                      <span className="text-metal font-bold">
 	                        {selectedPlanet.resources.metal.toLocaleString()}
 	                        {selectedPlanet.storage?.metal != null && (
-	                          <span className="text-gray-400 text-xs font-normal ml-2">
+	                          <span className="text-slate-300/70 text-xs font-normal ml-2">
 	                            / {selectedPlanet.storage.metal.toLocaleString()}
 	                          </span>
 	                        )}
@@ -503,7 +650,7 @@ function Dashboard({ user, onLogout }) {
 	                      <span className="text-crystal font-bold">
 	                        {selectedPlanet.resources.crystal.toLocaleString()}
 	                        {selectedPlanet.storage?.crystal != null && (
-	                          <span className="text-gray-400 text-xs font-normal ml-2">
+	                          <span className="text-slate-300/70 text-xs font-normal ml-2">
 	                            / {selectedPlanet.storage.crystal.toLocaleString()}
 	                          </span>
 	                        )}
@@ -514,7 +661,7 @@ function Dashboard({ user, onLogout }) {
 	                      <span className="text-deuterium font-bold">
 	                        {selectedPlanet.resources.deuterium.toLocaleString()}
 	                        {selectedPlanet.storage?.deuterium != null && (
-	                          <span className="text-gray-400 text-xs font-normal ml-2">
+	                          <span className="text-slate-300/70 text-xs font-normal ml-2">
 	                            / {selectedPlanet.storage.deuterium.toLocaleString()}
 	                          </span>
 	                        )}
@@ -543,38 +690,38 @@ function Dashboard({ user, onLogout }) {
                 </div>
 
                 {/* Buildings */}
-                <div className="bg-gray-800 rounded-lg p-6">
+                <div className="pa-card p-6">
                   <h3 className="text-xl font-bold mb-4 text-white">Buildings</h3>
 
                   {/* Current Energy Status Overview */}
                   {(() => {
                     const energyStats = calculateEnergyStats(selectedPlanet);
                     return energyStats ? (
-                      <div className="mb-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
+                      <div className="mb-6 p-4 pa-panel">
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="text-white font-medium flex items-center">
                             <span className="mr-2">⚡</span>
                             Energy Status
                           </h4>
-                          <span className={`text-sm font-bold px-2 py-1 rounded ${getEnergyStatusColor(energyStats.status)} bg-opacity-20`}>
+                          <span className={`text-sm font-bold px-2 py-1 rounded ${getEnergyStatusColor(energyStats.status)} bg-black/20`}>
                             {getEnergyStatusIcon(energyStats.status)} {energyStats.status.toUpperCase()}
                           </span>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <div className="text-gray-400">Production</div>
+                            <div className="text-slate-300/70">Production</div>
                             <div className="text-green-400 font-medium">{energyStats.production}</div>
                           </div>
                           <div>
-                            <div className="text-gray-400">Consumption</div>
+                            <div className="text-slate-300/70">Consumption</div>
                             <div className="text-red-400 font-medium">{energyStats.consumption}</div>
                           </div>
                         </div>
 
-                        <div className="mt-3 pt-3 border-t border-gray-600">
+                        <div className="mt-3 pt-3 border-t border-slate-500/30">
                           <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-400">Efficiency Ratio</span>
+                            <span className="text-slate-300/70">Efficiency Ratio</span>
                             <span className={`${getEnergyStatusColor(energyStats.status)} font-medium`}>
                               {(energyStats.ratio * 100).toFixed(1)}%
                             </span>
@@ -632,13 +779,13 @@ function Dashboard({ user, onLogout }) {
                       }
 
                       return (
-                        <div key={building.key} className="bg-gray-700 p-4 rounded group relative">
+                        <div key={building.key} className="pa-panel p-4 group relative">
                           {/* Building Header */}
                           <div className="flex justify-between items-center mb-3">
                             <span className="text-white font-medium">
                               {building.icon} {building.name}
                             </span>
-                            <span className="text-gray-300">
+                            <span className="text-slate-200/80">
                               Level {currentLevel} → {currentLevel + 1}
                             </span>
                           </div>
@@ -649,7 +796,7 @@ function Dashboard({ user, onLogout }) {
                               <div className="flex items-center text-yellow-400 text-xs mb-1">
                                 ⚠️ Energy Impact
                               </div>
-                              <div className="text-xs text-gray-300">
+                              <div className="text-xs text-slate-200/80">
                                 +{energyImpact.additionalConsumption} energy consumption
                                 <span className={`ml-2 ${getEnergyStatusColor(energyImpact.status)}`}>
                                   → {getEnergyStatusIcon(energyImpact.status)} {energyImpact.status.toUpperCase()}
@@ -662,14 +809,14 @@ function Dashboard({ user, onLogout }) {
                           {productionInfo && (
                             <div className="mb-3 p-2 bg-blue-900/20 border border-blue-600/30 rounded">
                               <div className="text-xs text-blue-400 mb-1">📊 Production Rates</div>
-                              <div className="text-xs text-gray-300 space-y-1">
+                              <div className="text-xs text-slate-200/80 space-y-1">
                                 <div>
                                   Current: {productionInfo.current.actual}/hour
-                                  <span className="text-gray-500"> ({productionInfo.current.theoretical} theoretical)</span>
+                                  <span className="text-slate-300/60"> ({productionInfo.current.theoretical} theoretical)</span>
                                 </div>
                                 <div>
                                   After Upgrade: {productionInfo.next.actual}/hour
-                                  <span className="text-gray-500"> ({productionInfo.next.theoretical} theoretical)</span>
+                                  <span className="text-slate-300/60"> ({productionInfo.next.theoretical} theoretical)</span>
                                   <span className="text-green-400 ml-1">+{productionInfo.increase.actual}</span>
                                 </div>
                                 {energyImpact && energyImpact.newRatio < 1 && (
@@ -683,7 +830,7 @@ function Dashboard({ user, onLogout }) {
 
                           {/* Upgrade Cost */}
                           <div className="mb-3">
-                            <div className="text-xs text-gray-400 mb-1">💰 Upgrade Cost</div>
+                            <div className="text-xs text-slate-300/70 mb-1">💰 Upgrade Cost</div>
                             <div className="text-xs text-yellow-400">
                               {Object.entries(calculateUpgradeCost(building.key, currentLevel))
                                 .filter(([_, cost]) => cost > 0)
@@ -697,11 +844,11 @@ function Dashboard({ user, onLogout }) {
                             <button
                               onClick={() => handleBuildingUpgrade(building.key, currentLevel + 1)}
                               disabled={upgrading || !canAffordUpgrade(building.key, currentLevel)}
-                              className={`px-4 py-2 text-white text-sm rounded hover:scale-105 transition-transform ${
+                              className={`px-4 py-2 text-sm hover:scale-105 transition-transform ${
                                 energyImpact?.status === 'deficit'
-                                  ? 'bg-orange-600 hover:bg-orange-700'
-                                  : 'bg-green-600 hover:bg-green-700'
-                              } disabled:bg-gray-600`}
+                                  ? 'pa-btn-secondary bg-amber-500/15 hover:bg-amber-500/20 border-amber-500/40 text-amber-100'
+                                  : 'pa-btn-primary'
+                              }`}
                               title={
                                 energyImpact?.status === 'deficit'
                                   ? 'Warning: This upgrade will cause energy deficit!'
@@ -713,14 +860,14 @@ function Dashboard({ user, onLogout }) {
                           </div>
 
                           {/* Enhanced Tooltip on Hover */}
-                          <div className="absolute left-full ml-2 top-0 w-80 bg-gray-900 border border-gray-600 rounded-lg p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 shadow-lg">
+                          <div className="absolute left-full ml-2 top-0 w-80 pa-modal p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 shadow-lg">
                             <div className="text-white font-medium mb-2">{building.icon} {building.name} Upgrade</div>
 
                             {/* Detailed Energy Analysis */}
                             {energyImpact && (
                               <div className="mb-3">
                                 <div className="text-blue-400 text-sm font-medium mb-1">⚡ Energy Analysis</div>
-                                <div className="text-xs text-gray-300 space-y-1">
+                                <div className="text-xs text-slate-200/80 space-y-1">
                                   <div>Current: {energyStats?.production || 0} produced, {energyStats?.consumption || 0} consumed</div>
                                   <div>After Upgrade: {energyStats?.production || 0} produced, {energyImpact.newConsumption} consumed</div>
                                   <div className={getEnergyStatusColor(energyImpact.status)}>
@@ -734,7 +881,7 @@ function Dashboard({ user, onLogout }) {
                             {productionInfo && (
                               <div className="mb-3">
                                 <div className="text-green-400 text-sm font-medium mb-1">📈 Production Impact</div>
-                                <div className="text-xs text-gray-300 space-y-1">
+                                <div className="text-xs text-slate-200/80 space-y-1">
                                   <div>Theoretical: +{productionInfo.increase.theoretical}/hour</div>
                                   <div>Actual: +{productionInfo.increase.actual}/hour</div>
                                   {energyImpact && energyImpact.newRatio < 1 && (
@@ -748,7 +895,7 @@ function Dashboard({ user, onLogout }) {
 
                             {/* Strategic Advice */}
                             <div className="text-purple-400 text-sm font-medium mb-1">💡 Strategic Advice</div>
-                            <div className="text-xs text-gray-300">
+                            <div className="text-xs text-slate-200/80">
                               {energyImpact?.status === 'deficit'
                                 ? 'Consider upgrading solar plants or fusion reactors first to avoid production penalties.'
                                 : 'This upgrade looks good! Your energy production can handle it.'}
@@ -772,7 +919,7 @@ function Dashboard({ user, onLogout }) {
       case 'combat':
         return (
           <div data-testid="section-combat">
-            <CombatDashboard user={user} onNavigateSection={setActiveSection} />
+            <CombatDashboard user={user} planets={planets} onNavigateSection={setActiveSection} />
           </div>
         );
       case 'wheel':
@@ -791,19 +938,7 @@ function Dashboard({ user, onLogout }) {
         );
       case 'research':
         return (
-          <div className="bg-gray-800 rounded-lg p-6" data-testid="section-research">
-            <h3 className="text-xl font-bold mb-4 text-white">🔬 Research Lab</h3>
-            <div className="text-center text-gray-400 py-8">
-              Research system coming soon! This will include technologies like:
-              <ul className="mt-4 space-y-2">
-                <li>• Energy Technology</li>
-                <li>• Laser Technology</li>
-                <li>• Ion Technology</li>
-                <li>• Hyperspace Technology</li>
-                <li>• Plasma Technology</li>
-              </ul>
-            </div>
-          </div>
+          <ResearchDashboard />
         );
       case 'shipyard':
         // Filter ships based on selected role
@@ -816,36 +951,55 @@ function Dashboard({ user, onLogout }) {
         return (
           <div className="space-y-6" data-testid="section-shipyard">
             {/* Shipyard Header */}
-            <div className="bg-gray-800 rounded-lg p-6">
+            <div className="pa-card p-6">
               <h3 className="text-xl font-bold mb-4 text-white">🚀 Shipyard</h3>
-              <p className="text-gray-400">Build ships to expand your fleet and colonize new planets</p>
+              <p className="text-slate-300/80">Build ships to expand your fleet and colonize new planets</p>
             </div>
 
             {/* Planet Selection for Shipyard */}
-            <div className="bg-gray-800 rounded-lg p-6">
+            <div className="pa-card p-6">
               <h4 className="text-lg font-semibold mb-4 text-white">Select Planet</h4>
-              <div className="flex space-x-4 overflow-x-auto">
-                {planets.map(planet => (
-                  <button
-                    key={planet.id}
-                    onClick={() => setSelectedPlanet(planet)}
-                    className={`px-4 py-2 rounded whitespace-nowrap ${
-                      selectedPlanet?.id === planet.id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    {planet.name} ({planet.coordinates})
-                  </button>
-                ))}
-              </div>
+              {planets.length > 6 ? (
+                <select
+                  className="pa-input"
+                  data-testid="shipyard-planet-dropdown"
+                  value={selectedPlanet?.id ?? ''}
+                  onChange={(e) => {
+                    const id = parseInt(e.target.value, 10);
+                    const p = planets.find((pl) => pl.id === id);
+                    if (p) setSelectedPlanet(p);
+                  }}
+                >
+                  {planets.map((planet) => (
+                    <option key={planet.id} value={planet.id}>
+                      {(planet.is_home_planet ? '🏠 ' : '🌍 ') + planet.name} ({planet.x}:{planet.y}:{planet.z})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="flex space-x-4 overflow-x-auto overflow-y-hidden max-w-full pb-1">
+                  {planets.map(planet => (
+                    <button
+                      key={planet.id}
+                      onClick={() => setSelectedPlanet(planet)}
+                      className={`whitespace-nowrap ${
+                        selectedPlanet?.id === planet.id
+                          ? 'pa-btn-primary'
+                          : 'pa-btn-secondary'
+                      }`}
+                    >
+                      {planet.name} ({planet.coordinates})
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Ship Construction */}
             {selectedPlanet && Object.keys(shipCosts).length > 0 && Object.keys(shipStats).length > 0 && (
               <div className="space-y-6">
                 {/* Available Resources Display */}
-                <div className="bg-gray-800 rounded-lg p-6">
+                <div className="pa-card p-6">
                   <h4 className="text-lg font-semibold mb-4 text-white">Available Resources</h4>
                   <div className="grid grid-cols-3 gap-6">
                     <div className="text-center">
@@ -870,15 +1024,15 @@ function Dashboard({ user, onLogout }) {
                 </div>
 
                 {/* Ship Role Filter */}
-                <div className="bg-gray-800 rounded-lg p-6">
+                <div className="pa-card p-6">
                   <h4 className="text-lg font-semibold mb-4 text-white">Filter by Ship Type</h4>
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => setSelectedShipRole('all')}
-                      className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${
                         selectedShipRole === 'all'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          ? 'pa-btn-primary'
+                          : 'pa-btn-secondary'
                       }`}
                     >
                       All Ships ({Object.keys(shipCosts).length})
@@ -889,10 +1043,10 @@ function Dashboard({ user, onLogout }) {
                         <button
                           key={role}
                           onClick={() => setSelectedShipRole(role)}
-                          className={`px-4 py-2 rounded text-sm font-medium transition-colors capitalize ${
+                          className={`px-4 py-2 text-sm font-medium transition-colors capitalize ${
                             selectedShipRole === role
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                              ? 'pa-btn-primary'
+                              : 'pa-btn-secondary'
                           }`}
                         >
                           {role} ({roleShips})
@@ -912,7 +1066,7 @@ function Dashboard({ user, onLogout }) {
                     const shipIcon = getShipIcon(shipType);
 
                     return (
-                      <div key={shipType} className="bg-gray-800 rounded-lg p-6 group relative">
+                      <div key={shipType} className="pa-card p-6 group relative">
                         {/* Ship Header */}
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex items-center space-x-3">
@@ -926,14 +1080,14 @@ function Dashboard({ user, onLogout }) {
                                 stats?.role === 'special' ? 'text-green-400' :
                                 stats?.role === 'bomber' ? 'text-orange-400' :
                                 stats?.role === 'ultimate' ? 'text-yellow-400' :
-                                'text-gray-400'
+                                'text-slate-300/70'
                               }`}>
                                 {stats?.role || 'unknown'} Ship
                               </div>
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className="text-xs text-gray-400 mb-1">Cost per ship</div>
+                            <div className="text-xs text-slate-300/70 mb-1">Cost per ship</div>
                             <div className="text-yellow-400 font-medium">
                               {costs?.metal > 0 && `${costs.metal.toLocaleString()}M`}
                               {costs?.crystal > 0 && ` ${costs.crystal.toLocaleString()}C`}
@@ -949,21 +1103,72 @@ function Dashboard({ user, onLogout }) {
                           </div>
                         )}
 
-                        {/* Build Buttons */}
-                        <div className="flex flex-col space-y-3">
-                          <div className="flex justify-between items-center">
-                            <button
-                              onClick={() => handleBuildShip(shipType, 1)}
-                              disabled={upgrading || !canAfford}
-                              className={`px-4 py-2 text-white font-medium rounded transition-colors ${
-                                canAfford
-                                  ? 'bg-green-600 hover:bg-green-700'
-                                  : 'bg-gray-600 cursor-not-allowed'
-                              }`}
+	                        {/* Build Buttons */}
+	                        <div className="flex flex-col space-y-3">
+	                          {/* Custom quantity input (scales to late game) */}
+	                          <div className="pa-panel p-3">
+	                            <div className="flex items-center justify-between mb-2">
+	                              <div className="text-sm text-slate-200/90 font-medium">Custom amount</div>
+	                              <button
+	                                type="button"
+	                                className="pa-btn-ghost text-xs px-3 py-1"
+	                                onClick={() => {
+	                                  const max = getMaxBuildableShipCount(shipType);
+	                                  setShipBuildQuantities((prev) => ({ ...prev, [shipType]: String(max) }));
+	                                }}
+	                                data-testid={`shipyard-max-${shipType}`}
+	                              >
+	                                Max
+	                              </button>
+	                            </div>
+	                            <div className="flex items-center gap-2">
+	                              <input
+	                                type="number"
+	                                min="0"
+	                                inputMode="numeric"
+	                                className="pa-input flex-1 p-2"
+	                                value={shipBuildQuantities?.[shipType] ?? ''}
+	                                onChange={(e) => {
+	                                  const next = e.target.value;
+	                                  setShipBuildQuantities((prev) => ({ ...prev, [shipType]: next }));
+	                                }}
+	                                placeholder="e.g. 1000"
+	                                data-testid={`shipyard-qty-${shipType}`}
+	                              />
+	                              <button
+	                                type="button"
+	                                className="pa-btn-primary px-4 py-2"
+	                                disabled={upgrading || !(() => {
+	                                  const q = parseInt(shipBuildQuantities?.[shipType] || '0', 10);
+	                                  return Number.isFinite(q) && q > 0 && canAffordShip(shipType, q);
+	                                })()}
+	                                onClick={() => {
+	                                  const q = parseInt(shipBuildQuantities?.[shipType] || '0', 10);
+	                                  if (!Number.isFinite(q) || q <= 0) {
+	                                    showError('Enter a valid ship quantity');
+	                                    return;
+	                                  }
+	                                  handleBuildShip(shipType, q);
+	                                }}
+	                                data-testid={`shipyard-build-${shipType}`}
+	                              >
+	                                Build
+	                              </button>
+	                            </div>
+	                            <div className="mt-2 text-xs text-slate-300/70">
+	                              Max buildable: {getMaxBuildableShipCount(shipType).toLocaleString()}
+	                            </div>
+	                          </div>
+
+	                          <div className="flex justify-between items-center">
+	                            <button
+	                              onClick={() => handleBuildShip(shipType, 1)}
+	                              disabled={upgrading || !canAfford}
+                              className={`${canAfford ? 'pa-btn-primary' : 'pa-btn-secondary'} px-4 py-2`}
                             >
                               {upgrading ? 'Building...' : 'Build 1'}
                             </button>
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-slate-300/70">
                               {canAfford ? '✅ Can afford' : '❌ Insufficient resources'}
                             </span>
                           </div>
@@ -977,11 +1182,7 @@ function Dashboard({ user, onLogout }) {
                                   key={quantity}
                                   onClick={() => handleBuildShip(shipType, quantity)}
                                   disabled={upgrading || !canAffordMultiple}
-                                  className={`px-3 py-2 text-white text-sm rounded transition-colors ${
-                                    canAffordMultiple
-                                      ? 'bg-blue-600 hover:bg-blue-700'
-                                      : 'bg-gray-600 cursor-not-allowed'
-                                  }`}
+                                  className={`${canAffordMultiple ? 'pa-btn-primary' : 'pa-btn-secondary'} px-3 py-2 text-sm`}
                                   title={`Build ${quantity} ships`}
                                 >
                                   {quantity}
@@ -993,7 +1194,7 @@ function Dashboard({ user, onLogout }) {
 
                         {/* Detailed Stats Tooltip */}
                         {stats && (
-                          <div className="absolute left-full ml-4 top-0 w-96 bg-gray-900 border border-gray-600 rounded-lg p-4 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 shadow-xl">
+                          <div className="absolute left-full ml-4 top-0 w-96 pa-modal p-4 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 shadow-xl">
                             <div className="text-white font-bold text-lg mb-3 flex items-center">
                               <span className="mr-2">{shipIcon}</span>
                               {shipName}
@@ -1008,9 +1209,9 @@ function Dashboard({ user, onLogout }) {
 
                 {/* No ships found message */}
                 {filteredShips.length === 0 && (
-                  <div className="bg-gray-800 rounded-lg p-8 text-center">
-                    <div className="text-gray-400 text-lg mb-2">No ships found</div>
-                    <div className="text-gray-500 text-sm">
+                  <div className="pa-card p-8 text-center">
+                    <div className="text-slate-300/80 text-lg mb-2">No ships found</div>
+                    <div className="text-slate-300/60 text-sm">
                       Try selecting a different ship role or check if ship data is loading.
                     </div>
                   </div>
@@ -1020,9 +1221,9 @@ function Dashboard({ user, onLogout }) {
 
             {/* Loading state */}
             {selectedPlanet && (Object.keys(shipCosts).length === 0 || Object.keys(shipStats).length === 0) && (
-              <div className="bg-gray-800 rounded-lg p-8 text-center">
-                <div className="text-gray-400 text-lg mb-2">Loading shipyard data...</div>
-                <div className="text-gray-500 text-sm">
+              <div className="pa-card p-8 text-center">
+                <div className="text-slate-300/80 text-lg mb-2">Loading shipyard data…</div>
+                <div className="text-slate-300/60 text-sm">
                   Fetching ship costs and statistics from the server.
                 </div>
               </div>
@@ -1031,9 +1232,9 @@ function Dashboard({ user, onLogout }) {
         );
       case 'alliance':
         return (
-          <div className="bg-gray-800 rounded-lg p-6" data-testid="section-alliance">
+          <div className="pa-card p-6" data-testid="section-alliance">
             <h3 className="text-xl font-bold mb-4 text-white">🤝 Alliance Center</h3>
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-slate-300/70 py-8">
               Alliance system coming soon! This will include:
               <ul className="mt-4 space-y-2">
                 <li>• Alliance creation and management</li>
@@ -1047,9 +1248,9 @@ function Dashboard({ user, onLogout }) {
         );
       case 'messages':
         return (
-          <div className="bg-gray-800 rounded-lg p-6" data-testid="section-messages">
+          <div className="pa-card p-6" data-testid="section-messages">
             <h3 className="text-xl font-bold mb-4 text-white">💬 Messages</h3>
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-slate-300/70 py-8">
               Messaging system coming soon! This will include:
               <ul className="mt-4 space-y-2">
                 <li>• Private messages</li>
@@ -1064,7 +1265,7 @@ function Dashboard({ user, onLogout }) {
       default:
         return (
           <div data-testid="section-overview">
-            <Overview user={user} planets={planets} />
+            <Overview user={user} planets={planets} onNavigateSection={setActiveSection} />
           </div>
         );
     }
@@ -1072,50 +1273,220 @@ function Dashboard({ user, onLogout }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-space-dark flex items-center justify-center">
-        <div className="text-xl">Loading your empire...</div>
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="pa-card p-6 text-center">
+          <div className="text-xl font-semibold text-white">Loading your empire…</div>
+          <div className="text-sm text-slate-300/90 mt-2">Syncing colonies and fleet telemetry</div>
+        </div>
       </div>
     );
   }
 
-	  return (
-	    <div className="min-h-screen bg-space-dark" data-testid="dashboard">
-	      <header className="bg-space-blue p-4">
-	        <div className="container mx-auto flex justify-between items-center">
-	          <h1 className="text-3xl font-bold">🌌 Planetarion</h1>
-	          <div className="flex items-center space-x-4">
-	            <span className="text-white">Welcome, {user.username}!</span>
-	            {showTickButton && (
-	              <button
-	                onClick={handleRunTick}
-	                data-testid="run-tick-button"
-	                disabled={ticking}
-	                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white px-3 py-2 rounded text-sm"
-	              >
-	                {ticking ? 'Ticking…' : 'Run tick'}
-	              </button>
-	            )}
-	            <button
-	              onClick={onLogout}
-	              data-testid="logout-button"
-	              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
-	            >
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="pa-card p-6 text-center max-w-lg w-full">
+          <div className="text-xl font-semibold text-white">Couldn’t load your empire</div>
+          <div className="text-sm text-slate-300/90 mt-2">{loadError}</div>
+          <div className="mt-4 flex justify-center gap-3">
+            <button type="button" className="pa-btn-secondary px-4 py-2" onClick={fetchPlanets} data-testid="dashboard-retry">
+              Retry
+            </button>
+            <button type="button" className="pa-btn-danger px-4 py-2" onClick={onLogout}>
               Logout
             </button>
           </div>
+          <div className="mt-4 text-xs text-slate-300/70">
+            Tip: for local dev, confirm backend is reachable at <span className="text-slate-200">http://localhost:5000/health</span>.
+          </div>
         </div>
-      </header>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen" data-testid="dashboard">
+      <header className="pa-panel rounded-none border-x-0 border-t-0">
+        <div className="container mx-auto px-6 py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <img
+              src={planetarionLogo}
+              alt="Planetarion"
+              className="h-12 sm:h-14 md:h-16 w-auto select-none"
+              draggable={false}
+            />
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">Planetarion</h1>
+          </div>
+	          <div className="flex items-center gap-4 flex-wrap justify-between sm:justify-end w-full sm:w-auto">
+	            <div className="flex items-center gap-3 min-w-[260px]">
+		              <CommanderPortrait
+		                username={user.username}
+		                level={user.commander_level || 1}
+		                xp={user.commander_xp || 0}
+		                xpProgress={user.commander_xp_progress || null}
+		                portraitKey={portraitKey}
+		                size={portraitSize}
+		              />
+		              <div className="min-w-0">
+		                <div className="flex items-center gap-2 min-w-0">
+		                  <span
+		                    className="px-2 py-0.5 rounded-full text-[11px] font-extrabold tracking-wide uppercase"
+		                    style={{
+		                      background: 'rgba(2, 6, 23, 0.65)',
+		                      border: '1px solid rgba(148, 163, 184, 0.20)',
+		                      color: 'rgba(226, 232, 240, 0.92)',
+		                      boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
+		                    }}
+		                  >
+		                    Commander
+		                  </span>
+		                  <div className="text-slate-100/95 font-semibold truncate">{user.username}</div>
+		                </div>
+		                {renderCommanderXpBar()}
+		                {shouldShowIdleSummary() && (
+	                  <div className="text-xs text-slate-300/80 mt-0.5" data-testid="idle-summary">
+	                    While you were away ({formatDuration(idleGains.duration_seconds)}):{' '}
+	                    <span className="text-slate-100/95 font-semibold">
+	                      +{Number(idleGains.resources?.metal || 0).toLocaleString()}M
+                    </span>{' '}
+                    <span className="text-slate-100/95 font-semibold">
+                      +{Number(idleGains.resources?.crystal || 0).toLocaleString()}C
+                    </span>{' '}
+                    <span className="text-slate-100/95 font-semibold">
+                      +{Number(idleGains.resources?.deuterium || 0).toLocaleString()}D
+                    </span>
+                    {Number(idleGains.research_points || 0) > 0 && (
+                      <>
+                        {' • '}
+                        <span className="text-slate-100/95 font-semibold">
+                          +{Number(idleGains.research_points || 0).toLocaleString()} RP
+                        </span>
+                      </>
+                    )}
+                    {Boolean(idleGains.was_capped) && (
+                      <>
+                        {' • '}
+                        <span className="text-amber-200 font-medium" data-testid="idle-summary-capped-note">
+                          catch-up window capped at 4 weeks
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+	            <div className="flex items-center gap-3 flex-wrap">
+	              <label className="flex items-center gap-2 text-xs text-slate-200/80">
+	                <span className="hidden sm:inline">Commander</span>
+	                <select
+	                  className="pa-input py-2 px-3 text-sm"
+	                  value={portraitKey || 'male'}
+	                  onChange={(e) => updatePortraitKey(e.target.value)}
+	                  data-testid="commander-portrait-select"
+	                  aria-label="Commander portrait"
+	                  title="Commander portrait"
+	                >
+	                  <option value="male">Male</option>
+	                  <option value="female">Female</option>
+	                </select>
+	              </label>
+	              <BackgroundMusicToggle />
+	              <button
+	                onClick={onLogout}
+	                data-testid="logout-button"
+	                className="pa-btn-danger px-4 py-2"
+	              >
+                Logout
+              </button>
+            </div>
+          </div>
+          </div>
+        </header>
 
       <Navigation activeSection={activeSection} onSectionChange={setActiveSection} />
 
-      <main className="container mx-auto p-6">
+      <main className="container mx-auto px-6 py-6">
         {renderSection()}
       </main>
 
-	      {/* Galaxy Map Modal */}
-	      {activeSection === 'galaxy' && (
-	        <GalaxyMap
-	          user={user}
+	      {showRenameModal && renameTargetPlanet && (
+	        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-6" data-testid="planet-rename-modal">
+	          <div className="pa-modal p-6 w-full max-w-md">
+	            <div className="flex items-center justify-between mb-4">
+	              <h3 className="text-xl font-bold text-white">Rename Planet</h3>
+	              <button
+	                type="button"
+	                className="pa-btn-ghost px-3 py-2 text-sm"
+	                onClick={closeRenameModal}
+	                aria-label="Close"
+	              >
+	                Close
+	              </button>
+	            </div>
+
+	            <div className="text-sm text-slate-300/90 mb-3">
+	              Planet: <span className="text-white font-medium">{renameTargetPlanet.name}</span>
+	            </div>
+
+	            <label className="block text-slate-200/90 mb-2">New name (one-time)</label>
+	            <input
+	              className="pa-input"
+	              value={renameValue}
+	              maxLength={32}
+	              onChange={(e) => setRenameValue(e.target.value)}
+	              data-testid="planet-rename-input"
+	              placeholder="e.g. New Terra"
+	            />
+	            <div className="mt-2 text-xs text-slate-300/70">Max 32 characters. Renaming is allowed once per planet.</div>
+
+	            <div className="flex gap-3 mt-5">
+	              <button
+	                type="button"
+	                className="flex-1 pa-btn-primary py-3"
+	                disabled={renaming || !renameValue.trim()}
+	                data-testid="planet-rename-submit"
+	                onClick={async () => {
+	                  const newName = renameValue.trim();
+	                  if (!newName) return;
+	                  setRenaming(true);
+	                  try {
+                      const targetId = renameTargetPlanetId;
+                      if (!targetId) return;
+	                    const res = await axios.put('/api/planet/rename', { planet_id: targetId, new_name: newName });
+	                    const updated = res.data?.planet;
+	                    if (updated?.id) {
+	                      setPlanets((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+	                      setSelectedPlanet((prev) => (prev?.id === updated.id ? updated : prev));
+	                    }
+	                    showSuccess('Planet renamed');
+	                    closeRenameModal();
+	                  } catch (e) {
+	                    showError(e.response?.data?.error || 'Rename failed');
+	                  } finally {
+	                    setRenaming(false);
+	                  }
+	                }}
+	              >
+	                {renaming ? 'Renaming…' : 'Rename'}
+	              </button>
+	              <button
+	                type="button"
+	                className="flex-1 pa-btn-secondary py-3"
+	                data-testid="planet-rename-cancel"
+	                onClick={closeRenameModal}
+	              >
+	                Cancel
+	              </button>
+	            </div>
+	          </div>
+	        </div>
+	      )}
+	
+		      {/* Galaxy Map Modal */}
+		      {activeSection === 'galaxy' && (
+		        <GalaxyMap
+		          user={user}
 	          planets={planets}
 	          onNavigateSection={setActiveSection}
 	          onClose={() => setActiveSection('overview')}

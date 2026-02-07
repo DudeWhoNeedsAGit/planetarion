@@ -11,6 +11,7 @@ from backend.models import Fleet, Planet, User, TickLog, Research, DebrisField, 
 from backend.services.planet_traits import PlanetTraitService
 from backend.config import calculate_fuel_consumption
 from backend.services.fleet_state_machine import FleetStateMachine
+from backend.services.commander_xp import CommanderXPService, xp_from_resources
 import json
 
 # Enhanced error handling constants
@@ -50,20 +51,31 @@ class FleetArrivalService:
         return User.query.get(fleet.user_id)
 
     @staticmethod
-    def process_arrived_fleets():
-        """Process all fleets that have arrived at their destinations"""
+    def process_arrived_fleets(user_id: int | None = None):
+        """Process fleets that have arrived at their destinations.
+
+        If `user_id` is provided, only process fleets owned by that user. This is
+        important for request-scoped catch-up flows (e.g. /api/auth/me) where we
+        must not mutate other players' fleets.
+        """
         print("DEBUG: Processing arrived fleets")
-        arrived_fleets = Fleet.query.filter(
+        arrived_query = Fleet.query.filter(
             Fleet.arrival_time <= datetime.utcnow(),
             Fleet.status.in_(['traveling', 'returning', 'defending'])
-        ).all()
+        )
+        if user_id is not None:
+            arrived_query = arrived_query.filter(Fleet.user_id == int(user_id))
+        arrived_fleets = arrived_query.all()
 
         # Also check for coordinate-based missions that have arrived
-        coordinate_based_fleets = Fleet.query.filter(
+        coord_query = Fleet.query.filter(
             Fleet.arrival_time <= datetime.utcnow(),
             Fleet.status.like('exploring:%') |
             Fleet.status.like('colonizing:%')
-        ).all()
+        )
+        if user_id is not None:
+            coord_query = coord_query.filter(Fleet.user_id == int(user_id))
+        coordinate_based_fleets = coord_query.all()
 
         arrived_fleets.extend(coordinate_based_fleets)
 
@@ -285,6 +297,19 @@ class FleetArrivalService:
             event_description=f'Planet {target_planet.name} colonized by {username}'
         )
         db.session.add(tick_log)
+
+        # Commander XP (idempotent per TickLog row if possible).
+        try:
+            db.session.flush()
+            difficulty = int(getattr(target_planet, "colonization_difficulty", 1) or 1)
+            CommanderXPService.award_xp(
+                user_id=int(fleet.user_id),
+                xp=200 + max(0, difficulty - 1) * 50,
+                source_type="colonization",
+                source_id=str(getattr(tick_log, "id", None) or f"planet:{target_planet.id}:fleet:{fleet.id}"),
+            )
+        except Exception:
+            pass
 
         # Return fleet to stationed status
         FleetArrivalService._return_fleet_to_stationed(fleet)
@@ -652,11 +677,61 @@ class FleetArrivalService:
                 combat_result = CombatEngine.calculate_battle(fleet, defending_fleet, target_planet)
                 CombatEngine.process_combat_result(combat_result, fleet, defending_fleet, target_planet)
             else:
-                # Attack on undefended planet
-                print(f"DEBUG: Attacking undefended planet {target_planet.id}")
-                from backend.services.combat_engine import CombatEngine
-                combat_result = CombatEngine.calculate_planet_attack(fleet, target_planet)
-                CombatEngine.process_planet_attack_result(combat_result, fleet, target_planet)
+                # Attack on undefended planet.
+                #
+                # For pirate raids (attacker == pirates NPC), we still want a CombatReport and
+                # debris via ship losses (MVP spec). If the defender has no stationed fleet,
+                # synthesize a minimal defending fleet from the planet's legacy ship columns.
+                attacker_username = getattr(getattr(fleet, "owner", None), "username", None)
+                is_pirate_attacker = attacker_username == "pirates"
+
+                if is_pirate_attacker:
+                    print(f"DEBUG: Pirate raid against undefended planet {target_planet.id}; creating defender inventory fleet")
+                    defending_fleet = (
+                        Fleet.query.filter_by(
+                            user_id=target_planet.user_id,
+                            start_planet_id=target_planet.id,
+                            status="stationed",
+                            mission="inventory",
+                        )
+                        .order_by(Fleet.id.asc())
+                        .first()
+                    )
+                    if not defending_fleet:
+                        defending_fleet = Fleet(
+                            user_id=target_planet.user_id,
+                            mission="inventory",
+                            status="stationed",
+                            start_planet_id=target_planet.id,
+                            target_planet_id=target_planet.id,
+                            departure_time=arrival_processed_at,
+                            arrival_time=arrival_processed_at,
+                            eta=0,
+                        )
+                        for ship_col in (
+                            "small_cargo",
+                            "large_cargo",
+                            "light_fighter",
+                            "heavy_fighter",
+                            "cruiser",
+                            "battleship",
+                            "colony_ship",
+                        ):
+                            amount = int(getattr(target_planet, ship_col, 0) or 0)
+                            if amount > 0:
+                                setattr(defending_fleet, ship_col, amount)
+                                setattr(target_planet, ship_col, 0)
+                        db.session.add(defending_fleet)
+                        db.session.flush()
+
+                    from backend.services.combat_engine import CombatEngine
+                    combat_result = CombatEngine.calculate_battle(fleet, defending_fleet)
+                    CombatEngine.process_combat_result(combat_result, fleet, defending_fleet, target_planet)
+                else:
+                    print(f"DEBUG: Attacking undefended planet {target_planet.id}")
+                    from backend.services.combat_engine import CombatEngine
+                    combat_result = CombatEngine.calculate_planet_attack(fleet, target_planet)
+                    CombatEngine.process_planet_attack_result(combat_result, fleet, target_planet)
 
             # After combat, fleet returns home.
             if fleet.departure_time and fleet.arrival_time:
@@ -789,12 +864,70 @@ class FleetArrivalService:
                 return
 
             # Calculate recycler capacity
-            recycler_capacity = fleet.recycler * 1000  # Assume 1000 cargo capacity per recycler
+            recycler_capacity = int(getattr(fleet, "recycler", 0) or 0) * 1000  # Assume 1000 cargo capacity per recycler
 
-            # Collect resources
-            collected_metal = min(debris_field.metal, recycler_capacity // 2)
-            collected_crystal = min(debris_field.crystal, recycler_capacity // 2)
-            collected_deuterium = min(debris_field.deuterium, recycler_capacity // 2)
+            # Determine recycling focus (stored as target_coordinates = "recycle:<focus>")
+            focus = None
+            raw_focus = getattr(fleet, "target_coordinates", None)
+            if isinstance(raw_focus, str) and raw_focus.startswith("recycle:"):
+                focus = raw_focus.split(":", 1)[1].strip().lower() or None
+            if focus not in (None, "proportional", "metal", "crystal", "deuterium"):
+                focus = None
+
+            available_metal = int(debris_field.metal or 0)
+            available_crystal = int(debris_field.crystal or 0)
+            available_deuterium = int(debris_field.deuterium or 0)
+
+            collected_metal = 0
+            collected_crystal = 0
+            collected_deuterium = 0
+
+            if recycler_capacity <= 0:
+                raise RuntimeError("Fleet has no recycler capacity")
+
+            if focus in ("metal", "crystal", "deuterium"):
+                if focus == "metal":
+                    collected_metal = min(available_metal, recycler_capacity)
+                elif focus == "crystal":
+                    collected_crystal = min(available_crystal, recycler_capacity)
+                else:
+                    collected_deuterium = min(available_deuterium, recycler_capacity)
+            else:
+                # Proportional split across resources present (capacity-constrained).
+                total_available = available_metal + available_crystal + available_deuterium
+                if total_available <= 0:
+                    collected_metal = collected_crystal = collected_deuterium = 0
+                else:
+                    # First-pass proportional allocation with flooring.
+                    def alloc(amount):
+                        return int((recycler_capacity * amount) // total_available) if amount > 0 else 0
+
+                    collected_metal = min(available_metal, alloc(available_metal))
+                    collected_crystal = min(available_crystal, alloc(available_crystal))
+                    collected_deuterium = min(available_deuterium, alloc(available_deuterium))
+
+                    used = collected_metal + collected_crystal + collected_deuterium
+                    remaining = max(0, recycler_capacity - used)
+
+                    # Distribute remaining capacity to resources that still have debris left.
+                    for key in ("metal", "crystal", "deuterium"):
+                        if remaining <= 0:
+                            break
+                        if key == "metal":
+                            room = max(0, available_metal - collected_metal)
+                            add = min(room, remaining)
+                            collected_metal += add
+                            remaining -= add
+                        elif key == "crystal":
+                            room = max(0, available_crystal - collected_crystal)
+                            add = min(room, remaining)
+                            collected_crystal += add
+                            remaining -= add
+                        else:
+                            room = max(0, available_deuterium - collected_deuterium)
+                            add = min(room, remaining)
+                            collected_deuterium += add
+                            remaining -= add
 
             # Update debris field
             debris_field.metal -= collected_metal
@@ -817,6 +950,18 @@ class FleetArrivalService:
                 event_description=f'Fleet {fleet.id} collected {collected_metal}M {collected_crystal}C {collected_deuterium}D from debris field'
             )
             db.session.add(tick_log)
+
+            # Commander XP (idempotent per TickLog row if possible).
+            try:
+                db.session.flush()
+                CommanderXPService.award_xp(
+                    user_id=int(fleet.user_id),
+                    xp=int(xp_from_resources(collected_metal, collected_crystal, collected_deuterium)),
+                    source_type="recycle",
+                    source_id=str(getattr(tick_log, "id", None) or f"fleet:{fleet.id}:planet:{target_planet.id}"),
+                )
+            except Exception:
+                pass
 
             # Clean up empty debris field
             if debris_field.metal <= 0 and debris_field.crystal <= 0 and debris_field.deuterium <= 0:
@@ -864,13 +1009,14 @@ class FleetArrivalService:
             # Offset coordinates slightly for multiple planets in same system
             planet_x = target_x + random.randint(-5, 5)
             planet_y = target_y + random.randint(-5, 5)
-            planet_z = target_z + random.randint(-5, 5)
+            # Keep exploration on the same Z slice to match the 2D GalaxyMap and reduce wasted depth.
+            planet_z = target_z
 
             # Ensure coordinates are unique
             while Planet.query.filter_by(x=planet_x, y=planet_y, z=planet_z).first():
                 planet_x = target_x + random.randint(-5, 5)
                 planet_y = target_y + random.randint(-5, 5)
-                planet_z = target_z + random.randint(-5, 5)
+                planet_z = target_z
 
             # Generate planet properties
             planet_names = [

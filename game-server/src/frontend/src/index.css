@@ -2,6 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Planetarion Theme Tokens (Phase 1) */
+:root {
+  --pa-bg-0: #050913;
+  --pa-bg-1: #0b1b3a;
+  --pa-surface-0: rgba(2, 6, 23, 0.88);
+  --pa-surface-1: rgba(15, 23, 42, 0.92);
+  --pa-border: rgba(148, 163, 184, 0.22);
+
+  --pa-text: rgba(229, 231, 235, 0.96);
+  --pa-text-dim: rgba(148, 163, 184, 0.92);
+
+  --pa-primary: #2563eb;
+  --pa-secondary: #14b8a6;
+  --pa-warning: #f59e0b;
+  --pa-danger: #ef4444;
+  --pa-science: #a855f7;
+  --pa-success: #22c55e;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -9,8 +28,12 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0a0a0a;
-  color: white;
+  background: radial-gradient(circle at 25% 15%, rgba(37, 99, 235, 0.16), transparent 42%),
+    radial-gradient(circle at 70% 80%, rgba(20, 184, 166, 0.12), transparent 45%),
+    radial-gradient(circle at 60% 25%, rgba(168, 85, 247, 0.1), transparent 40%),
+    linear-gradient(180deg, var(--pa-bg-0), var(--pa-bg-1));
+  color: var(--pa-text);
+  min-height: 100vh;
 }
 
 code {
@@ -19,137 +42,121 @@ code {
 }
 
 /* Galaxy Map Universe Effects */
-@keyframes twinkle {
-  0%, 100% {
-    opacity: 0.3;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.2);
-  }
-}
+/* GalaxyMap visuals were migrated to scoped CSS modules under `src/galaxy/`
+   to avoid global hover/z-index side effects across the app. */
 
-@keyframes float {
-  0% {
-    transform: translateY(0px) translateX(0px) rotate(0deg);
+@layer components {
+  .pa-card {
+    @apply rounded-xl border shadow-lg;
+    border-color: var(--pa-border);
+    background: linear-gradient(180deg, var(--pa-surface-0), var(--pa-surface-1));
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
   }
-  25% {
-    transform: translateY(-10px) translateX(5px) rotate(90deg);
-  }
-  50% {
-    transform: translateY(-5px) translateX(-5px) rotate(180deg);
-  }
-  75% {
-    transform: translateY(-15px) translateX(10px) rotate(270deg);
-  }
-  100% {
-    transform: translateY(0px) translateX(0px) rotate(360deg);
-  }
-}
 
-@keyframes nebula-drift {
-  0% {
-    transform: translateX(-20px) translateY(-10px) scale(1);
+  .pa-modal {
+    @apply rounded-2xl border shadow-xl;
+    border-color: var(--pa-border);
+    background: linear-gradient(180deg, rgba(2, 6, 23, 0.94), rgba(15, 23, 42, 0.94));
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.72);
   }
-  50% {
-    transform: translateX(20px) translateY(10px) scale(1.05);
+
+  .pa-panel {
+    @apply rounded-xl border;
+    border-color: var(--pa-border);
+    background: rgba(2, 6, 23, 0.62);
+    backdrop-filter: blur(8px);
   }
-  100% {
-    transform: translateX(-20px) translateY(-10px) scale(1);
+
+  .pa-surface {
+    @apply rounded-xl border;
+    border-color: var(--pa-border);
+    background: rgba(15, 23, 42, 0.72);
   }
-}
 
-@keyframes cosmic-glow {
-  0%, 100% {
-    box-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  .pa-input {
+    @apply w-full p-3 rounded-lg border outline-none transition;
+    border-color: rgba(148, 163, 184, 0.22);
+    background: rgba(15, 23, 42, 0.85);
+    color: var(--pa-text);
   }
-  50% {
-    box-shadow: 0 0 20px currentColor, 0 0 40px currentColor, 0 0 60px currentColor;
+  .pa-input:focus {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.65);
+    border-color: rgba(37, 99, 235, 0.65);
   }
-}
 
-@keyframes fogDrift {
-  0% {
-    transform: translateX(-10px) translateY(-5px) rotate(0deg);
-    opacity: 0.8;
+  .pa-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed;
   }
-  25% {
-    transform: translateX(5px) translateY(-10px) rotate(1deg);
-    opacity: 0.9;
+
+  .pa-btn-primary {
+    @apply pa-btn text-white;
+    background: linear-gradient(180deg, rgba(37, 99, 235, 0.95), rgba(29, 78, 216, 0.95));
+    box-shadow: 0 10px 26px rgba(37, 99, 235, 0.28);
   }
-  50% {
-    transform: translateX(10px) translateY(5px) rotate(-1deg);
-    opacity: 0.7;
+  .pa-btn-primary:hover {
+    filter: brightness(1.06);
   }
-  75% {
-    transform: translateX(-5px) translateY(10px) rotate(0.5deg);
-    opacity: 0.8;
+
+  .pa-btn-secondary {
+    @apply pa-btn text-white;
+    background: rgba(51, 65, 85, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.22);
   }
-  100% {
-    transform: translateX(-10px) translateY(-5px) rotate(0deg);
-    opacity: 0.8;
+  .pa-btn-secondary:hover {
+    background: rgba(51, 65, 85, 0.9);
   }
-}
 
-/* Galaxy Background Styles */
-.galaxy-background {
-  position: relative;
-  overflow: hidden;
-}
+  .pa-btn-ghost {
+    @apply pa-btn;
+    background: rgba(15, 23, 42, 0.0);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    color: rgba(229, 231, 235, 0.92);
+  }
+  .pa-btn-ghost:hover {
+    background: rgba(51, 65, 85, 0.35);
+    border-color: rgba(148, 163, 184, 0.26);
+    color: rgba(255, 255, 255, 0.96);
+  }
 
-.galaxy-background::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background:
-    radial-gradient(circle at 20% 30%, rgba(138, 43, 226, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 80% 70%, rgba(30, 144, 255, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 60% 20%, rgba(255, 20, 147, 0.1) 0%, transparent 50%);
-  pointer-events: none;
-  z-index: 1;
-}
+  .pa-btn-danger {
+    @apply pa-btn text-white;
+    background: rgba(239, 68, 68, 0.85);
+  }
+  .pa-btn-danger:hover {
+    background: rgba(239, 68, 68, 0.95);
+  }
 
-/* System Marker Enhancements */
-.system-marker {
-  transition: all 0.3s ease;
-  position: relative;
-}
+  .pa-btn-success {
+    @apply pa-btn text-white;
+    background: rgba(34, 197, 94, 0.85);
+    box-shadow: 0 10px 24px rgba(34, 197, 94, 0.18);
+  }
+  .pa-btn-success:hover {
+    background: rgba(34, 197, 94, 0.95);
+  }
 
-.system-marker:hover {
-  transform: scale(1.1);
-  z-index: 20;
-}
+  .pa-btn-warning {
+    @apply pa-btn;
+    background: rgba(245, 158, 11, 0.18);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: rgba(255, 251, 235, 0.95);
+  }
+  .pa-btn-warning:hover {
+    background: rgba(245, 158, 11, 0.24);
+    border-color: rgba(245, 158, 11, 0.45);
+  }
 
-.system-marker::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  border-radius: inherit;
-  background: inherit;
-  opacity: 0.3;
-  filter: blur(4px);
-  z-index: -1;
-}
-
-/* Nebula Effects */
-.nebula-purple {
-  background: radial-gradient(circle, rgba(138, 43, 226, 0.3) 0%, rgba(75, 0, 130, 0.2) 50%, transparent 100%);
-  animation: nebula-drift 20s infinite ease-in-out;
-}
-
-.nebula-blue {
-  background: radial-gradient(circle, rgba(30, 144, 255, 0.3) 0%, rgba(0, 0, 139, 0.2) 50%, transparent 100%);
-  animation: nebula-drift 25s infinite ease-in-out reverse;
-}
-
-.nebula-pink {
-  background: radial-gradient(circle, rgba(255, 20, 147, 0.3) 0%, rgba(139, 0, 139, 0.2) 50%, transparent 100%);
-  animation: nebula-drift 30s infinite ease-in-out;
+  .pa-tab {
+    @apply inline-flex items-center gap-2 px-4 py-3 rounded-t-lg font-medium whitespace-nowrap transition-colors;
+    color: rgba(229, 231, 235, 0.9);
+  }
+  .pa-tab:hover {
+    background: rgba(51, 65, 85, 0.55);
+    color: rgba(255, 255, 255, 0.96);
+  }
+  .pa-tab-active {
+    background: rgba(2, 6, 23, 0.55);
+    border-bottom: 2px solid rgba(37, 99, 235, 0.95);
+    box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.14);
+  }
 }

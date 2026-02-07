@@ -128,7 +128,7 @@ cd game-server/src/frontend && npx playwright test tests/e2e/galaxy-map.spec.js
 **Local Development Environment Fixes**
 ```bash
 # Backend PYTHONPATH issues (recently fixed)
-cd game-server && PYTHONPATH=/home/yves/repos/planetarion/game-server/src python -m src.backend.app
+cd game-server && PYTHONPATH=./src python -m src.backend.app
 
 # Frontend development startup
 cd game-server/src/frontend && npm start

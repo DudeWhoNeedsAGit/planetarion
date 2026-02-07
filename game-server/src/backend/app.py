@@ -1,11 +1,20 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
-from flasgger import Swagger
+from sqlalchemy import event, text
+from sqlalchemy.engine import Engine
+import os
+from pathlib import Path
+from datetime import datetime
+try:
+    from flasgger import Swagger
+except Exception:  # pragma: no cover
+    Swagger = None
 import json
 from .config import get_config
 from .database import db, migrate
 from .services.scheduler import GameScheduler
+from .services.event_bus import EventMessage, event_bus
 
 def create_app(config_name=None):
     """Application factory pattern"""
@@ -17,23 +26,196 @@ def create_app(config_name=None):
         app = Flask(__name__)
         print("✅ Flask app created")
 
+        def _display_db_uri(uri: str | None) -> str:
+            if not uri:
+                return "Not set"
+            # Avoid leaking local absolute paths in logs (public repo friendliness).
+            # Keep enough info to understand which DB file is in use.
+            if uri.startswith("sqlite:////"):
+                raw = uri[len("sqlite:////"):]
+                marker = "/instance/"
+                idx = raw.rfind(marker)
+                if idx != -1:
+                    suffix = raw[idx + 1 :]  # instance/...
+                    return f"sqlite:///./{suffix}"
+                return f"sqlite:///…/{os.path.basename(raw)}"
+            return uri
+
         # Load configuration
         print("⚙️ Loading configuration...")
         config_class = get_config(config_name)
         app.config.from_object(config_class)
         print(f"✅ Configuration loaded: {config_class.__name__}")
         print(f"📊 FLASK_ENV: {app.config.get('FLASK_ENV')}")
-        print(f"🗄️ DATABASE_URL: {app.config.get('SQLALCHEMY_DATABASE_URI', 'Not set')}")
+        print(f"🗄️ DATABASE_URL: {_display_db_uri(app.config.get('SQLALCHEMY_DATABASE_URI'))}")
+
+        # SQLite tuning: reduce "database is locked" errors under concurrent requests (Playwright, dev UI).
+        # - WAL allows concurrent readers + a single writer.
+        # - busy_timeout makes writes wait rather than immediately failing.
+        # - check_same_thread=False lets us share connections across threads (Werkzeug dev server).
+        uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        if uri.startswith("sqlite:"):
+            app.config.setdefault("SQLALCHEMY_ENGINE_OPTIONS", {})
+            engine_opts = app.config["SQLALCHEMY_ENGINE_OPTIONS"] or {}
+            engine_opts.setdefault("connect_args", {})
+            engine_opts["connect_args"].setdefault("timeout", 30)
+            engine_opts["connect_args"].setdefault("check_same_thread", False)
+            app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_opts
+
+            @event.listens_for(Engine, "connect")
+            def _sqlite_pragmas(dbapi_connection, _connection_record):  # pragma: no cover
+                try:
+                    import sqlite3
+
+                    if not isinstance(dbapi_connection, sqlite3.Connection):
+                        return
+                    cursor = dbapi_connection.cursor()
+                    cursor.execute("PRAGMA journal_mode=WAL;")
+                    cursor.execute("PRAGMA synchronous=NORMAL;")
+                    cursor.execute("PRAGMA temp_store=MEMORY;")
+                    cursor.execute("PRAGMA busy_timeout=30000;")
+                    cursor.close()
+                except Exception:
+                    return
 
         # Initialize extensions
         print("🔧 Initializing database...")
         db.init_app(app)
         print("✅ Database initialized")
 
+        def _sqlite_db_path_from_uri(uri: str) -> Path | None:
+            uri = str(uri or "")
+            if not uri.startswith("sqlite:"):
+                return None
+            if uri.startswith("sqlite:///:memory:"):
+                return None
+            if uri.startswith("sqlite:////"):
+                raw = uri[len("sqlite:////"):]
+                if not raw:
+                    return None
+                return Path("/" + raw.lstrip("/")).resolve()
+            if uri.startswith("sqlite:///"):
+                raw = uri[len("sqlite:///"):]
+                if not raw:
+                    return None
+                # sqlite:///relative/path.db is relative to the process CWD. In this repo we
+                # run the backend from game-server/, so treat it as repo-relative.
+                return (Path(os.getcwd()) / raw).resolve()
+            return None
+
+        def _maybe_repair_malformed_sqlite_db(exc: Exception) -> bool:
+            """Best-effort: if sqlite DB file is corrupt, back it up and recreate it.
+
+            Returns True if a repair attempt was made (and the caller should retry create_all).
+            """
+            uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+            db_path = _sqlite_db_path_from_uri(uri)
+            if not db_path:
+                return False
+
+            # Only auto-repair in dev/testing to avoid unexpected data loss in production.
+            if app.config.get("FLASK_ENV") not in ("development", "testing"):
+                return False
+
+            msg = f"{exc}"
+            is_malformed = ("database disk image is malformed" in msg) or ("file is not a database" in msg)
+            is_unopenable = ("unable to open database file" in msg)
+            if not is_malformed and not is_unopenable:
+                return False
+
+            try:
+                # If the issue is simply that the folder doesn't exist, create it and retry.
+                try:
+                    db_path.parent.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass
+
+                ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+                backup_path = db_path.with_name(f"{db_path.name}.corrupt.{ts}")
+                if is_malformed:
+                    print(f"🛠️ SQLite appears corrupted; backing up {db_path} -> {backup_path}")
+                elif is_unopenable:
+                    print(f"🛠️ SQLite DB path is not openable; attempting recovery for {db_path}")
+
+                try:
+                    db.session.remove()
+                except Exception:
+                    pass
+                try:
+                    db.engine.dispose()
+                except Exception:
+                    pass
+
+                if is_malformed and db_path.exists():
+                    db_path.rename(backup_path)
+
+                for suffix in ("-wal", "-shm"):
+                    extra = Path(str(db_path) + suffix)
+                    if extra.exists():
+                        try:
+                            extra.unlink()
+                        except Exception:
+                            pass
+                return True
+            except Exception as repair_exc:
+                print(f"⚠️ Failed to auto-repair sqlite DB: {repair_exc}")
+                return False
+
         # Import models BEFORE creating tables (critical for SQLAlchemy)
         print("📋 Importing models for table creation...")
         from .models import User, Planet, Fleet, Alliance, TickLog, EspionageReport
         print("✅ Models imported successfully")
+
+        # Event-driven UI: broadcast significant TickLog rows to connected SSE clients.
+        # Use low-level SQL via the connection to avoid ORM/session recursion in flush hooks.
+        def _broadcast_ticklog(_mapper, connection, target):  # pragma: no cover
+            try:
+                event_type = (getattr(target, "event_type", None) or "").strip()
+                event_desc = (getattr(target, "event_description", None) or "").strip()
+                if not event_type and not event_desc:
+                    return
+
+                planet_id = getattr(target, "planet_id", None)
+                fleet_id = getattr(target, "fleet_id", None)
+
+                user_ids = set()
+                if planet_id:
+                    res = connection.execute(text("SELECT user_id FROM planets WHERE id = :id"), {"id": int(planet_id)}).fetchone()
+                    if res and res[0] is not None:
+                        user_ids.add(int(res[0]))
+                if fleet_id:
+                    res = connection.execute(text("SELECT user_id FROM fleets WHERE id = :id"), {"id": int(fleet_id)}).fetchone()
+                    if res and res[0] is not None:
+                        user_ids.add(int(res[0]))
+
+                if not user_ids:
+                    return
+
+                ts = getattr(target, "timestamp", None)
+                ts_iso = ts.isoformat() + "Z" if ts else None
+
+                payload = {
+                    "id": int(getattr(target, "id", 0) or 0),
+                    "tick_number": int(getattr(target, "tick_number", 0) or 0),
+                    "timestamp": ts_iso,
+                    "planet_id": int(planet_id) if planet_id else None,
+                    "fleet_id": int(fleet_id) if fleet_id else None,
+                    "event_type": event_type or None,
+                    "event_description": event_desc or None,
+                }
+                msg = EventMessage(event="activity", data=payload, id=payload["id"] or None)
+                for uid in user_ids:
+                    event_bus.publish(uid, msg)
+            except Exception:
+                # Never break the main transaction path.
+                return
+
+        try:
+            # Avoid duplicate listeners when create_app() is called multiple times (tests, dev reloader).
+            if not event.contains(TickLog, "after_insert", _broadcast_ticklog):
+                event.listen(TickLog, "after_insert", _broadcast_ticklog)
+        except Exception:
+            pass
 
         print("🔄 Initializing migrate...")
         migrate.init_app(app, db)
@@ -52,28 +234,34 @@ def create_app(config_name=None):
         jwt = JWTManager(app)
         print("✅ JWT initialized")
 
-        # Initialize Swagger documentation
-        print("📚 Initializing Swagger...")
-        swagger_config = {
-            "headers": [],
-            "specs": [
-                {
-                    "endpoint": 'apispec',
-                    "route": '/apispec.json',
-                    "rule_filter": lambda rule: True,
-                    "model_filter": lambda tag: True,
-                }
-            ],
-            "static_url_path": "/flasgger_static",
-            "swagger_ui": True,
-            "specs_route": "/apidocs/"
-        }
-        swagger = Swagger(app, config=swagger_config)
-        print("✅ Swagger initialized")
+        # Initialize Swagger documentation (optional in minimal test environments)
+        if Swagger is not None:
+            print("📚 Initializing Swagger...")
+            swagger_config = {
+                "headers": [],
+                "specs": [
+                    {
+                        "endpoint": 'apispec',
+                        "route": '/apispec.json',
+                        "rule_filter": lambda rule: True,
+                        "model_filter": lambda _tag: True,
+                    }
+                ],
+                "static_url_path": "/flasgger_static",
+                "swagger_ui": True,
+                "specs_route": "/apidocs/"
+            }
+            swagger = Swagger(app, config=swagger_config)
+            print("✅ Swagger initialized")
+        else:
+            swagger = None
+            print("⚠️ Swagger not available (flasgger not installed)")
 
         # OpenAPI export endpoint
         @app.route("/export_openapi")
         def export_openapi():
+            if swagger is None:
+                return jsonify({"error": "Swagger not available"}), 501
             return json.dumps(swagger.get_apispecs())
 
         # Initialize scheduler
@@ -104,6 +292,7 @@ def create_app(config_name=None):
         from .routes.combat import combat_bp
         from .routes.admin import admin_bp
         from .routes.espionage import espionage_bp
+        from .routes.events import events_bp
 
         app.register_blueprint(auth_bp)
         print("✅ Auth blueprint registered")
@@ -145,6 +334,9 @@ def create_app(config_name=None):
         app.register_blueprint(admin_bp)
         print("✅ Admin blueprint registered")
 
+        app.register_blueprint(events_bp)
+        print("✅ Events blueprint registered")
+
         # Health check endpoint
         @app.route('/health')
         def health():
@@ -154,8 +346,10 @@ def create_app(config_name=None):
         @app.route('/api/tick', methods=['POST'])
         def manual_tick():
             from .services.tick import run_tick
-            with app.app_context():
-                changes = run_tick()
+            # Already running inside a request/app context; avoid creating a nested
+            # app context which would create a separate scoped DB session and can
+            # lead to stale reads during tests.
+            changes = run_tick()
             return jsonify({
                 'message': 'Manual tick executed successfully',
                 'changes': changes
@@ -165,12 +359,13 @@ def create_app(config_name=None):
         @jwt_required()
         def get_tick_logs():
             """Return recent TickLog entries relevant to the authenticated user."""
-            from sqlalchemy import or_
+            from sqlalchemy import or_, and_
             from .models import Planet, Fleet, TickLog
 
             user_id = int(get_jwt_identity())
             limit = request.args.get('limit', 50, type=int)
             offset = request.args.get('offset', 0, type=int)
+            include_resource = request.args.get('include_resource', '0').lower() in ('1', 'true', 'yes')
 
             planet_ids = [pid for (pid,) in Planet.query.filter_by(user_id=user_id).with_entities(Planet.id).all()]
             fleet_ids = [fid for (fid,) in Fleet.query.filter_by(user_id=user_id).with_entities(Fleet.id).all()]
@@ -184,8 +379,19 @@ def create_app(config_name=None):
             if not conditions:
                 return jsonify({'logs': [], 'total': 0, 'limit': limit, 'offset': offset})
 
+            query = TickLog.query.filter(or_(*conditions))
+            if not include_resource:
+                # Default: hide per-tick resource production rows (which have no event_type/description and pollute the UI).
+                # UI can explicitly request them with `include_resource=1`.
+                query = query.filter(
+                    or_(
+                        and_(TickLog.event_type.isnot(None), TickLog.event_type != ''),
+                        and_(TickLog.event_description.isnot(None), TickLog.event_description != ''),
+                    )
+                )
+
             logs = (
-                TickLog.query.filter(or_(*conditions))
+                query
                 .order_by(TickLog.timestamp.desc(), TickLog.id.desc())
                 .limit(limit)
                 .offset(offset)
@@ -253,20 +459,52 @@ def create_app(config_name=None):
 
         # Start scheduler when app starts (only in development)
         print(f"🎯 Environment: {app.config['FLASK_ENV']}")
+
+        def _create_all_safely() -> None:
+            try:
+                db.create_all()
+            except Exception as e:
+                # Rare test/dev race: metadata/table state can briefly disagree on sqlite.
+                # If the table already exists, proceed (schema ensure hooks run right after).
+                if "already exists" in str(e).lower():
+                    return
+                if _maybe_repair_malformed_sqlite_db(e):
+                    db.create_all()
+                else:
+                    raise
+
         if app.config['FLASK_ENV'] == 'development':
             print("🗄️ Creating database tables...")
             with app.app_context():
-                db.create_all()
+                _create_all_safely()
                 print("✅ Database tables created")
                 try:
                     from .services.sqlite_schema import (
                         ensure_planet_storage_columns,
+                        ensure_planet_trait_columns,
                         ensure_fleet_cargo_columns,
                         ensure_user_lifecycle_columns,
+                        ensure_user_profile_columns,
+                        ensure_user_research_queue_columns,
+                        ensure_research_fraction_columns,
+                        ensure_research_tech_columns,
+                        ensure_commander_xp_event_table,
+                        ensure_pirate_ai_state_table,
+                        ensure_pirate_ai_config_overrides_table,
                     )
                     ensure_planet_storage_columns(db.engine)
+                    ensure_planet_trait_columns(db.engine)
                     ensure_fleet_cargo_columns(db.engine)
                     ensure_user_lifecycle_columns(db.engine)
+                    ensure_user_profile_columns(db.engine)
+                    ensure_user_research_queue_columns(db.engine)
+                    ensure_research_fraction_columns(db.engine)
+                    ensure_research_tech_columns(db.engine)
+                    ensure_commander_xp_event_table(db.engine)
+                    ensure_pirate_ai_state_table(db.engine)
+                    ensure_pirate_ai_config_overrides_table(db.engine)
+                    from .services.pirate_ai import PirateAILiveOps
+                    PirateAILiveOps.apply_persisted_overrides()
                     print("✅ SQLite schema ensured (planet storage columns)")
                 except Exception as e:
                     print(f"⚠️ SQLite schema ensure failed: {e}")
@@ -281,17 +519,35 @@ def create_app(config_name=None):
         elif app.config['FLASK_ENV'] == 'testing':
             print("🧪 Setting up test database...")
             with app.app_context():
-                db.create_all()
+                _create_all_safely()
                 print("✅ Test database tables created")
                 try:
                     from .services.sqlite_schema import (
                         ensure_planet_storage_columns,
+                        ensure_planet_trait_columns,
                         ensure_fleet_cargo_columns,
                         ensure_user_lifecycle_columns,
+                        ensure_user_profile_columns,
+                        ensure_user_research_queue_columns,
+                        ensure_research_fraction_columns,
+                        ensure_research_tech_columns,
+                        ensure_commander_xp_event_table,
+                        ensure_pirate_ai_state_table,
+                        ensure_pirate_ai_config_overrides_table,
                     )
                     ensure_planet_storage_columns(db.engine)
+                    ensure_planet_trait_columns(db.engine)
                     ensure_fleet_cargo_columns(db.engine)
                     ensure_user_lifecycle_columns(db.engine)
+                    ensure_user_profile_columns(db.engine)
+                    ensure_user_research_queue_columns(db.engine)
+                    ensure_research_fraction_columns(db.engine)
+                    ensure_research_tech_columns(db.engine)
+                    ensure_commander_xp_event_table(db.engine)
+                    ensure_pirate_ai_state_table(db.engine)
+                    ensure_pirate_ai_config_overrides_table(db.engine)
+                    from .services.pirate_ai import PirateAILiveOps
+                    PirateAILiveOps.apply_persisted_overrides()
                 except Exception:
                     # Tests recreate DB frequently; missing migration isn't fatal here.
                     pass
