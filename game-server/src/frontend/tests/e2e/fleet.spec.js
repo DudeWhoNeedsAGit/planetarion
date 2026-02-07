@@ -70,6 +70,34 @@ async function ensureSendableFleet(page) {
   }
 }
 
+async function ensureRebalanceFleets(page) {
+  const token = await page.evaluate(() => localStorage.getItem('token'));
+  if (!token) return;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const fleetsRes = await page.request.get('http://localhost:5000/api/fleet?include_inventory=1', { headers });
+  if (!fleetsRes.ok()) return;
+  const fleets = await fleetsRes.json();
+  const stationedNonInventory = (Array.isArray(fleets) ? fleets : []).filter((f) => f?.status === 'stationed' && f?.mission !== 'inventory');
+  if (stationedNonInventory.length >= 2) return;
+
+  const planetsRes = await page.request.get('http://localhost:5000/api/planet', { headers });
+  if (!planetsRes.ok()) return;
+  const planets = await planetsRes.json();
+  const startPlanetId = planets?.[0]?.id;
+  if (!startPlanetId) return;
+
+  await ensureShipyardShips(page, 'small_cargo', 10);
+  await page.request.post('http://localhost:5000/api/fleet', {
+    headers,
+    data: { start_planet_id: startPlanetId, ships: { small_cargo: 3 } },
+  });
+  await page.request.post('http://localhost:5000/api/fleet', {
+    headers,
+    data: { start_planet_id: startPlanetId, ships: { small_cargo: 2 } },
+  });
+}
+
 test.describe('Fleet Management', () => {
   test.beforeEach(async ({ page, request }) => {
     await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
@@ -310,5 +338,31 @@ test.describe('Fleet Management', () => {
         await expect(fleetCards.nth(i).locator('text=Fleet #')).toBeVisible();
       }
     }
+  });
+
+  test('should split and transfer ships between stationed fleets', async ({ page }) => {
+    await ensureRebalanceFleets(page);
+    await page.reload();
+    await navigateToFleets(page);
+
+    const firstFleetCard = page.getByTestId('fleet-tile').first();
+    await expect(firstFleetCard).toBeVisible();
+
+    await firstFleetCard.getByTestId('fleet-split-button').click();
+    await expect(page.getByTestId('fleet-split-modal')).toBeVisible();
+    await page.getByTestId('fleet-split-ship-small_cargo').fill('1');
+    await page.getByTestId('fleet-split-submit').click();
+    await expect(page.getByRole('alert')).toContainText(/Fleet split successfully/i);
+
+    await page.reload();
+    await navigateToFleets(page);
+
+    const transferSourceCard = page.getByTestId('fleet-tile').first();
+    await transferSourceCard.getByTestId('fleet-transfer-button').click();
+    await expect(page.getByTestId('fleet-transfer-modal')).toBeVisible();
+    await expect(page.getByTestId('fleet-transfer-target-select')).toBeVisible();
+    await page.getByTestId('fleet-transfer-ship-small_cargo').fill('1');
+    await page.getByTestId('fleet-transfer-submit').click();
+    await expect(page.getByRole('alert')).toContainText(/Fleet transfer completed/i);
   });
 });

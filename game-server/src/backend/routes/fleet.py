@@ -23,6 +23,21 @@ import math
 fleet_mgmt_bp = Blueprint('fleet_mgmt', __name__, url_prefix='/api/fleet')
 
 INVENTORY_FLEET_MISSION = 'inventory'
+FLEET_SHIP_KEYS = (
+    'small_cargo',
+    'large_cargo',
+    'light_fighter',
+    'heavy_fighter',
+    'cruiser',
+    'battleship',
+    'colony_ship',
+    'recycler',
+    'espionage_probe',
+    'bomber',
+    'destroyer',
+    'deathstar',
+    'battlecruiser',
+)
 
 def _iso_utc(dt: datetime | None) -> str | None:
     """Return ISO-8601 UTC timestamp with 'Z' suffix.
@@ -51,6 +66,32 @@ def serialize_fleet_ships(fleet):
         'deathstar': fleet.deathstar,
         'battlecruiser': fleet.battlecruiser
     }
+
+
+def _parse_ship_transfer_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('Invalid ships payload')
+
+    parsed = {}
+    for ship_type, raw_count in payload.items():
+        if ship_type not in FLEET_SHIP_KEYS:
+            raise ValueError(f'Invalid ship type: {ship_type}')
+
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            raise ValueError(f'Invalid count for {ship_type}')
+
+        if count < 0:
+            raise ValueError(f'Invalid count for {ship_type}')
+        if count == 0:
+            continue
+        parsed[ship_type] = count
+
+    if not parsed:
+        raise ValueError('At least one ship must be specified')
+
+    return parsed
 
 
 def serialize_fleet(fleet, planet_dict=None):
@@ -310,6 +351,127 @@ def dissolve_fleet(fleet_id: int):
     db.session.commit()
 
     return jsonify({'message': 'Fleet dissolved successfully'}), 200
+
+@fleet_mgmt_bp.route('/<int:fleet_id>/split', methods=['POST'])
+@jwt_required()
+def split_fleet(fleet_id: int):
+    """
+    Split ships from one stationed fleet into a new stationed fleet on the same planet.
+
+    The new fleet is always created with mission='stationed' to avoid creating duplicate
+    inventory fleets.
+    """
+    user_id = int(get_jwt_identity())
+    payload = request.get_json() or {}
+    ships_raw = payload.get('ships')
+
+    source_fleet = Fleet.query.filter_by(id=fleet_id, user_id=user_id).first()
+    if not source_fleet:
+        return jsonify({'error': 'Fleet not found'}), 404
+
+    if source_fleet.status != 'stationed':
+        return jsonify({'error': 'Only stationed fleets can be split'}), 400
+
+    try:
+        ships = _parse_ship_transfer_payload(ships_raw)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    for ship_type, count in ships.items():
+        available = getattr(source_fleet, ship_type, 0) or 0
+        if available < count:
+            return jsonify({
+                'error': f'Not enough {ship_type} ships available. Requested: {count}, Available: {available}'
+            }), 400
+
+    new_fleet = Fleet(
+        user_id=user_id,
+        mission='stationed',
+        status='stationed',
+        start_planet_id=source_fleet.start_planet_id,
+        target_planet_id=source_fleet.start_planet_id,
+        departure_time=datetime.utcnow(),
+        arrival_time=datetime.utcnow(),
+    )
+    db.session.add(new_fleet)
+    db.session.flush()
+
+    for ship_type, count in ships.items():
+        source_value = getattr(source_fleet, ship_type, 0) or 0
+        target_value = getattr(new_fleet, ship_type, 0) or 0
+        setattr(source_fleet, ship_type, source_value - count)
+        setattr(new_fleet, ship_type, target_value + count)
+
+    db.session.commit()
+
+    planets = Planet.query.filter_by(user_id=user_id).all()
+    planet_dict = {p.id: p for p in planets}
+
+    return jsonify({
+        'message': 'Fleet split successfully',
+        'source_fleet': serialize_fleet(source_fleet, planet_dict),
+        'new_fleet': serialize_fleet(new_fleet, planet_dict),
+    }), 200
+
+
+@fleet_mgmt_bp.route('/<int:fleet_id>/transfer', methods=['POST'])
+@jwt_required()
+def transfer_fleet_ships(fleet_id: int):
+    """Transfer ships between two stationed fleets on the same planet."""
+    user_id = int(get_jwt_identity())
+    payload = request.get_json() or {}
+    ships_raw = payload.get('ships')
+    target_fleet_id = payload.get('target_fleet_id')
+
+    source_fleet = Fleet.query.filter_by(id=fleet_id, user_id=user_id).first()
+    if not source_fleet:
+        return jsonify({'error': 'Fleet not found'}), 404
+    if source_fleet.status != 'stationed':
+        return jsonify({'error': 'Only stationed fleets can transfer ships'}), 400
+
+    try:
+        target_fleet_id = int(target_fleet_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid target_fleet_id'}), 400
+
+    target_fleet = Fleet.query.filter_by(id=target_fleet_id, user_id=user_id).first()
+    if not target_fleet:
+        return jsonify({'error': 'Target fleet not found'}), 404
+    if target_fleet.id == source_fleet.id:
+        return jsonify({'error': 'Cannot transfer ships to the same fleet'}), 400
+    if target_fleet.status != 'stationed':
+        return jsonify({'error': 'Target fleet must be stationed'}), 400
+    if target_fleet.start_planet_id != source_fleet.start_planet_id:
+        return jsonify({'error': 'Fleets must be stationed on the same planet'}), 400
+
+    try:
+        ships = _parse_ship_transfer_payload(ships_raw)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    for ship_type, count in ships.items():
+        available = getattr(source_fleet, ship_type, 0) or 0
+        if available < count:
+            return jsonify({
+                'error': f'Not enough {ship_type} ships available. Requested: {count}, Available: {available}'
+            }), 400
+
+    for ship_type, count in ships.items():
+        source_value = getattr(source_fleet, ship_type, 0) or 0
+        target_value = getattr(target_fleet, ship_type, 0) or 0
+        setattr(source_fleet, ship_type, source_value - count)
+        setattr(target_fleet, ship_type, target_value + count)
+
+    db.session.commit()
+
+    planets = Planet.query.filter_by(user_id=user_id).all()
+    planet_dict = {p.id: p for p in planets}
+
+    return jsonify({
+        'message': 'Fleet transfer completed',
+        'source_fleet': serialize_fleet(source_fleet, planet_dict),
+        'target_fleet': serialize_fleet(target_fleet, planet_dict),
+    }), 200
 
 @fleet_mgmt_bp.route('/send', methods=['POST'])
 @jwt_required()

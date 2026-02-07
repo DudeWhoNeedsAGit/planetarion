@@ -78,6 +78,8 @@ function FleetManagement({ user, planets = [] }) {
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showSendForm, setShowSendForm] = useState(false);
+  const [showSplitForm, setShowSplitForm] = useState(false);
+  const [showTransferForm, setShowTransferForm] = useState(false);
   const [selectedFleet, setSelectedFleet] = useState(null);
   const selectedPlanetStorageKey = useMemo(() => {
     const userId = user?.id ?? 'anon';
@@ -797,6 +799,35 @@ function FleetManagement({ user, planets = [] }) {
     }
   };
 
+  const handleSplitFleet = async ({ fleetId, ships }) => {
+    try {
+      await axios.post(`/api/fleet/${fleetId}/split`, { ships });
+      showSuccess('Fleet split successfully.');
+      setShowSplitForm(false);
+      setSelectedFleet(null);
+      fetchFleets();
+      fetchTimeline();
+    } catch (error) {
+      showError(error.response?.data?.error || 'Failed to split fleet');
+    }
+  };
+
+  const handleTransferFleet = async ({ sourceFleetId, targetFleetId, ships }) => {
+    try {
+      await axios.post(`/api/fleet/${sourceFleetId}/transfer`, {
+        target_fleet_id: targetFleetId,
+        ships,
+      });
+      showSuccess('Fleet transfer completed.');
+      setShowTransferForm(false);
+      setSelectedFleet(null);
+      fetchFleets();
+      fetchTimeline();
+    } catch (error) {
+      showError(error.response?.data?.error || 'Failed to transfer ships');
+    }
+  };
+
   const saveTemplate = useCallback((preset) => {
     if (!preset || typeof preset !== 'object') return;
     const defaultName = `${String(preset.mission || 'mission').replace(/_/g, ' ')} template`;
@@ -998,6 +1029,23 @@ function FleetManagement({ user, planets = [] }) {
                   }}
                   onRecall={handleRecallFleet}
                   onDissolve={handleDissolveFleet}
+                  onSplit={(fleet) => {
+                    setSelectedFleet(fleet);
+                    setShowSplitForm(true);
+                  }}
+                  onTransfer={(fleet) => {
+                    const transferTargets = normalizedFleets.filter((f) =>
+                      f?.id !== fleet.id &&
+                      f?.status === 'stationed' &&
+                      f?.start_planet_id === fleet.start_planet_id
+                    );
+                    if (transferTargets.length === 0) {
+                      showError('No other stationed fleet available on this planet for transfer.');
+                      return;
+                    }
+                    setSelectedFleet(fleet);
+                    setShowTransferForm(true);
+                  }}
                   formatTimeRemaining={formatTimeRemaining}
                 />
               ))
@@ -1108,6 +1156,33 @@ function FleetManagement({ user, planets = [] }) {
             setSendPreset(null);
             setActiveSendPreset(null);
             localStorage.removeItem('fleetSendPreset');
+          }}
+        />
+      )}
+
+      {showSplitForm && selectedFleet && (
+        <SplitFleetModal
+          fleet={selectedFleet}
+          onSplit={handleSplitFleet}
+          onClose={() => {
+            setShowSplitForm(false);
+            setSelectedFleet(null);
+          }}
+        />
+      )}
+
+      {showTransferForm && selectedFleet && (
+        <TransferFleetModal
+          sourceFleet={selectedFleet}
+          targetFleets={normalizedFleets.filter((f) =>
+            f?.id !== selectedFleet.id &&
+            f?.status === 'stationed' &&
+            f?.start_planet_id === selectedFleet.start_planet_id
+          )}
+          onTransfer={handleTransferFleet}
+          onClose={() => {
+            setShowTransferForm(false);
+            setSelectedFleet(null);
           }}
         />
       )}
@@ -1600,6 +1675,195 @@ function SendFleetModal({ fleet, fleetOptions = [], onSelectFleet, onCreateFleet
   );
 }
 
+function SplitFleetModal({ fleet, onSplit, onClose }) {
+  const { showError } = useToast();
+  const [ships, setShips] = useState(() => Object.fromEntries(FLEET_SHIP_KEYS.map((k) => [k, 0])));
+
+  const setShipAmount = (shipType, value) => {
+    setShips((prev) => ({ ...prev, [shipType]: Math.max(0, parseInt(value, 10) || 0) }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const payload = {};
+    let total = 0;
+
+    FLEET_SHIP_KEYS.forEach((shipType) => {
+      const amount = Math.max(0, parseInt(ships[shipType], 10) || 0);
+      const available = Math.max(0, parseInt(fleet?.ships?.[shipType], 10) || 0);
+      if (amount <= 0) return;
+      if (amount > available) {
+        showError(`Cannot split more than available ${formatShipLabel(shipType)} (${available}).`);
+        total = -1;
+        return;
+      }
+      payload[shipType] = amount;
+      total += amount;
+    });
+
+    if (total <= 0) {
+      showError(total === 0 ? 'Select at least one ship to split.' : 'Invalid split amounts.');
+      return;
+    }
+
+    onSplit({ fleetId: fleet.id, ships: payload });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-6" data-testid="fleet-split-modal">
+      <div className="pa-modal p-6 w-full max-w-lg">
+        <h3 className="text-xl font-bold text-white mb-4">Split Fleet #{fleet.id}</h3>
+        <form onSubmit={handleSubmit} data-testid="fleet-split-form">
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {FLEET_SHIP_KEYS.map((shipType) => {
+              const available = Math.max(0, parseInt(fleet?.ships?.[shipType], 10) || 0);
+              return (
+                <div key={shipType}>
+                  <label className="block text-xs text-slate-300/70 mb-1">
+                    {formatShipLabel(shipType)} (max {available})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={available}
+                    value={ships[shipType] || 0}
+                    onChange={(e) => setShipAmount(shipType, e.target.value)}
+                    data-testid={`fleet-split-ship-${shipType}`}
+                    className="pa-input p-2"
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex space-x-3">
+            <button type="submit" className="flex-1 pa-btn-primary py-2 px-4" data-testid="fleet-split-submit">
+              Split Fleet
+            </button>
+            <button type="button" onClick={onClose} className="flex-1 pa-btn-secondary py-2 px-4" data-testid="fleet-split-cancel">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TransferFleetModal({ sourceFleet, targetFleets, onTransfer, onClose }) {
+  const { showError } = useToast();
+  const [targetFleetId, setTargetFleetId] = useState(() => {
+    if (!Array.isArray(targetFleets) || targetFleets.length === 0) return '';
+    return String(targetFleets[0].id);
+  });
+  const [ships, setShips] = useState(() => Object.fromEntries(FLEET_SHIP_KEYS.map((k) => [k, 0])));
+
+  useEffect(() => {
+    if (!Array.isArray(targetFleets) || targetFleets.length === 0) {
+      setTargetFleetId('');
+      return;
+    }
+    if (!targetFleets.some((f) => String(f.id) === String(targetFleetId))) {
+      setTargetFleetId(String(targetFleets[0].id));
+    }
+  }, [targetFleets, targetFleetId]);
+
+  const setShipAmount = (shipType, value) => {
+    setShips((prev) => ({ ...prev, [shipType]: Math.max(0, parseInt(value, 10) || 0) }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!targetFleetId) {
+      showError('Select a target fleet.');
+      return;
+    }
+
+    const payload = {};
+    let total = 0;
+    FLEET_SHIP_KEYS.forEach((shipType) => {
+      const amount = Math.max(0, parseInt(ships[shipType], 10) || 0);
+      const available = Math.max(0, parseInt(sourceFleet?.ships?.[shipType], 10) || 0);
+      if (amount <= 0) return;
+      if (amount > available) {
+        showError(`Cannot transfer more than available ${formatShipLabel(shipType)} (${available}).`);
+        total = -1;
+        return;
+      }
+      payload[shipType] = amount;
+      total += amount;
+    });
+
+    if (total <= 0) {
+      showError(total === 0 ? 'Select at least one ship to transfer.' : 'Invalid transfer amounts.');
+      return;
+    }
+
+    onTransfer({
+      sourceFleetId: sourceFleet.id,
+      targetFleetId: parseInt(targetFleetId, 10),
+      ships: payload,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-6" data-testid="fleet-transfer-modal">
+      <div className="pa-modal p-6 w-full max-w-lg">
+        <h3 className="text-xl font-bold text-white mb-4">Transfer From Fleet #{sourceFleet.id}</h3>
+        <form onSubmit={handleSubmit} data-testid="fleet-transfer-form">
+          <div className="mb-4">
+            <label className="block text-slate-200/90 mb-2">Target Fleet</label>
+            <select
+              value={targetFleetId}
+              onChange={(e) => setTargetFleetId(e.target.value)}
+              data-testid="fleet-transfer-target-select"
+              className="pa-input"
+              required
+            >
+              {Array.isArray(targetFleets) && targetFleets.map((fleet) => (
+                <option key={fleet.id} value={fleet.id}>
+                  Fleet #{fleet.id} ({fleet.mission})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {FLEET_SHIP_KEYS.map((shipType) => {
+              const available = Math.max(0, parseInt(sourceFleet?.ships?.[shipType], 10) || 0);
+              return (
+                <div key={shipType}>
+                  <label className="block text-xs text-slate-300/70 mb-1">
+                    {formatShipLabel(shipType)} (max {available})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={available}
+                    value={ships[shipType] || 0}
+                    onChange={(e) => setShipAmount(shipType, e.target.value)}
+                    data-testid={`fleet-transfer-ship-${shipType}`}
+                    className="pa-input p-2"
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex space-x-3">
+            <button type="submit" className="flex-1 pa-btn-primary py-2 px-4" data-testid="fleet-transfer-submit">
+              Transfer Ships
+            </button>
+            <button type="button" onClick={onClose} className="flex-1 pa-btn-secondary py-2 px-4" data-testid="fleet-transfer-cancel">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function PlanetOverviewCard({ planet, fleets, onCreateFleet }) {
   const totalShips = fleets.reduce((total, fleet) => {
     const ships = fleet.ships || {};
@@ -1739,7 +2003,7 @@ function ShipAvailabilityDashboard({ planet, fleets }) {
   );
 }
 
-function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, formatTimeRemaining }) {
+function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, onSplit, onTransfer, formatTimeRemaining }) {
   const startPlanet = fleet.start_planet || planets.find(p => p.id === fleet.start_planet_id) || null;
   const rawTargetPlanet = fleet.target_planet || planets.find(p => p.id === fleet.target_planet_id) || null;
   // Keep From/To stable (start -> target) even while returning; the status already communicates direction.
@@ -1769,6 +2033,24 @@ function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, formatTimeRem
               className="pa-btn-primary px-3 py-1 text-sm"
             >
               Send
+            </button>
+          )}
+          {fleet.status === 'stationed' && fleet.mission !== 'inventory' && (
+            <button
+              onClick={() => onSplit(fleet)}
+              className="pa-btn-secondary px-3 py-1 text-sm"
+              data-testid="fleet-split-button"
+            >
+              Split
+            </button>
+          )}
+          {fleet.status === 'stationed' && fleet.mission !== 'inventory' && (
+            <button
+              onClick={() => onTransfer(fleet)}
+              className="pa-btn-secondary px-3 py-1 text-sm"
+              data-testid="fleet-transfer-button"
+            >
+              Transfer
             </button>
           )}
           {fleet.status === 'stationed' && fleet.mission !== 'inventory' && (
