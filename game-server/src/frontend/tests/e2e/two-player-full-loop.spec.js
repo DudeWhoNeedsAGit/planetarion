@@ -1,15 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { apiLogin, loginViaLocalStorage } = require('./helpers/testSession');
-
-async function resetTwoPlayerScenario(request) {
-  const devToken = process.env.PLANETARION_DEV_ADMIN_TOKEN || 'planetarion-dev';
-  const res = await request.post('http://localhost:5000/api/admin/scenarios/two-player/reset', {
-    data: { password: 'testpassword123' },
-    headers: { 'X-Planetarion-Dev-Token': devToken },
-  });
-  expect(res.ok()).toBeTruthy();
-  return await res.json();
-}
+const { apiLogin, loginViaLocalStorage, resetScenarioPack } = require('./helpers/testSession');
 
 async function runTick(request, token) {
   const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
@@ -35,7 +25,7 @@ async function getDebrisFields(request, token) {
 
 test.describe('Two-Player Full Gameplay Loop (Table C)', () => {
   test('alpha raids pirates → recycles → fights beta → captures beta home (respawn pending)', async ({ page, request }) => {
-    const scenario = await resetTwoPlayerScenario(request);
+    const scenario = await resetScenarioPack(request, 'two-player');
     const alphaFleetId = scenario.fleets.alpha_fleet_id;
     const betaHomeId = scenario.planets.beta_home.id;
     const pirateCampId = scenario.planets.pirate_camp.id;
