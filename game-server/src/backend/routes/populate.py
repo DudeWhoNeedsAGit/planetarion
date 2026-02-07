@@ -30,6 +30,24 @@ UNIVERSE_CONFIG = {
     'spiral_jitter': 0.18,  # radians; randomized angular offset
 }
 
+def build_harness_setup_contract(*, setup_id, deterministic, counts):
+    """Build a normalized setup payload for test harness reuse."""
+    return {
+        "ok": True,
+        "contract_version": "scenario-pack.v1",
+        "setup": {
+            "id": str(setup_id),
+            "deterministic": bool(deterministic),
+        },
+        "counts": {
+            "users": int(counts.get("users", 0)),
+            "planets": int(counts.get("planets", 0)),
+            "fleets": int(counts.get("fleets", 0)),
+            "alliances": int(counts.get("alliances", 0)),
+            "tick_logs": int(counts.get("tick_logs", 0)),
+        },
+    }
+
 def calculate_distance(x1, y1, z1, x2, y2, z2):
     """Calculate 3D distance between two points"""
     return math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
@@ -909,15 +927,30 @@ def populate_database():
 
         db.session.commit()
 
-        return jsonify({
-            'message': 'Database populated successfully',
-            # Use DB counts so this stays accurate when we add extra seeded fleets/planets.
-            'users': User.query.count(),
-            'planets': Planet.query.count(),
-            'fleets': Fleet.query.count(),
-            'alliances': Alliance.query.count(),
-            'tick_logs': TickLog.query.count(),
-        }), 200
+        counts = {
+            "users": User.query.count(),
+            "planets": Planet.query.count(),
+            "fleets": Fleet.query.count(),
+            "alliances": Alliance.query.count(),
+            "tick_logs": TickLog.query.count(),
+        }
+        payload = {
+            "message": "Database populated successfully",
+            # Backward-compatible flat fields.
+            "users": counts["users"],
+            "planets": counts["planets"],
+            "fleets": counts["fleets"],
+            "alliances": counts["alliances"],
+            "tick_logs": counts["tick_logs"],
+        }
+        payload.update(
+            build_harness_setup_contract(
+                setup_id="populate",
+                deterministic=(deterministic or os.getenv("FLASK_ENV") == "testing"),
+                counts=counts,
+            )
+        )
+        return jsonify(payload), 200
 
     except Exception as e:
         db.session.rollback()
