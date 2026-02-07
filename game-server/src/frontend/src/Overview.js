@@ -8,6 +8,14 @@ function Overview({ user, planets, onNavigateSection }) {
   const [debrisSummary, setDebrisSummary] = useState({ count: 0, total: 0 });
   const [researchSummary, setResearchSummary] = useState({ points: 0, queue: null, nextSuggestionKey: null });
   const sseHealthyRef = useRef(false);
+  const questStorageKey = useMemo(() => `pa:questHelperHidden:${user?.id || 'anon'}`, [user?.id]);
+  const [questHidden, setQuestHidden] = useState(() => {
+    try {
+      return localStorage.getItem('pa:questHelperHidden:anon') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
   const [suggestionsHidden, setSuggestionsHidden] = useState(() => {
     try {
       return localStorage.getItem('pa:commanderSuggestionsHidden') === 'true';
@@ -160,6 +168,37 @@ function Overview({ user, planets, onNavigateSection }) {
     });
   }, [activity]);
 
+  useEffect(() => {
+    try {
+      setQuestHidden(localStorage.getItem(questStorageKey) === 'true');
+    } catch (e) {
+      setQuestHidden(false);
+    }
+  }, [questStorageKey]);
+
+  const questSteps = useMemo(() => {
+    const activityBlob = (activity || [])
+      .map((log) => `${String(log?.event_type || '').toLowerCase()} ${String(log?.event_description || '').toLowerCase()}`)
+      .join(' | ');
+    const hasCombatShips = (planets || []).some((p) => {
+      const s = p?.ships || {};
+      return Number(s.light_fighter || 0) + Number(s.heavy_fighter || 0) + Number(s.cruiser || 0) + Number(s.battleship || 0) > 0;
+    });
+    const hasAttack = activityBlob.includes('combat') || activityBlob.includes('fleet_sent');
+    const hasRecycle = activityBlob.includes('recycle');
+    const hasColonize = (planets || []).length > 1 || activityBlob.includes('colonization');
+    const hasRename = activityBlob.includes('rename');
+    return [
+      { id: 'build_ships', label: 'Build ships', done: hasCombatShips, section: 'shipyard' },
+      { id: 'attack_pirates', label: 'Attack pirates', done: hasAttack, section: 'galaxy' },
+      { id: 'recycle_debris', label: 'Recycle debris', done: hasRecycle, section: 'combat' },
+      { id: 'colonize_planet', label: 'Colonize a planet', done: hasColonize, section: 'galaxy' },
+      { id: 'rename_planet', label: 'Rename a planet', done: hasRename, section: 'planets' },
+    ];
+  }, [activity, planets]);
+  const questCompleted = questSteps.filter((s) => s.done).length;
+  const questCurrent = questSteps.find((s) => !s.done) || null;
+
   const totalResources = planets.reduce((sum, planet) => ({
     metal: sum.metal + planet.resources.metal,
     crystal: sum.crystal + planet.resources.crystal,
@@ -226,6 +265,14 @@ function Overview({ user, planets, onNavigateSection }) {
 		                </span>
 		              </>
 		            )}
+                {Boolean(idleGains.was_capped) && (
+                  <>
+                    {' • '}
+                    <span className="text-amber-200 font-medium" data-testid="overview-idle-capped-note">
+                      catch-up window capped at 4 weeks
+                    </span>
+                  </>
+                )}
 		          </div>
 		        )}
 		      </div>
@@ -285,6 +332,70 @@ function Overview({ user, planets, onNavigateSection }) {
             {Object.values(totalBuildings).reduce((sum, level) => sum + level, 0)}
           </div>
         </div>
+      </div>
+
+      {/* Quest Helper */}
+      <div className="pa-card p-6" data-testid="quest-helper">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3 className="text-xl font-bold text-white">Quest Helper</h3>
+          <button
+            type="button"
+            className="pa-btn-ghost px-3 py-1 text-sm"
+            data-testid="quest-helper-toggle"
+            onClick={() => {
+              setQuestHidden((v) => {
+                const next = !v;
+                try {
+                  localStorage.setItem(questStorageKey, String(next));
+                } catch (e) {
+                  // ignore
+                }
+                return next;
+              });
+            }}
+          >
+            {questHidden ? 'Show' : 'Hide'}
+          </button>
+        </div>
+
+        {!questHidden && (
+          <>
+            <div className="text-sm text-slate-200/85 mb-3" data-testid="quest-helper-progress">
+              Progress: <span className="text-white font-semibold">{questCompleted}/5</span>
+              {questCurrent ? (
+                <> • Next: <span className="text-white font-semibold">{questCurrent.label}</span></>
+              ) : (
+                <> • <span className="text-emerald-300 font-semibold">Arc complete</span></>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-4">
+              {questSteps.map((step) => (
+                <div key={step.id} className="pa-panel p-3 flex items-center justify-between" data-testid={`quest-step-${step.id}`}>
+                  <span className={step.done ? 'text-emerald-300' : 'text-slate-200/90'}>
+                    {step.done ? '✅' : '⬜'} {step.label}
+                  </span>
+                  <button
+                    type="button"
+                    className="pa-btn-secondary px-2 py-1 text-xs"
+                    onClick={() => onNavigateSection?.(step.section)}
+                  >
+                    Open
+                  </button>
+                </div>
+              ))}
+            </div>
+            {questCurrent && (
+              <button
+                type="button"
+                className="pa-btn-primary px-3 py-2"
+                data-testid="quest-helper-next-action"
+                onClick={() => onNavigateSection?.(questCurrent.section)}
+              >
+                Go: {questCurrent.label}
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {/* Commander Suggestions */}

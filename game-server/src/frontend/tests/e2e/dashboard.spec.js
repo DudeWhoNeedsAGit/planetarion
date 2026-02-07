@@ -10,8 +10,26 @@ test.describe('Dashboard', () => {
   test('should display dashboard with user info', async ({ page }) => {
     // Check header
     await expect(page.locator('h1')).toContainText('Planetarion');
-    await expect(page.locator('text=Welcome, e2etestuser!')).toBeVisible();
+    await expect(page.locator('text=Empire Overview')).toBeVisible();
     await expect(page.getByTestId('logout-button')).toBeVisible();
+    await expect(page.getByTestId('quest-helper')).toBeVisible();
+    await expect(page.getByTestId('quest-helper-progress')).toBeVisible();
+  });
+
+  test('quest helper next action navigates away from overview', async ({ page }) => {
+    await expect(page.locator('text=Empire Overview')).toBeVisible();
+    const nextAction = page.getByTestId('quest-helper-next-action');
+    if (!(await nextAction.isVisible())) {
+      test.skip(true, 'Quest arc already complete in current snapshot.');
+    }
+    await nextAction.click();
+    const movedToSection =
+      (await page.getByTestId('section-shipyard').count()) > 0 ||
+      (await page.getByTestId('section-planets').count()) > 0 ||
+      (await page.getByTestId('section-fleets').count()) > 0 ||
+      (await page.getByTestId('section-combat').count()) > 0;
+    const galaxyOpened = (await page.getByTestId('galaxy-modal').count()) > 0;
+    expect(movedToSection || galaxyOpened).toBeTruthy();
   });
 
   test('should navigate between sections', async ({ page }) => {

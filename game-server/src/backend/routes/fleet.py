@@ -385,6 +385,18 @@ def send_fleet():
         if not target_planet.user_id:
             return jsonify({'error': 'Cannot attack unowned planet. Use colonization instead.'}), 400
 
+        # PvP protection: block attacks against protected players, but never block attacks on pirates NPC.
+        target_owner = User.query.get(target_planet.user_id) if target_planet.user_id else None
+        target_owner_name = str(getattr(target_owner, 'username', '') or '').lower()
+        target_protection_until = getattr(target_owner, 'protection_until', None)
+        if (
+            target_owner
+            and target_owner_name != 'pirates'
+            and target_protection_until is not None
+            and target_protection_until > datetime.utcnow()
+        ):
+            return jsonify({'error': 'Target player is under protection'}), 400
+
         fleet.mission = 'attack'
         fleet.target_planet_id = target_planet_id
         fleet.status = 'traveling'

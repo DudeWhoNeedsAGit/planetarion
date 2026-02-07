@@ -464,6 +464,46 @@ class TestFleetTravelService:
                 assert f"{expected_x}:" in current_pos or abs(float(current_pos.split(':')[0]) - expected_x) < 1
 
     @freeze_time("2025-01-01 12:00:00")
+    def test_returning_travel_info_uses_reverse_route(self, app):
+        """Returning fleets should render route as target->origin (B->A), not A->B."""
+        with app.app_context():
+            origin = Planet(name='Origin', x=10, y=20, z=30)
+            target = Planet(name='Target', x=110, y=120, z=130)
+
+            fleet = Mock(spec=Fleet)
+            fleet.status = 'returning'
+            fleet.start_planet_id = 1   # origin A
+            fleet.target_planet_id = 2  # target B
+            fleet.departure_time = datetime(2025, 1, 1, 11, 0, 0)
+            fleet.arrival_time = datetime(2025, 1, 1, 13, 0, 0)
+            fleet.small_cargo = 5
+            fleet.large_cargo = 0
+            fleet.light_fighter = 0
+            fleet.heavy_fighter = 0
+            fleet.cruiser = 0
+            fleet.battleship = 0
+            fleet.colony_ship = 0
+            fleet.recycler = 0
+            fleet.espionage_probe = 0
+            fleet.bomber = 0
+            fleet.destroyer = 0
+            fleet.deathstar = 0
+            fleet.battlecruiser = 0
+
+            with patch.object(Planet, 'query') as mock_query:
+                mock_get = Mock()
+                mock_get.side_effect = lambda pid: origin if pid == 1 else target
+                mock_query.get = mock_get
+
+                info = FleetTravelService.calculate_travel_info(fleet)
+
+                assert info is not None
+                assert info['start_coordinates'] == '110:120:130'
+                assert info['target_coordinates'] == '10:20:30'
+                # At 50% progress we should be halfway from B to A.
+                assert info['current_position'] == '60:70:80'
+
+    @freeze_time("2025-01-01 12:00:00")
     def test_minimum_travel_time_enforced(self, app):
         """Test that minimum travel time (30 seconds) is enforced to prevent instant arrivals"""
         with app.app_context():

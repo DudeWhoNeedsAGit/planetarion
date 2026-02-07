@@ -8,7 +8,7 @@ Status: Draft (MVP-focused; implementation-ready)
 Create a lightweight, server-driven Pirate AI that:
 - Spawns **per-player** pirate encounters near each player (not a global shared pirate faction).
 - Acts on an **hourly cadence** (not per tick), with **peak time intensity** (18:00–20:00 server time).
-- Produces gameplay through **combat → ship losses → debris fields** (no resource stealing/transfer in MVP).
+- Produces gameplay through **combat → ship losses → debris fields**.
 - Is deterministic enough to test, cheap to run, and safe (caps, cooldowns, protection windows).
 
 Non-goals (MVP):
@@ -149,7 +149,8 @@ On arrival, use existing fleet arrival / combat pipeline:
 - Debris field created at the target planet location.
 
 MVP rule:
-- Pirates do not steal resources in MVP.
+- **Pirate-initiated raids do not transfer resources** (no theft on pirate attack events).
+- **Player-initiated attacks on pirate planets may transfer loot** as a separate gameplay loop.
 
 Optional extensions:
 - Add “structure damage” or “resource burn” later.
@@ -225,4 +226,3 @@ Scenario:
 1) Peak time: currently specified as **server time 18:00–20:00**. Confirm this (vs player-local time).
 2) Daily raid cap: confirm desired cap (suggest: 1–2 per 24h).
 3) Do we allow pirate raids against players with 1 planet and very low fleet power (or keep a grace threshold)?
-

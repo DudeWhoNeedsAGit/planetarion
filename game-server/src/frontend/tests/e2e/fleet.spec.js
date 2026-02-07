@@ -49,6 +49,27 @@ async function ensureShipyardShips(page, shipType, quantity) {
   });
 }
 
+async function ensureSendableFleet(page) {
+  const token = await page.evaluate(() => localStorage.getItem('token'));
+  if (!token) return;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const planetsRes = await page.request.get('http://localhost:5000/api/planet', { headers });
+  if (!planetsRes.ok()) return;
+  const planets = await planetsRes.json();
+  const startPlanetId = planets?.[0]?.id;
+  if (!startPlanetId) return;
+
+  await ensureShipyardShips(page, 'small_cargo', 3);
+  const createRes = await page.request.post('http://localhost:5000/api/fleet', {
+    headers,
+    data: { start_planet_id: startPlanetId, ships: { small_cargo: 1 } },
+  });
+  if (!createRes.ok()) {
+    // Non-fatal: an existing fleet may already satisfy this.
+  }
+}
+
 test.describe('Fleet Management', () => {
   test.beforeEach(async ({ page, request }) => {
     await loginViaLocalStorage(page, request, 'e2etestuser', 'testpassword123');
@@ -166,6 +187,41 @@ test.describe('Fleet Management', () => {
       const firstFleet = page.getByTestId('fleet-tile').first();
       await expect(firstFleet.getByTestId('fleet-to-value')).not.toHaveText('N/A');
     }
+  });
+
+  test('should save and apply a mission template', async ({ page }) => {
+    await ensureSendableFleet(page);
+    await page.reload();
+    await navigateToFleets(page);
+
+    const sendButton = page.locator('[data-testid="fleet-tile"] button:has-text("Send")').first();
+    await expect(sendButton).toBeVisible();
+
+    await sendButton.click();
+    await expect(page.getByTestId('fleet-send-modal')).toBeVisible({ timeout: 15000 });
+
+    const targetSelect = page.getByTestId('fleet-target-planet-select');
+    await page.getByTestId('fleet-mission-select').selectOption('attack');
+    const optionCount = await targetSelect.locator('option').count();
+    if (optionCount >= 2) {
+      await targetSelect.selectOption({ index: 1 });
+    }
+
+    page.once('dialog', async (dialog) => {
+      await dialog.accept('Attack Template A');
+    });
+    await page.getByTestId('fleet-send-save-template').click();
+    await expect(page.getByRole('alert')).toContainText('Saved template: Attack Template A');
+
+    await page.getByTestId('fleet-send-cancel').click();
+    await expect(page.getByTestId('fleet-send-modal')).not.toBeVisible();
+
+    await expect(page.getByTestId('fleet-templates-panel')).toBeVisible();
+    await page.getByTestId('fleet-template-apply').first().click();
+
+    await expect(page.getByTestId('fleet-send-modal')).toBeVisible();
+    await expect(page.getByTestId('fleet-mission-select')).toHaveValue('attack');
+    await page.getByTestId('fleet-send-cancel').click();
   });
 
   test('should show recall button for moving fleets', async ({ page }) => {

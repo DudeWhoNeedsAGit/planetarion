@@ -7,10 +7,33 @@ import GalaxyCanvas from './galaxy/GalaxyCanvas';
 import GalaxyMinimapV2 from './galaxy/GalaxyMinimapV2';
 import { usePanZoom2D } from './galaxy/usePanZoom2D';
 import styles from './galaxy/GalaxyMap.module.css';
+import { deriveFleetDisplayState } from './fleetStateView';
 
 const DEFAULT_GALAXY_RANGE = 2000;
 const MINIMAP_RANGE_MULTIPLIER = 12;
 const MAP_SPACING_FACTOR = 10; // purely visual; does not change coordinates or gameplay
+const LS_GALAXY_SHOW_GRID = 'planetarion:galaxy:showGrid';
+const LS_GALAXY_SHOW_LANES = 'planetarion:galaxy:showFleetLanes';
+const LS_GALAXY_SHOW_LINKS = 'planetarion:galaxy:showEmpireLinks';
+const LS_GALAXY_FOCUS = 'planetarion:galaxy:focus';
+
+function loadBool(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return raw === '1';
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function persistBool(key, value) {
+  try {
+    localStorage.setItem(key, value ? '1' : '0');
+  } catch (e) {
+    // best-effort only
+  }
+}
 
 function parseCoords(coords) {
   if (!coords || typeof coords !== 'string') return null;
@@ -32,9 +55,23 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
   const [error, setError] = useState(null);
   const [galaxyLoaded, setGalaxyLoaded] = useState(false);
   const [galaxyRange] = useState(DEFAULT_GALAXY_RANGE);
-  const [showGrid, setShowGrid] = useState(true);
+  const [showGrid, setShowGrid] = useState(() => loadBool(LS_GALAXY_SHOW_GRID, true));
+  const [showFleetLanes, setShowFleetLanes] = useState(() => loadBool(LS_GALAXY_SHOW_LANES, true));
+  const [showEmpireLinks, setShowEmpireLinks] = useState(() => loadBool(LS_GALAXY_SHOW_LINKS, true));
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [focusIntent, setFocusIntent] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LS_GALAXY_FOCUS);
+      if (!raw) return null;
+      localStorage.removeItem(LS_GALAXY_FOCUS);
+      const parsed = JSON.parse(raw);
+      if (!Number.isFinite(parsed?.x) || !Number.isFinite(parsed?.y)) return null;
+      return { x: Number(parsed.x), y: Number(parsed.y), z: Number.isFinite(parsed?.z) ? Number(parsed.z) : null };
+    } catch (e) {
+      return null;
+    }
+  });
 
   const refreshTimerRef = useRef(null);
   const lastFetchCenterRef = useRef(null);
@@ -87,6 +124,10 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
     const t = setInterval(() => setNowMs(Date.now()), 250);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => persistBool(LS_GALAXY_SHOW_GRID, showGrid), [showGrid]);
+  useEffect(() => persistBool(LS_GALAXY_SHOW_LANES, showFleetLanes), [showFleetLanes]);
+  useEffect(() => persistBool(LS_GALAXY_SHOW_LINKS, showEmpireLinks), [showEmpireLinks]);
 
   useEffect(() => {
     if (!needsRefresh) return;
@@ -251,15 +292,25 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom, galaxyLoaded, effectiveFetchRange]);
 
+  useEffect(() => {
+    if (!focusIntent) return;
+    if (Number.isFinite(focusIntent.z) && Number(focusIntent.z) !== Number(centerZ)) return;
+    setCameraCenter({ x: focusIntent.x, y: focusIntent.y });
+    const key = `${focusIntent.x}:${focusIntent.y}:${Number.isFinite(focusIntent.z) ? focusIntent.z : centerZ}`;
+    const match = (systems || []).find((s) => s?.key === key);
+    if (match) setSelectedSystem(match);
+    setFocusIntent(null);
+  }, [focusIntent, systems, centerZ, setCameraCenter]);
+
   const fleetOverlay = useMemo(() => {
-    const colorByMission = (mission) => {
+    const styleByMission = (mission) => {
       const m = String(mission || '').toLowerCase();
-      if (m.includes('attack')) return '#ef4444';
-      if (m.includes('recycle')) return '#22c55e';
-      if (m.includes('colon')) return '#14b8a6';
-      if (m.includes('explor')) return '#a855f7';
-      if (m.includes('espion')) return '#f59e0b';
-      return '#60a5fa';
+      if (m.includes('attack')) return { color: '#ef4444', key: 'attack', dash: '12 8', width: 2.3, blip: 'attack' };
+      if (m.includes('recycle')) return { color: '#22c55e', key: 'recycle', dash: '8 10', width: 2.1, blip: 'utility' };
+      if (m.includes('colon')) return { color: '#14b8a6', key: 'colonize', dash: '5 8', width: 2.0, blip: 'utility' };
+      if (m.includes('explor')) return { color: '#a855f7', key: 'explore', dash: '4 10', width: 1.8, blip: 'stealth' };
+      if (m.includes('espion')) return { color: '#f59e0b', key: 'espionage', dash: '3 10', width: 1.8, blip: 'stealth' };
+      return { color: '#60a5fa', key: 'default', dash: '9 9', width: 2.0, blip: 'utility' };
     };
 
     return (movingFleets || []).map((f) => {
@@ -277,10 +328,73 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
         x: start.x + (target.x - start.x) * t,
         y: start.y + (target.y - start.y) * t,
       };
+      const dx = target.x - start.x;
+      const dy = target.y - start.y;
+      const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+      const style = styleByMission(f.mission);
+      const chevron = {
+        x: start.x + dx * 0.68,
+        y: start.y + dy * 0.68,
+        angleDeg,
+      };
 
-      return { id: f.id, start, target, dot, color: colorByMission(f.mission), title: `Fleet #${f.id} • ${f.mission} • ${f.status}` };
+      return {
+        id: f.id,
+        mission: f.mission,
+        start,
+        target,
+        dot,
+        chevron,
+        color: style.color,
+        laneDash: style.dash,
+        laneWidth: style.width,
+        laneKey: style.key,
+        blipKey: style.blip,
+        isPendingProcessing:
+          deriveFleetDisplayState({
+            status: f.status,
+            arrivalTime: Number.isFinite(f.arrivalMs) ? new Date(f.arrivalMs).toISOString() : null,
+            nowMs,
+          }) === 'arrived_pending_processing',
+        title: `Fleet #${f.id} • ${f.mission} • ${f.status}`,
+      };
     });
   }, [movingFleets, nowMs, homeX, homeY, worldScale]);
+
+  const empireLinks = useMemo(() => {
+    const owned = (planets || []).filter((p) => p.user_id === user.id && Number.isFinite(p.x) && Number.isFinite(p.y) && p.z === centerZ);
+    if (owned.length < 2) return [];
+
+    const points = owned.map((p) => ({
+      id: p.id,
+      x: (p.x - homeX) * worldScale,
+      y: (p.y - homeY) * worldScale,
+    }));
+
+    // Build a minimal nearest-neighbor tree anchored from the first node.
+    const linked = new Set([points[0].id]);
+    const byId = new Map(points.map((p) => [p.id, p]));
+    const edges = [];
+
+    while (linked.size < points.length) {
+      let best = null;
+      for (const aId of linked) {
+        const a = byId.get(aId);
+        for (const b of points) {
+          if (linked.has(b.id)) continue;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const d2 = dx * dx + dy * dy;
+          if (!best || d2 < best.d2) best = { a, b, d2 };
+        }
+      }
+      if (!best) break;
+      linked.add(best.b.id);
+      edges.push({ x1: best.a.x, y1: best.a.y, x2: best.b.x, y2: best.b.y });
+    }
+
+    return edges;
+  }, [planets, user.id, centerZ, homeX, homeY, worldScale]);
 
   const handleExploreSystem = async (system) => {
     if (system.explored) return;
@@ -314,6 +428,37 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
   };
 
   const selectedKey = selectedSystem?.key || (selectedSystem ? `${selectedSystem.x}:${selectedSystem.y}:${selectedSystem.z}` : null);
+  const pirateCandidate = useMemo(() => {
+    const source = Array.isArray(systems) ? systems : [];
+    if (source.length === 0) return null;
+    const pirates = source.filter((s) => s?.relation === 'pirates' || s?.flags?.has_pirates);
+    if (pirates.length === 0) return null;
+    const cx = Number(viewCenterX || homeX || 0);
+    const cy = Number(viewCenterY || homeY || 0);
+    return pirates
+      .slice()
+      .sort((a, b) => {
+        const da = Math.hypot((a.x || 0) - cx, (a.y || 0) - cy);
+        const db = Math.hypot((b.x || 0) - cx, (b.y || 0) - cy);
+        return da - db;
+      })[0];
+  }, [systems, viewCenterX, viewCenterY, homeX, homeY]);
+
+  const debrisCandidate = useMemo(() => {
+    const source = Array.isArray(systems) ? systems : [];
+    if (source.length === 0) return null;
+    const debris = source.filter((s) => s?.flags?.has_debris);
+    if (debris.length === 0) return null;
+    const cx = Number(viewCenterX || homeX || 0);
+    const cy = Number(viewCenterY || homeY || 0);
+    return debris
+      .slice()
+      .sort((a, b) => {
+        const da = Math.hypot((a.x || 0) - cx, (a.y || 0) - cy);
+        const db = Math.hypot((b.x || 0) - cx, (b.y || 0) - cy);
+        return da - db;
+      })[0];
+  }, [systems, viewCenterX, viewCenterY, homeX, homeY]);
 
   return (
     <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50" data-testid="galaxy-modal">
@@ -358,7 +503,46 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
             >
               Grid {showGrid ? 'ON' : 'OFF'}
             </button>
+            <button
+              onClick={() => setShowFleetLanes((v) => !v)}
+              className={`${showFleetLanes ? 'pa-btn-primary' : 'pa-btn-secondary'} px-3 py-1 text-sm`}
+            >
+              Lanes {showFleetLanes ? 'ON' : 'OFF'}
+            </button>
+            <button
+              onClick={() => setShowEmpireLinks((v) => !v)}
+              className={`${showEmpireLinks ? 'pa-btn-primary' : 'pa-btn-secondary'} px-3 py-1 text-sm`}
+            >
+              Empire Links {showEmpireLinks ? 'ON' : 'OFF'}
+            </button>
           </div>
+        </div>
+        <div className="flex items-center gap-2 mb-4 flex-wrap" data-testid="galaxy-quick-focus">
+          <button
+            onClick={() => setCameraCenter({ x: homeX, y: homeY })}
+            className="pa-btn-secondary px-3 py-1 text-sm"
+            data-testid="galaxy-focus-home"
+          >
+            Home
+          </button>
+          <button
+            onClick={() => pirateCandidate && setCameraCenter({ x: pirateCandidate.x, y: pirateCandidate.y })}
+            className="pa-btn-secondary px-3 py-1 text-sm"
+            data-testid="galaxy-focus-nearest-pirate"
+            disabled={!pirateCandidate}
+            title={pirateCandidate ? `${pirateCandidate.x}:${pirateCandidate.y}:${pirateCandidate.z}` : 'No pirate system in current scan range'}
+          >
+            Nearest Pirate
+          </button>
+          <button
+            onClick={() => debrisCandidate && setCameraCenter({ x: debrisCandidate.x, y: debrisCandidate.y })}
+            className="pa-btn-secondary px-3 py-1 text-sm"
+            data-testid="galaxy-focus-debris-hotspot"
+            disabled={!debrisCandidate}
+            title={debrisCandidate ? `${debrisCandidate.x}:${debrisCandidate.y}:${debrisCandidate.z}` : 'No debris field in current scan range'}
+          >
+            Debris Hotspot
+          </button>
         </div>
 
         {loading && !galaxyLoaded && (
@@ -411,7 +595,10 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
               onPointerUp={onPointerUp}
               wheelListener={wheelListener}
               showGrid={showGrid}
+              showFleetLanes={showFleetLanes}
+              showEmpireLinks={showEmpireLinks}
               movingFleetOverlay={fleetOverlay}
+              empireLinks={empireLinks}
             />
 
             <div className={styles.legend}>
@@ -436,6 +623,10 @@ export default function GalaxyMap({ user, planets, onClose, onNavigateSection })
                 <div className={styles.legendItem}>
                   <span className={styles.swatchRing} />
                   Debris
+                </div>
+                <div className={styles.legendItem}>
+                  <span className={styles.swatchLine} />
+                  Empire links
                 </div>
               </div>
             </div>

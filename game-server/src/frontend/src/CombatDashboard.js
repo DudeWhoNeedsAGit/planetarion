@@ -57,7 +57,7 @@ const CombatDashboard = ({ user, planets = [], onNavigateSection }) => {
           />
         );
       case 'battles':
-        return <BattleReports user={user} />;
+        return <BattleReports user={user} onNavigateSection={onNavigateSection} />;
       case 'spy':
         return <SpyReports />;
       case 'statistics':
@@ -108,6 +108,7 @@ const CombatDashboard = ({ user, planets = [], onNavigateSection }) => {
           formatTimeAgo={formatTimeAgo}
           calculateTotalLosses={calculateTotalLosses}
           userId={user?.id}
+          onNavigateSection={onNavigateSection}
         />
       )}
 

@@ -58,6 +58,8 @@ test.describe('Tick Processing', () => {
 
     const pendingBanner = page.getByTestId('fleet-pending-tick-banner');
     await expect(pendingBanner).toBeVisible({ timeout: 60000 });
+    await expect(pendingBanner).toContainText('awaiting server processing');
+    await expect(pendingBanner).toContainText('Auto-ticks should resolve this shortly');
 
     const tile = page.getByTestId('fleet-tile').filter({ hasText: `Fleet #${probeFleetId}` }).first();
     await expect(tile).toBeVisible({ timeout: 60000 });

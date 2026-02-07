@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Navigation from './Navigation';
 import Overview from './Overview';
@@ -25,16 +25,22 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
   const [pollingInterval, setPollingInterval] = useState(null);
   const [chatMinimized, setChatMinimized] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameTargetPlanetId, setRenameTargetPlanetId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [renaming, setRenaming] = useState(false);
   const { showSuccess, showError } = useToast();
   const idleGains = user?.idle_gains || null;
   const [portraitKey, setPortraitKey] = useState(() => user?.portrait_key || 'male');
   const [portraitSize, setPortraitSize] = useState(() => (window.innerWidth < 640 ? 72 : 108));
+  const selectedPlanetRef = useRef(null);
 
   useEffect(() => {
     setPortraitKey(user?.portrait_key || 'male');
   }, [user?.portrait_key]);
+
+  useEffect(() => {
+    selectedPlanetRef.current = selectedPlanet;
+  }, [selectedPlanet]);
 
   useEffect(() => {
     const onResize = () => setPortraitSize(window.innerWidth < 640 ? 72 : 108);
@@ -119,6 +125,16 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof onUserRefresh !== 'function') return undefined;
+    const interval = setInterval(() => {
+      onUserRefresh().catch(() => {
+        // non-fatal background refresh
+      });
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [onUserRefresh]);
+
   // Update selected planet when planets data changes
   useEffect(() => {
     if (planets.length > 0 && !selectedPlanet) {
@@ -137,7 +153,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
       setLoadError(null);
       const response = await axios.get('/api/planet', { timeout: 10000 });
       setPlanets(response.data);
-      if (response.data.length > 0 && !selectedPlanet) {
+      if (response.data.length > 0 && !selectedPlanetRef.current) {
         setSelectedPlanet(response.data[0]);
       }
     } catch (error) {
@@ -148,6 +164,16 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
       setLoading(false);
     }
   };
+
+  const closeRenameModal = () => {
+    setShowRenameModal(false);
+    setRenameTargetPlanetId(null);
+    setRenameValue('');
+  };
+
+  const renameTargetPlanet = renameTargetPlanetId != null
+    ? planets.find((p) => p.id === renameTargetPlanetId) || (selectedPlanet?.id === renameTargetPlanetId ? selectedPlanet : null)
+    : null;
 
   const handleBuildingUpgrade = async (buildingType, newLevel) => {
     if (!selectedPlanet) return;
@@ -531,6 +557,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	                  disabled={!selectedPlanet || renaming}
 	                  onClick={() => {
 	                    if (!selectedPlanet) return;
+                      setRenameTargetPlanetId(selectedPlanet.id);
 	                    setRenameValue(selectedPlanet.name || '');
 	                    setShowRenameModal(true);
 	                  }}
@@ -1336,6 +1363,14 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
                         </span>
                       </>
                     )}
+                    {Boolean(idleGains.was_capped) && (
+                      <>
+                        {' • '}
+                        <span className="text-amber-200 font-medium" data-testid="idle-summary-capped-note">
+                          catch-up window capped at 4 weeks
+                        </span>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -1375,7 +1410,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
         {renderSection()}
       </main>
 
-	      {showRenameModal && selectedPlanet && (
+	      {showRenameModal && renameTargetPlanet && (
 	        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-6" data-testid="planet-rename-modal">
 	          <div className="pa-modal p-6 w-full max-w-md">
 	            <div className="flex items-center justify-between mb-4">
@@ -1383,7 +1418,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	              <button
 	                type="button"
 	                className="pa-btn-ghost px-3 py-2 text-sm"
-	                onClick={() => setShowRenameModal(false)}
+	                onClick={closeRenameModal}
 	                aria-label="Close"
 	              >
 	                Close
@@ -1391,7 +1426,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	            </div>
 
 	            <div className="text-sm text-slate-300/90 mb-3">
-	              Planet: <span className="text-white font-medium">{selectedPlanet.name}</span>
+	              Planet: <span className="text-white font-medium">{renameTargetPlanet.name}</span>
 	            </div>
 
 	            <label className="block text-slate-200/90 mb-2">New name (one-time)</label>
@@ -1416,14 +1451,16 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	                  if (!newName) return;
 	                  setRenaming(true);
 	                  try {
-	                    const res = await axios.put('/api/planet/rename', { planet_id: selectedPlanet.id, new_name: newName });
+                      const targetId = renameTargetPlanetId;
+                      if (!targetId) return;
+	                    const res = await axios.put('/api/planet/rename', { planet_id: targetId, new_name: newName });
 	                    const updated = res.data?.planet;
 	                    if (updated?.id) {
 	                      setPlanets((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
 	                      setSelectedPlanet((prev) => (prev?.id === updated.id ? updated : prev));
 	                    }
 	                    showSuccess('Planet renamed');
-	                    setShowRenameModal(false);
+	                    closeRenameModal();
 	                  } catch (e) {
 	                    showError(e.response?.data?.error || 'Rename failed');
 	                  } finally {
@@ -1437,7 +1474,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	                type="button"
 	                className="flex-1 pa-btn-secondary py-3"
 	                data-testid="planet-rename-cancel"
-	                onClick={() => setShowRenameModal(false)}
+	                onClick={closeRenameModal}
 	              >
 	                Cancel
 	              </button>

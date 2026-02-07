@@ -1,135 +1,307 @@
-# Planetarion — Galaxy Map Rebuild (Spec + Plan)
+# Planetarion — Galaxy Map Evolution Spec (v2)
+Date: 2026-02-07
+Status: Active
+Scope: Frontend visual/UX evolution on top of current map architecture
 
-Date: 2026-02-03  
-Status: Draft (implementation-oriented)  
-Scope: Frontend-first refactor + small backend contract tightenings
+## 0) Why this update
+Current map functionality is solid (pan/zoom, minimap, intel panel, fleet overlay), but visual differentiation is weak:
+- systems are primarily ring-color encoded,
+- scanning the map is functional but not emotionally engaging,
+- zooming does not yet reveal richer spatial storytelling.
 
-## 0) Purpose
+Goal: make the map enjoyable to navigate while preserving current performance and data contracts.
 
-The Galaxy Map is the player’s **decision surface**:
-- find targets
-- understand risk/reward at a glance
-- take action (attack / spy / recycle / colonize)
-- track outcomes (ETA, arrivals, combat, debris, capture)
+## 1) Current State (code-grounded)
+Current implementation strengths:
+- SVG world-space rendering with smooth pan/zoom.
+- Moving fleet overlay already exists and is map-anchored.
+- Minimap with camera window + click-to-focus.
+- Intel panel action bridge to fleets.
+- SSE-driven refresh + debounced fetching.
 
-This spec defines the gameplay requirements, UX rules, and an implementation plan to rebuild the Galaxy Map with:
-- **stable rendering** (no flicker/reset)
-- **event-driven updates** (SSE)
-- **clear intel model** (contact vs scouted vs full)
-- **scalable visuals** (assets + icons)
+Current visual limitations:
+- Marker identity relies mostly on stroke color.
+- Fleet lines are readable but stylistically flat.
+- Home-planet connection storytelling is missing.
+- Map atmosphere is mostly static gradient + grid.
 
-## 1) Gameplay Requirements (North Star)
+## 2) Design Goals
+1. Strong visual identity per system type without relying on color alone.
+2. “Pleasure to zoom” experience: more structure appears at deeper zoom levels.
+3. Preserve readability and tactical clarity under high marker density.
+4. Keep current API contracts; evolve mostly in UI layer.
+5. Incremental rollout with measurable acceptance checks.
 
-### 1.1 What a player should be able to do (20–30 min session)
-- See nearby pirate targets and pick one within 10–20 seconds.
-- From a target: choose source planet + mission + fleet template and launch.
-- See an accurate ETA (or a clear “unknown”).
-- On resolution: get a clear follow-up CTA (send recyclers / colonize / rename).
+## 3) Visual Language System
 
-### 1.2 Map should feel “alive” without being spammy
-- World changes appear as **additive events** (no lists clearing, no full-map resets).
-- Only “meaningful” changes trigger UI refresh:
-  - planet ownership changes
-  - exploration completion
-  - debris created/cleared
-  - pirate camp spawned/destroyed
+### 3.1 Marker taxonomy (shape + icon + motion)
+Each marker uses three channels:
+- silhouette/frame style,
+- center glyph/texture hint,
+- motion treatment.
 
-## 2) Visibility / Intel Model (Fog-of-war rules)
+Relation mapping:
+- `self`: blue command ring + subtle home pulse + inner star/garrison glyph.
+- `players/enemy`: amber/orange tactical ring + segmented frame.
+- `pirates`: red jagged ring + hazard ticks + faint scan sweep.
+- `unknown/unowned`: slate ring + dim center core.
 
-We split **visibility** and **intel detail**:
-- **Visibility**: contacts are visible on the map so the player can plan.
-- **Intel detail**: names, owner, garrison estimates, loot estimates are gated by exploration/spy.
+Optional state adorners:
+- debris: orbiting shard ring.
+- selection: clean bright ring + soft outer bloom.
+- explored: crisp core.
+- unexplored: softened core + lower contrast.
 
-### 2.1 Contact levels
-- `contact`: marker visible + coordinates; minimal info (type hint only).
-- `scouted`: owner/type visible + basic risk/reward.
-- `full`: detailed planet list + detailed tooltip + action constraints.
+### 3.2 Zoom-tier behavior (progressive detail)
+Tier A (far zoom):
+- simplified dots/frames only,
+- low-noise fleet lanes.
 
-### 2.2 Current constraints (2D Z-slice)
-- GalaxyMap operates on the player’s Z-slice (2D X/Y).  
-- Backend queries default to `z_band=0`.
+Tier B (mid zoom):
+- marker frames + relation glyph,
+- debris and pirate hazard adorners.
 
-## 3) UX: Layout + Interactions
+Tier C (near zoom):
+- richer frame texture,
+- micro labels (optional toggle),
+- clearer lane direction indicators.
 
-### 3.1 3-pane structure
-- **Center Canvas**: pan/zoom + markers.
-- **Corner Minimap**: large overview radius; click to focus camera; shows camera window.
-- **Right Intel Panel**: selected contact/system; actions; source planet selector.
+### 3.3 Atmosphere and depth
+Map should feel alive but never noisy:
+- low-contrast starfield base layer,
+- faint nebula plumes in corners (not center),
+- grid overlay with controlled opacity,
+- subtle parallax shimmer (very slow).
 
-### 3.2 Marker density
-- Default view should show ~3–6 meaningful targets.
-- Zooming in reveals more. Zooming out simplifies/aggregates.
-- Avoid hard caps like “only render 4”.
+## 4) Fleet Overlay Evolution
 
-### 3.3 Actions (CTA)
-From a selected contact:
-- Attack
-- Spy (if enabled)
-- Recycle (if debris known)
-- Colonize (if eligible)
+## 4.1 Keep what works
+Keep:
+- route lines,
+- moving dots/blips,
+- mission-based colors.
 
-All actions must support:
-- explicit **source planet** selection (never implicit)
-- prefilled mission + target + ETA preview
+## 4.2 Refine route readability
+Enhancements:
+- lane style by mission:
+  - attack: sharper dashed lane, red pulse.
+  - recycle: rounded dashed lane, green pulse.
+  - espionage/explore: thinner line, stealth glow.
+  - colonize: teal lane with calm cadence.
+- directional chevrons/arrowheads along route (lightweight).
+- slight opacity fade near endpoints to reduce clutter.
 
-## 4) Data Contracts (Frontend-facing)
+## 4.3 Improve moving fleet cues
+Enhancements:
+- moving blip uses mission-specific halo,
+- optional tiny heading tick to imply direction,
+- hover tooltip remains concise.
 
-### 4.1 `/api/galaxy/nearby/:x/:y/:z`
-Returns “system summaries / contacts”:
-- key, x,y,z
-- relation (`self|pirates|ally|enemy|unowned|contested`)
-- owner_id + owner_name (when known)
-- explored boolean (intel, not visibility)
-- flags: has_debris, has_pirates
-- meta: center, range, z_band
+## 4.4 Planet connection network (your request)
+Add optional overlay: “Empire links”.
+- Draw subtle connection lines between your planets (minimum spanning network or nearest-neighbor graph).
+- Style: calm blue-cyan low-opacity lines.
+- Purpose: give spatial ownership feel and wayfinding anchors.
 
-### 4.2 `/api/galaxy/system/:x/:y/:z`
-Returns planet list, gated by intel rules (backend enforced).
+Controls:
+- toggle `Empire Links` in HUD (default ON).
+- toggle `Fleet Lanes` (default ON).
 
-## 5) Update Model (no polling)
+## 5) UX Flow Evolution
 
-### 5.1 Event-driven refresh
-- Subscribe to SSE (`/api/events/stream`) and refresh galaxy datasets only for relevant events.
-- Debounce updates (e.g. 500–1000ms) to avoid burst refreshes.
+### 5.1 Primary workflow
+1. Open map.
+2. Identify target cluster quickly by marker identity.
+3. Click system -> intel panel.
+4. Launch action (attack/spy/recycle/colonize) through fleet preset bridge.
+5. Observe route and live movement.
 
-### 5.2 Cache behavior
-- Keep last good datasets and update incrementally (no clearing lists to empty).
-- Show “updating…” indicator without blanking the map.
+### 5.2 Interaction polish
+- Keep drag/pan and wheel zoom behavior.
+- Add optional quick-focus chips:
+  - `Home`
+  - `Nearest Pirate`
+  - `Debris Hotspot`
+- Keep minimap click-to-focus; add relation color legend parity with main map.
 
-## 6) Asset plan (batch prompt workflow)
+## 6) Asset-Driven Plan (with prompt generation)
+Generated assets should focus on reusable layers:
+- marker frames by relation/state,
+- selection/debris rings,
+- fleet arrowheads and blips,
+- minimap frame + dots style,
+- atmospheric overlays and panel skins.
 
-Generate assets in batches (see `docs/assets/prompts/planetarion-ui-assets.ahk` and the global palette rules in the gameplay spec):
-- Map markers: pirates / players / yours / unknown
-- Minimap frame + background
-- Tooltip card background
-- Optional: planet thumbnails later (not required for MVP)
+Implementation approach:
+- Use PNG/WebP assets for frames/rings.
+- Compose in SVG/HTML with CSS blend/opacity.
+- Keep fallback to plain vector circles for low-end mode.
 
-## 7) Implementation Plan (phased)
+## 7) Phased Delivery
 
-### Phase 1 — Refactor for maintainability (no gameplay changes)
-- Split `GalaxyMap.js` into:
-  - container/state (fetch + SSE + derived data)
-  - `GalaxyCanvas` (render + pan/zoom)
-  - `GalaxyMinimap` (overview + camera window)
-  - `GalaxyIntelPanel` (selected system + actions)
-- Keep current API usage.
+## Phase 1: Marker identity uplift (low risk)
+- Introduce frame assets for self/player/pirate/unknown.
+- Keep current data and click behavior.
+- Add debris + selection asset rings.
 
-### Phase 2 — Correctness + consistency
-- Make minimap anchored to home center; camera window moves with pan.
-- Remove visibility “fog” (opacity) from markers; keep intel gating for details only.
-- Ensure minimap shows a larger radius than main view.
+Acceptance:
+- marker type can be identified by shape alone in grayscale screenshot.
 
-### Phase 3 — Gameplay loop polish
-- Source planet selection integrated into intel panel and action flows.
-- Tooltip shows risk/reward (pirates strength estimate, debris, capture).
+## Phase 2: Fleet lane polish
+- Add directional chevrons and mission-specific lane style.
+- Upgrade moving blip visuals.
+- Preserve current ETA/tooltip logic.
 
-### Phase 4 — Tests
-- Playwright: open galaxy map, click pirate, attack, see fleet in-flight + ETA.
-- Playwright: after combat, debris shows; click “send recyclers” opens fleet modal prefilled.
+Acceptance:
+- route direction is readable at glance without opening panel.
 
-## 8) Acceptance Criteria
-- No periodic polling for galaxy data.
-- Main map and minimap are consistent: minimap shows larger radius and clearly indicates camera window; main map shows targets within camera/selection rules.
-- “Fog” does not hide contacts; only reduces intel detail.
-- Clicking a minimap dot always results in a visible focus/selection on the main map (or an explicit “out of view” hint).
+## Phase 3: Empire links + overlay controls
+- Add optional own-planet network lines.
+- Add overlay toggles (`Grid`, `Fleet Lanes`, `Empire Links`).
 
+Acceptance:
+- player can disable overlays independently; state persists per session.
+
+## Phase 4: Zoom-tier refinement and atmosphere polish
+- Progressive detail by zoom tier.
+- Atmospheric layer tuning to avoid clutter.
+
+Acceptance:
+- zooming in feels richer without reducing tactical readability.
+
+## 8) Technical Constraints
+- No backend schema changes required for Phases 1-3.
+- Maintain current fetch/SSE cadence.
+- Preserve existing e2e map smoke tests.
+- Ensure asset fallbacks exist for missing files.
+
+## 9) Testing Additions
+Add/extend e2e checks:
+- markers still render and are clickable.
+- fleet overlay still displays moving blips.
+- overlay toggles change rendered layers.
+- minimap remains functional after visual changes.
+
+Add visual regression snapshots:
+- far zoom, mid zoom, near zoom.
+- with and without overlays.
+
+## 10) Non-goals for this cycle
+- full fog-of-war redesign.
+- backend intel model changes.
+- 3D galaxy rendering.
+- heavy particle effects that impact interaction latency.
+
+## 11) Autonomous Implementation Protocol
+This section is the execution contract for autonomous coding agents.
+
+### 11.1 Preconditions
+- Frontend map tests are green before changes:
+- `game-server/src/frontend/tests/e2e/galaxy.smoke.spec.js`
+- `game-server/src/frontend/tests/e2e/galaxy-map.smoke.spec.js`
+- `game-server/src/frontend/tests/e2e/galaxy.fleet-overlay.spec.js`
+- Existing functional parity must be preserved for:
+- marker click -> intel panel,
+- minimap click focus,
+- fleet overlay movement.
+
+### 11.2 Task Matrix by Phase
+
+#### P1 Marker identity uplift
+Files:
+- `game-server/src/frontend/src/galaxy/GalaxyCanvas.js`
+- `game-server/src/frontend/src/galaxy/GalaxyCanvas.module.css`
+- `game-server/src/frontend/src/galaxy/GalaxyMap.module.css`
+
+Tasks:
+- Add marker rendering model with layered parts:
+- base core,
+- relation frame,
+- optional adorners (debris, pirate hazard, selected, hover).
+- Keep color mapping but add shape/glyph differentiation.
+- Keep existing `data-test-marker="system-marker"` marker contract.
+
+Done when:
+- markers are distinguishable without color.
+- no regression in marker click behavior.
+
+#### P2 Fleet lane polish
+Files:
+- `game-server/src/frontend/src/GalaxyMap.js`
+- `game-server/src/frontend/src/galaxy/GalaxyCanvas.js`
+- `game-server/src/frontend/src/galaxy/GalaxyCanvas.module.css`
+
+Tasks:
+- Extend overlay model to include:
+- mission lane style,
+- directional chevron repetition,
+- mission blip style classes.
+- Keep current mission color semantics.
+
+Done when:
+- direction is visually obvious on moving and static routes.
+- fleet dots continue to render with current test ids (`galaxy-fleet-dot-*`).
+
+#### P3 Empire links + overlay toggles
+Files:
+- `game-server/src/frontend/src/GalaxyMap.js`
+- `game-server/src/frontend/src/galaxy/GalaxyCanvas.js`
+- `game-server/src/frontend/src/galaxy/GalaxyMap.module.css`
+
+Tasks:
+- Derive own-planet graph from `planets` prop.
+- Render low-opacity connection network.
+- Add toggles:
+- `Grid`,
+- `Fleet Lanes`,
+- `Empire Links`.
+- Persist toggle choices in local storage.
+
+Done when:
+- overlays are independently switchable.
+- toggle states survive modal reopen.
+
+#### P4 Zoom-tier refinement + atmosphere
+Files:
+- `game-server/src/frontend/src/galaxy/GalaxyCanvas.js`
+- `game-server/src/frontend/src/galaxy/GalaxyCanvas.module.css`
+- `game-server/src/frontend/src/galaxy/GalaxyMap.module.css`
+- optional: `game-server/src/frontend/src/galaxy/GalaxyBackground.js`
+
+Tasks:
+- Add zoom-tier class logic (far/mid/near).
+- Reduce visual noise at far zoom.
+- increase semantic richness at near zoom.
+- Keep performance stable under high marker counts.
+
+Done when:
+- zoom transitions feel progressive and remain readable.
+
+### 11.3 Asset Integration Contract
+Prompt source:
+- `docs/assets/prompts/userscript_prompts.js`
+
+Asset path convention:
+- `game-server/src/frontend/public/assets/galaxy/map-v2/*`
+
+Rules:
+- every asset has a vector or CSS fallback path.
+- do not block rendering on missing assets.
+- use transparent backgrounds and non-destructive blending.
+
+### 11.4 Test Gates (must run per phase)
+- `game-server/src/frontend/tests/e2e/galaxy.smoke.spec.js`
+- `game-server/src/frontend/tests/e2e/galaxy-map.smoke.spec.js`
+- `game-server/src/frontend/tests/e2e/galaxy.fleet-overlay.spec.js`
+- Any newly added overlay tests for toggles and minimap focus.
+
+### 11.5 Rollback Rule
+- If a phase breaks marker clickability, minimap focus, or fleet overlay visibility, revert only that phase’s UI changes and keep prior phases intact.
+
+## 12) Autonomous Acceptance Checklist
+- [ ] Marker relation is identifiable by silhouette and not just color.
+- [ ] Fleet lanes preserve mission semantics and show clear direction.
+- [ ] Empire links can be toggled without affecting gameplay actions.
+- [ ] Zoomed-out view is cleaner; zoomed-in view is richer.
+- [ ] Existing galaxy and fleet overlay e2e tests remain green.
+- [ ] Added assets degrade gracefully when unavailable.

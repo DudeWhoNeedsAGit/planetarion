@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
 import { backendBaseUrl } from './apiBase';
+import { deriveFleetDisplayState } from './fleetStateView';
 
 const FLEET_SHIP_KEYS = [
   'small_cargo',
@@ -99,6 +100,7 @@ function FleetManagement({ user, planets = [] }) {
   const [allPlanets, setAllPlanets] = useState([]);
   const [sendPreset, setSendPreset] = useState(null);
   const [activeSendPreset, setActiveSendPreset] = useState(null);
+  const [fleetTemplates, setFleetTemplates] = useState([]);
   const [timelineEvents, setTimelineEvents] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const sseHealthyRef = useRef(false);
@@ -222,6 +224,11 @@ function FleetManagement({ user, planets = [] }) {
     if (selectedPlanetId == null) return null;
     return userPlanets.find((p) => p.id === selectedPlanetId) || null;
   }, [userPlanets, selectedPlanetId]);
+  const templateStorageKey = useMemo(() => {
+    const userId = user?.id ?? 'anon';
+    const planetId = selectedPlanetId ?? 'none';
+    return `planetarion:fleet:templates:v1:${userId}:${planetId}`;
+  }, [user?.id, selectedPlanetId]);
 
   const normalizedFleets = useMemo(() =>
     fleets.map(normalizeFleet),
@@ -541,6 +548,32 @@ function FleetManagement({ user, planets = [] }) {
     // Keep sendPreset for the modal to consume; clear after opening.
   }, [sendPreset, loading, normalizedFleets, selectedPlanetId, showError, fetchFleets]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(templateStorageKey);
+      if (!raw) {
+        setFleetTemplates([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setFleetTemplates([]);
+        return;
+      }
+      setFleetTemplates(parsed.filter((t) => t && typeof t === 'object' && t.id && t.name && t.preset));
+    } catch (e) {
+      setFleetTemplates([]);
+    }
+  }, [templateStorageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(templateStorageKey, JSON.stringify(fleetTemplates));
+    } catch (e) {
+      // ignore
+    }
+  }, [fleetTemplates, templateStorageKey]);
+
   // Fleet send modal needs enemy/unowned planets, which are not included in /api/planet.
   useEffect(() => {
     const fetchAllPlanets = async () => {
@@ -634,12 +667,13 @@ function FleetManagement({ user, planets = [] }) {
   }, [userPlanets, fleetsByPlanet]);
 
   const hasArrivedPendingTick = useMemo(() => {
-    const now = Date.now();
     return normalizedFleets.some((fleet) => {
-      if (!fleet?.arrival_time) return false;
-      if (fleet.status !== 'traveling' && fleet.status !== 'returning') return false;
-      const arrival = new Date(fleet.arrival_time).getTime();
-      return Number.isFinite(arrival) && arrival <= now;
+      return (
+        deriveFleetDisplayState({
+          status: fleet?.status,
+          arrivalTime: fleet?.arrival_time,
+        }) === 'arrived_pending_processing'
+      );
     });
   }, [normalizedFleets]);
 
@@ -763,22 +797,54 @@ function FleetManagement({ user, planets = [] }) {
     }
   };
 
-  const formatTimeRemaining = (arrivalTime, status) => {
-    // Only show a countdown for in-flight missions. Stationary fleets should not display
-    // a countdown even if their DB timestamps are stale or were restored from snapshots.
-    const isInFlight =
-      status === 'traveling' ||
-      status === 'returning' ||
-      (typeof status === 'string' && (status.startsWith('exploring:') || status.startsWith('colonizing:')));
+  const saveTemplate = useCallback((preset) => {
+    if (!preset || typeof preset !== 'object') return;
+    const defaultName = `${String(preset.mission || 'mission').replace(/_/g, ' ')} template`;
+    const input = window.prompt('Template name', defaultName);
+    const name = String(input || '').trim();
+    if (!name) return;
+    const next = {
+      id: `${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name,
+      preset: { ...preset, start_planet_id: selectedPlanetId ?? preset.start_planet_id ?? null },
+      created_at: new Date().toISOString(),
+    };
+    setFleetTemplates((prev) => [next, ...(Array.isArray(prev) ? prev : [])].slice(0, 20));
+    showSuccess(`Saved template: ${name}`);
+  }, [selectedPlanetId, showSuccess]);
 
-    if (!arrivalTime || !isInFlight) return '—';
+  const applyTemplate = useCallback((template) => {
+    if (!template?.preset) return;
+    setSendPreset({ ...template.preset, start_planet_id: selectedPlanetId ?? template.preset.start_planet_id ?? null });
+  }, [selectedPlanetId]);
+
+  const deleteTemplate = useCallback((templateId) => {
+    setFleetTemplates((prev) => (Array.isArray(prev) ? prev.filter((t) => t.id !== templateId) : []));
+  }, []);
+
+  const renameTemplate = useCallback((templateId) => {
+    setFleetTemplates((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const target = list.find((t) => t.id === templateId);
+      if (!target) return list;
+      const input = window.prompt('Rename template', target.name);
+      const nextName = String(input || '').trim();
+      if (!nextName) return list;
+      return list.map((t) => (t.id === templateId ? { ...t, name: nextName } : t));
+    });
+  }, []);
+
+  const formatTimeRemaining = (arrivalTime, status) => {
+    const displayState = deriveFleetDisplayState({ status, arrivalTime });
+    if (displayState === 'resolved') return '—';
+    if (!arrivalTime) return '—';
 
     const now = new Date();
     const arrival = new Date(arrivalTime);
     const diff = arrival - now;
 
     if (diff <= 0) {
-      if (status === 'traveling' || status === 'returning') return 'Arrived (pending tick)';
+      if (displayState === 'arrived_pending_processing') return 'Arrived (pending tick)';
       return 'Arrived';
     }
 
@@ -845,6 +911,58 @@ function FleetManagement({ user, planets = [] }) {
             fleets={visibleFleetsByPlanet[selectedPlanet.id] || []}
             onCreateFleet={() => setShowCreateForm(true)}
           />
+        </div>
+      )}
+
+      {selectedPlanet && (
+        <div className="mb-6 pa-panel p-4" data-testid="fleet-templates-panel">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-white font-medium">Mission Templates</h4>
+            <span className="text-xs text-slate-300/70">Planet-local presets</span>
+          </div>
+          {fleetTemplates.length === 0 ? (
+            <div className="text-sm text-slate-300/70">No templates yet. Open Send Fleet and click “Save as template”.</div>
+          ) : (
+            <div className="space-y-2">
+              {fleetTemplates.map((t) => (
+                <div key={t.id} className="flex items-center justify-between gap-3 p-2 rounded border border-slate-500/25">
+                  <div className="min-w-0">
+                    <div className="text-sm text-white truncate">{t.name}</div>
+                    <div className="text-xs text-slate-300/70">
+                      {String(t?.preset?.mission || 'mission')}
+                      {t?.preset?.target_planet_id ? ` • planet #${t.preset.target_planet_id}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="pa-btn-primary px-2 py-1 text-xs"
+                      onClick={() => applyTemplate(t)}
+                      data-testid="fleet-template-apply"
+                    >
+                      Apply
+                    </button>
+                    <button
+                      type="button"
+                      className="pa-btn-secondary px-2 py-1 text-xs"
+                      onClick={() => renameTemplate(t.id)}
+                      data-testid="fleet-template-rename"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      className="pa-btn-secondary px-2 py-1 text-xs"
+                      onClick={() => deleteTemplate(t.id)}
+                      data-testid="fleet-template-delete"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -983,6 +1101,7 @@ function FleetManagement({ user, planets = [] }) {
           user={user}
           preset={activeSendPreset}
           onSend={handleSendFleet}
+          onSaveTemplate={saveTemplate}
           onClose={() => {
             setShowSendForm(false);
             setSelectedFleet(null);
@@ -1159,7 +1278,7 @@ function FleetManagement({ user, planets = [] }) {
   );
 }
 
-function SendFleetModal({ fleet, fleetOptions = [], onSelectFleet, onCreateFleet, planets, user, preset, onSend, onClose }) {
+function SendFleetModal({ fleet, fleetOptions = [], onSelectFleet, onCreateFleet, planets, user, preset, onSend, onSaveTemplate, onClose }) {
   const [formData, setFormData] = useState(() => ({
     fleet_id: fleet.id,
     target_planet_id: preset?.target_planet_id ? String(preset.target_planet_id) : '',
@@ -1265,6 +1384,18 @@ function SendFleetModal({ fleet, fleetOptions = [], onSelectFleet, onCreateFleet
     onSend(formData);
   };
 
+  const handleSaveTemplate = () => {
+    if (typeof onSaveTemplate !== 'function') return;
+    onSaveTemplate({
+      mission: formData.mission,
+      target_planet_id: formData.target_planet_id ? parseInt(formData.target_planet_id, 10) : null,
+      target_x: formData.target_x ? parseInt(formData.target_x, 10) : null,
+      target_y: formData.target_y ? parseInt(formData.target_y, 10) : null,
+      target_z: formData.target_z ? parseInt(formData.target_z, 10) : null,
+      recycle_focus: formData.recycle_focus || 'proportional',
+    });
+  };
+
   const fleetSummary = useMemo(() => summarizeFleetShips(fleet?.ships || {}), [fleet?.ships]);
 
   return (
@@ -1278,15 +1409,26 @@ function SendFleetModal({ fleet, fleetOptions = [], onSelectFleet, onCreateFleet
             </div>
           </div>
           {typeof onCreateFleet === 'function' && (
-            <button
-              type="button"
-              onClick={onCreateFleet}
-              className="pa-btn-secondary px-3 py-1 text-sm"
-              data-testid="fleet-send-create-fleet"
-              title="Create a new fleet (change composition)"
-            >
-              Create fleet
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSaveTemplate}
+                className="pa-btn-secondary px-3 py-1 text-sm"
+                data-testid="fleet-send-save-template"
+                title="Save current mission/target as template"
+              >
+                Save as template
+              </button>
+              <button
+                type="button"
+                onClick={onCreateFleet}
+                className="pa-btn-secondary px-3 py-1 text-sm"
+                data-testid="fleet-send-create-fleet"
+                title="Create a new fleet (change composition)"
+              >
+                Create fleet
+              </button>
+            </div>
           )}
         </div>
 
@@ -1600,7 +1742,8 @@ function ShipAvailabilityDashboard({ planet, fleets }) {
 function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, formatTimeRemaining }) {
   const startPlanet = fleet.start_planet || planets.find(p => p.id === fleet.start_planet_id) || null;
   const rawTargetPlanet = fleet.target_planet || planets.find(p => p.id === fleet.target_planet_id) || null;
-  const displayTargetPlanet = (fleet.status === 'returning' || fleet.mission === 'return') ? startPlanet : rawTargetPlanet;
+  // Keep From/To stable (start -> target) even while returning; the status already communicates direction.
+  const displayTargetPlanet = rawTargetPlanet;
 
   return (
     <div className="pa-panel p-4" data-testid="fleet-tile">

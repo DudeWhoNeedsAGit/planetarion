@@ -324,6 +324,8 @@ def get_current_user():
                 'since': idle.since.isoformat() if idle else None,
                 'until': idle.until.isoformat() if idle else None,
                 'duration_seconds': int(idle.duration_seconds),
+                'raw_duration_seconds': int(getattr(idle, 'raw_duration_seconds', idle.duration_seconds)),
+                'was_capped': bool(getattr(idle, 'was_capped', False)),
                 'resources': idle.resources,
                 'research_points': int(idle.research_points),
                 'events': idle.events,

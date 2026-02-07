@@ -27,6 +27,8 @@ class IdleCatchupResult:
     since: datetime
     until: datetime
     duration_seconds: int
+    raw_duration_seconds: int
+    was_capped: bool
     resources: dict[str, int]
     research_points: int
     events: dict[str, int]
@@ -154,6 +156,7 @@ def apply_idle_catchup(user_id: int, now: datetime | None = None) -> IdleCatchup
     # Cap catch-up window (4 weeks).
     cap_seconds = int(current_app.config.get("IDLE_CATCHUP_CAP_SECONDS", 60 * 60 * 24 * 7 * 4) or (60 * 60 * 24 * 7 * 4))
     elapsed_seconds = min(raw_elapsed, cap_seconds)
+    was_capped = raw_elapsed > cap_seconds
     effective_since = now - timedelta(seconds=elapsed_seconds)
 
     planets = Planet.query.filter_by(user_id=user_id).all()
@@ -253,6 +256,8 @@ def apply_idle_catchup(user_id: int, now: datetime | None = None) -> IdleCatchup
         since=effective_since,
         until=now,
         duration_seconds=elapsed_seconds,
+        raw_duration_seconds=raw_elapsed,
+        was_capped=was_capped,
         resources={"metal": total_metal, "crystal": total_crystal, "deuterium": total_deut},
         research_points=rp_gain,
         events={"fleets_resolved": fleets_resolved, "research_completed": research_completed},

@@ -11,6 +11,11 @@ test.describe('Galaxy Map', () => {
 
     const markers = page.locator('[data-test-marker="system-marker"]');
     await expect(markers.first()).toBeVisible({ timeout: 60000 });
+
+    await expect(page.getByTestId('galaxy-quick-focus')).toBeVisible();
+    await expect(page.getByTestId('galaxy-focus-home')).toBeVisible();
+    await expect(page.getByTestId('galaxy-focus-nearest-pirate')).toBeVisible();
+    await expect(page.getByTestId('galaxy-focus-debris-hotspot')).toBeVisible();
+    await page.getByTestId('galaxy-focus-home').click();
   });
 });
-

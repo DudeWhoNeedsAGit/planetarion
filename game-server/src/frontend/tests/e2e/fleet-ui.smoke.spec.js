@@ -11,6 +11,7 @@ test.describe('Fleet UI Smoke', () => {
     await expect(page.getByTestId('fleet-management')).toBeVisible();
     await expect(page.getByTestId('fleet-create-button')).toBeVisible();
     await expect(page.getByTestId('fleet-timeline')).toBeVisible();
+    await expect(page.getByTestId('fleet-templates-panel')).toBeVisible();
   });
 
   test('renders create fleet modal', async ({ page }) => {

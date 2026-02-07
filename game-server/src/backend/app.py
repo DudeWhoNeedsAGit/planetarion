@@ -4,6 +4,8 @@ from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 import os
+from pathlib import Path
+from datetime import datetime
 try:
     from flasgger import Swagger
 except Exception:  # pragma: no cover
@@ -80,6 +82,84 @@ def create_app(config_name=None):
         print("🔧 Initializing database...")
         db.init_app(app)
         print("✅ Database initialized")
+
+        def _sqlite_db_path_from_uri(uri: str) -> Path | None:
+            uri = str(uri or "")
+            if not uri.startswith("sqlite:"):
+                return None
+            if uri.startswith("sqlite:///:memory:"):
+                return None
+            if uri.startswith("sqlite:////"):
+                raw = uri[len("sqlite:////"):]
+                if not raw:
+                    return None
+                return Path("/" + raw.lstrip("/")).resolve()
+            if uri.startswith("sqlite:///"):
+                raw = uri[len("sqlite:///"):]
+                if not raw:
+                    return None
+                # sqlite:///relative/path.db is relative to the process CWD. In this repo we
+                # run the backend from game-server/, so treat it as repo-relative.
+                return (Path(os.getcwd()) / raw).resolve()
+            return None
+
+        def _maybe_repair_malformed_sqlite_db(exc: Exception) -> bool:
+            """Best-effort: if sqlite DB file is corrupt, back it up and recreate it.
+
+            Returns True if a repair attempt was made (and the caller should retry create_all).
+            """
+            uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+            db_path = _sqlite_db_path_from_uri(uri)
+            if not db_path:
+                return False
+
+            # Only auto-repair in dev/testing to avoid unexpected data loss in production.
+            if app.config.get("FLASK_ENV") not in ("development", "testing"):
+                return False
+
+            msg = f"{exc}"
+            is_malformed = ("database disk image is malformed" in msg) or ("file is not a database" in msg)
+            is_unopenable = ("unable to open database file" in msg)
+            if not is_malformed and not is_unopenable:
+                return False
+
+            try:
+                # If the issue is simply that the folder doesn't exist, create it and retry.
+                try:
+                    db_path.parent.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass
+
+                ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+                backup_path = db_path.with_name(f"{db_path.name}.corrupt.{ts}")
+                if is_malformed:
+                    print(f"🛠️ SQLite appears corrupted; backing up {db_path} -> {backup_path}")
+                elif is_unopenable:
+                    print(f"🛠️ SQLite DB path is not openable; attempting recovery for {db_path}")
+
+                try:
+                    db.session.remove()
+                except Exception:
+                    pass
+                try:
+                    db.engine.dispose()
+                except Exception:
+                    pass
+
+                if is_malformed and db_path.exists():
+                    db_path.rename(backup_path)
+
+                for suffix in ("-wal", "-shm"):
+                    extra = Path(str(db_path) + suffix)
+                    if extra.exists():
+                        try:
+                            extra.unlink()
+                        except Exception:
+                            pass
+                return True
+            except Exception as repair_exc:
+                print(f"⚠️ Failed to auto-repair sqlite DB: {repair_exc}")
+                return False
 
         # Import models BEFORE creating tables (critical for SQLAlchemy)
         print("📋 Importing models for table creation...")
@@ -382,7 +462,13 @@ def create_app(config_name=None):
         if app.config['FLASK_ENV'] == 'development':
             print("🗄️ Creating database tables...")
             with app.app_context():
-                db.create_all()
+                try:
+                    db.create_all()
+                except Exception as e:
+                    if _maybe_repair_malformed_sqlite_db(e):
+                        db.create_all()
+                    else:
+                        raise
                 print("✅ Database tables created")
                 try:
                     from .services.sqlite_schema import (
@@ -421,7 +507,13 @@ def create_app(config_name=None):
         elif app.config['FLASK_ENV'] == 'testing':
             print("🧪 Setting up test database...")
             with app.app_context():
-                db.create_all()
+                try:
+                    db.create_all()
+                except Exception as e:
+                    if _maybe_repair_malformed_sqlite_db(e):
+                        db.create_all()
+                    else:
+                        raise
                 print("✅ Test database tables created")
                 try:
                     from .services.sqlite_schema import (

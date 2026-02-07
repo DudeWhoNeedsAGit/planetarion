@@ -71,8 +71,17 @@ class FleetTravelService:
             if not target_planet:
                 return None
 
+        # Returning fleets travel from current target back to their origin.
+        # Keep IDs stable in DB, but flip display/travel vectors so UI route direction is truthful.
+        if fleet.status == 'returning':
+            travel_start = target_planet
+            travel_target = start_planet
+        else:
+            travel_start = start_planet
+            travel_target = target_planet
+
         # Calculate distance
-        distance = FleetTravelService.calculate_distance(start_planet, target_planet)
+        distance = FleetTravelService.calculate_distance(travel_start, travel_target)
 
         # Calculate fleet speed (based on slowest ship)
         fleet_speed = FleetTravelService.calculate_fleet_speed(fleet)
@@ -88,27 +97,27 @@ class FleetTravelService:
 
             # Calculate current position (linear interpolation)
             if progress_percentage < 100:
-                current_x = start_planet.x + (target_planet.x - start_planet.x) * (progress_percentage / 100)
-                current_y = start_planet.y + (target_planet.y - start_planet.y) * (progress_percentage / 100)
-                current_z = start_planet.z + (target_planet.z - start_planet.z) * (progress_percentage / 100)
+                current_x = travel_start.x + (travel_target.x - travel_start.x) * (progress_percentage / 100)
+                current_y = travel_start.y + (travel_target.y - travel_start.y) * (progress_percentage / 100)
+                current_z = travel_start.z + (travel_target.z - travel_start.z) * (progress_percentage / 100)
             else:
-                current_x, current_y, current_z = target_planet.x, target_planet.y, target_planet.z
+                current_x, current_y, current_z = travel_target.x, travel_target.y, travel_target.z
         else:
             # Fallback to theoretical calculation if times not set
             total_duration = theoretical_duration_hours
             progress_percentage = 0
-            current_x, current_y, current_z = start_planet.x, start_planet.y, start_planet.z
+            current_x, current_y, current_z = travel_start.x, travel_start.y, travel_start.z
 
         # Format coordinates as integers (no decimals)
         try:
             current_pos = f"{int(float(current_x))}:{int(float(current_y))}:{int(float(current_z))}"
-            start_coords = f"{int(float(start_planet.x))}:{int(float(start_planet.y))}:{int(float(start_planet.z))}"
-            target_coords = f"{int(float(target_planet.x))}:{int(float(target_planet.y))}:{int(float(target_planet.z))}"
+            start_coords = f"{int(float(travel_start.x))}:{int(float(travel_start.y))}:{int(float(travel_start.z))}"
+            target_coords = f"{int(float(travel_target.x))}:{int(float(travel_target.y))}:{int(float(travel_target.z))}"
         except (TypeError, ValueError):
             # Fallback for cases where coordinates might not be numeric (e.g., test mocks)
             current_pos = f"{current_x}:{current_y}:{current_z}"
-            start_coords = f"{start_planet.x}:{start_planet.y}:{start_planet.z}"
-            target_coords = f"{target_planet.x}:{target_planet.y}:{target_planet.z}"
+            start_coords = f"{travel_start.x}:{travel_start.y}:{travel_start.z}"
+            target_coords = f"{travel_target.x}:{travel_target.y}:{travel_target.z}"
 
         return {
             'distance': round(distance, 2),

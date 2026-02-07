@@ -72,3 +72,9 @@
   border: 2px solid rgba(168, 85, 247, 0.75);
   box-sizing: border-box;
 }
+
+.swatchLine {
+  width: 12px;
+  height: 0;
+  border-top: 2px dashed rgba(56, 189, 248, 0.7);
+}

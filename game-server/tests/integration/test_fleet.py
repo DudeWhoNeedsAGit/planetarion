@@ -262,6 +262,50 @@ class TestFleetEndpoints:
 
         assert response.status_code == 404
 
+    def test_returning_fleet_keeps_start_and_target_planets(self, client, sample_user, sample_planet):
+        """Returning fleets should keep start/target stable for UI display (From=start, To=target)."""
+        headers = make_auth_headers(sample_user.id)
+
+        from backend.database import db
+        from backend.models import Fleet, Planet
+
+        now = datetime.utcnow()
+        target_planet = Planet(
+            name='Target Planet B',
+            x=123,
+            y=456,
+            z=789,
+            user_id=sample_user.id,
+        )
+        db.session.add(target_planet)
+        db.session.flush()
+
+        fleet = Fleet(
+            user_id=sample_user.id,
+            mission='return',
+            status='returning',
+            start_planet_id=sample_planet.id,
+            target_planet_id=target_planet.id,
+            small_cargo=1,
+            departure_time=now,
+            arrival_time=now + timedelta(seconds=60),
+            eta=60,
+        )
+        db.session.add(fleet)
+        db.session.commit()
+
+        response = client.get('/api/fleet', headers=headers)
+        assert response.status_code == 200
+        fleets = response.get_json()
+        returned = next((f for f in fleets if int(f.get('id')) == int(fleet.id)), None)
+        assert returned is not None
+
+        assert returned['status'] == 'returning'
+        assert returned['start_planet_id'] == sample_planet.id
+        assert returned['target_planet_id'] == target_planet.id
+        assert returned['start_planet']['id'] == sample_planet.id
+        assert returned['target_planet']['id'] == target_planet.id
+
     def test_dissolve_stationed_fleet_returns_ships_to_inventory(self, client, sample_user, sample_planet):
         """Dissolving a stationed fleet should return ships back into the inventory fleet."""
         headers = make_auth_headers(sample_user.id)

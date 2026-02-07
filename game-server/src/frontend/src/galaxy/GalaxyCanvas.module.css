@@ -14,6 +14,14 @@
   cursor: grab;
 }
 
+.viewport[data-zoom-tier='far'] {
+  border-color: rgba(100, 116, 139, 0.28);
+}
+
+.viewport[data-zoom-tier='near'] {
+  box-shadow: 0 22px 65px rgba(0, 0, 0, 0.62);
+}
+
 .viewport:active {
   cursor: grabbing;
 }
@@ -38,3 +46,28 @@
   filter: drop-shadow(0 18px 36px rgba(0, 0, 0, 0.75));
 }
 
+.empireLinks {
+  pointer-events: none;
+}
+
+.empireLinkLine {
+  stroke: rgba(56, 189, 248, 0.32);
+  stroke-width: 1.4;
+  stroke-dasharray: 3 8;
+}
+
+.blip_attack {
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.7));
+}
+
+.blip_utility {
+  filter: drop-shadow(0 0 8px rgba(20, 184, 166, 0.65));
+}
+
+.blip_stealth {
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.62));
+}
+
+.blip_pending {
+  filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.9));
+}
