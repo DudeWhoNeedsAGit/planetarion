@@ -210,6 +210,15 @@ function Overview({ user, planets, onNavigateSection }) {
     crystal: sum.crystal + (planet.production_rates?.crystal_per_hour || 0),
     deuterium: sum.deuterium + (planet.production_rates?.deuterium_per_hour || 0)
   }), { metal: 0, crystal: 0, deuterium: 0 });
+  const totalUpkeep = planets.reduce((sum, planet) => ({
+    deuterium: sum.deuterium + (planet.production_rates?.deuterium_upkeep_per_hour || 0)
+  }), { deuterium: 0 });
+  const netProduction = {
+    metal: totalProduction.metal,
+    crystal: totalProduction.crystal,
+    deuterium: totalProduction.deuterium - totalUpkeep.deuterium,
+  };
+  const hasUpkeepImpact = totalUpkeep.deuterium > 0;
 
 	  const totalBuildings = planets.reduce((sum, planet) => ({
 	    metal_mine: sum.metal_mine + planet.structures.metal_mine,
@@ -315,8 +324,13 @@ function Overview({ user, planets, onNavigateSection }) {
             </div>
           </div>
           <div className="text-2xl font-bold text-yellow-400">
-            {(totalProduction.metal + totalProduction.crystal + totalProduction.deuterium).toLocaleString()}
+            {(netProduction.metal + netProduction.crystal + netProduction.deuterium).toLocaleString()}
           </div>
+          {hasUpkeepImpact && (
+            <div className="text-xs text-slate-300/70 mt-2">
+              Deuterium upkeep: -{totalUpkeep.deuterium.toLocaleString()}/h
+            </div>
+          )}
         </div>
 
         {/* Buildings */}
@@ -546,6 +560,18 @@ function Overview({ user, planets, onNavigateSection }) {
               <span className="text-slate-300/70">Production:</span>
               <span className="text-deuterium">{totalProduction.deuterium.toLocaleString()}/h</span>
             </div>
+            {hasUpkeepImpact && (
+              <div className="flex justify-between">
+                <span className="text-slate-300/70">Upkeep:</span>
+                <span className="text-amber-300">-{totalUpkeep.deuterium.toLocaleString()}/h</span>
+              </div>
+            )}
+            {hasUpkeepImpact && (
+              <div className="flex justify-between">
+                <span className="text-slate-300/70">Net:</span>
+                <span className={`${netProduction.deuterium >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{netProduction.deuterium.toLocaleString()}/h</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-slate-300/70">Synthesizers:</span>
               <span className="text-deuterium">{totalBuildings.deuterium_synthesizer} total</span>

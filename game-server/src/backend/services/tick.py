@@ -6,6 +6,7 @@ from backend.services.commander_xp import CommanderXPService
 from flask import current_app
 import math
 from backend.config import get_planet_storage_caps
+from backend.services.economy_sinks import upkeep_by_start_planet_per_tick
 import json
 
 RESPAWN_PROTECTION_MINUTES_DEFAULT = 10
@@ -175,6 +176,7 @@ def get_next_tick_number():
 def process_resource_generation():
     """Process resource generation for all planets"""
     planets = Planet.query.all()
+    upkeep_by_planet = upkeep_by_start_planet_per_tick(Fleet.query.all(), current_app.config)
     changes = []
 
     for planet in planets:
@@ -212,11 +214,18 @@ def process_resource_generation():
         if planet.deuterium < caps["deuterium"]:
             planet.deuterium = min(planet.deuterium + tick_deuterium, caps["deuterium"])
 
+        upkeep_applied = 0
+        upkeep_cost = int(upkeep_by_planet.get(int(planet.id), 0) or 0)
+        if upkeep_cost > 0:
+            upkeep_applied = min(int(planet.deuterium or 0), upkeep_cost)
+            planet.deuterium = max(0, int(planet.deuterium or 0) - upkeep_applied)
+
         changes.append({
             'planet_id': planet.id,
             'metal_change': planet.metal - before_metal,
             'crystal_change': planet.crystal - before_crystal,
-            'deuterium_change': planet.deuterium - before_deuterium
+            'deuterium_change': planet.deuterium - before_deuterium,
+            'deuterium_upkeep': upkeep_applied,
         })
 
     db.session.commit()

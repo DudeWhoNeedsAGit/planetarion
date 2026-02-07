@@ -135,6 +135,21 @@ class Config:
     # Deterministic RNG salt (falls back to SECRET_KEY if unset).
     PIRATE_AI_SECRET_SALT = os.getenv("PLANETARION_PIRATE_AI_SECRET_SALT")
 
+    # Economy sinks (fleet upkeep lite) - disabled by default for safe rollout.
+    ECONOMY_SINKS_ENABLED = os.getenv("PLANETARION_ECONOMY_SINKS_ENABLED", "").lower() in ("1", "true", "yes", "on")
+    try:
+        FLEET_UPKEEP_DEUTERIUM_PER_WEIGHT_PER_TICK = max(
+            0.0, float(os.getenv("PLANETARION_FLEET_UPKEEP_DEUTERIUM_PER_WEIGHT_PER_TICK", "0.001"))
+        )
+    except (TypeError, ValueError):
+        FLEET_UPKEEP_DEUTERIUM_PER_WEIGHT_PER_TICK = 0.001
+    FLEET_UPKEEP_EXCLUDE_INVENTORY = os.getenv("PLANETARION_FLEET_UPKEEP_EXCLUDE_INVENTORY", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""
