@@ -298,6 +298,16 @@ class FleetArrivalService:
             event_description=f'Planet {target_planet.name} colonized by {username}'
         )
         db.session.add(tick_log)
+        if is_pirate_username(username):
+            db.session.add(
+                TickLog(
+                    tick_number=0,
+                    planet_id=target_planet.id,
+                    fleet_id=fleet.id,
+                    event_type="pirate_colonization_completed",
+                    event_description=f"Pirate faction {username} established colony at {target_planet.x}:{target_planet.y}:{target_planet.z}",
+                )
+            )
 
         # Commander XP (idempotent per TickLog row if possible).
         try:

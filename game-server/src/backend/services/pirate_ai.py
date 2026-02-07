@@ -45,6 +45,13 @@ class PirateAILiveOps:
         "PIRATE_AI_DIFFICULTY_FACTOR": {"type": "float", "min": 0.1, "max": 5.0},
         "PIRATE_AI_P_MAX": {"type": "float", "min": 0.0, "max": 1.0},
         "PIRATE_FACTION_USERNAMES": {"type": "str"},
+        "PIRATE_SIM_ENABLED": {"type": "bool"},
+        "PIRATE_SIM_EXPANSION_ENABLED": {"type": "bool"},
+        "PIRATE_SIM_EXPANSION_INTERVAL_SECONDS": {"type": "int", "min": 60, "max": 86400},
+        "PIRATE_SIM_PLANET_CAP_PER_FACTION": {"type": "int", "min": 1, "max": 200},
+        "PIRATE_SIM_PLANET_CAP_PER_Z_SLICE": {"type": "int", "min": 1, "max": 100},
+        "PIRATE_SIM_TOTAL_PLANET_CAP": {"type": "int", "min": 1, "max": 10000},
+        "PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE": {"type": "int", "min": 0, "max": 50000},
     }
 
     @staticmethod
@@ -251,6 +258,7 @@ class PirateAIDirector:
         users = User.query.all()
         evaluated = 0
         spawned = 0
+        expansion_spawned = 0
 
         for user in users:
             if is_pirate_user(user):
@@ -330,8 +338,200 @@ class PirateAIDirector:
                 )
             )
 
+        if bool(current_app.config.get("PIRATE_SIM_ENABLED")) and bool(current_app.config.get("PIRATE_SIM_EXPANSION_ENABLED", True)):
+            expansion_spawned = PirateAIDirector._run_expansion_cycle(now=now, pirate_users=pirate_users)
+
         db.session.commit()
-        return {"enabled": True, "evaluated": evaluated, "spawned": spawned}
+        return {"enabled": True, "evaluated": evaluated, "spawned": spawned, "expansion_spawned": expansion_spawned}
+
+    @staticmethod
+    def _run_expansion_cycle(*, now: datetime, pirate_users: list[User]) -> int:
+        interval = PirateAIDirector._int_config("PIRATE_SIM_EXPANSION_INTERVAL_SECONDS", 7200, min_value=60)
+        if not PirateAIDirector._expansion_due(now=now, interval_seconds=interval):
+            return 0
+
+        if not pirate_users:
+            return 0
+
+        pirate_ids = [int(u.id) for u in pirate_users if getattr(u, "id", None) is not None]
+        if not pirate_ids:
+            return 0
+
+        total_cap = PirateAIDirector._int_config("PIRATE_SIM_TOTAL_PLANET_CAP", 18, min_value=1)
+        total_pirate_planets = Planet.query.filter(Planet.user_id.in_(pirate_ids)).count()
+        if total_pirate_planets >= total_cap:
+            db.session.add(
+                TickLog(
+                    tick_number=0,
+                    event_type="pirate_growth_blocked_cap",
+                    event_description=f"Pirate expansion blocked: total cap reached ({total_pirate_planets}/{total_cap})",
+                )
+            )
+            db.session.add(TickLog(tick_number=0, event_type="pirate_expansion_cycle", event_description="blocked:total_cap"))
+            return 0
+
+        planet_cap_per_faction = PirateAIDirector._int_config("PIRATE_SIM_PLANET_CAP_PER_FACTION", 6, min_value=1)
+        z_cap = PirateAIDirector._int_config("PIRATE_SIM_PLANET_CAP_PER_Z_SLICE", 3, min_value=1)
+        buffer_distance = PirateAIDirector._int_config("PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE", 1200, min_value=0)
+
+        non_pirate_homes = (
+            Planet.query.join(User, User.id == Planet.user_id)
+            .filter(Planet.is_home_planet.is_(True))
+            .all()
+        )
+        non_pirate_homes = [p for p in non_pirate_homes if not is_pirate_user(getattr(p, "owner", None))]
+
+        spawned = 0
+        for pirate_user in sorted(pirate_users, key=lambda u: int(u.id)):
+            faction_planets = Planet.query.filter_by(user_id=int(pirate_user.id)).all()
+            if len(faction_planets) >= planet_cap_per_faction:
+                continue
+
+            in_flight = Fleet.query.filter(
+                Fleet.user_id == int(pirate_user.id),
+                Fleet.mission == "colonize",
+                Fleet.status.in_(["traveling", "returning"]),
+            ).count()
+            if in_flight > 0:
+                continue
+
+            by_z: dict[int, int] = {}
+            for p in faction_planets:
+                by_z[int(getattr(p, "z", 0) or 0)] = int(by_z.get(int(getattr(p, "z", 0) or 0), 0) + 1)
+            origin = next((p for p in faction_planets if getattr(p, "is_home_planet", False)), None) or (faction_planets[0] if faction_planets else None)
+            if origin is None:
+                continue
+            if int(by_z.get(int(origin.z), 0)) >= z_cap:
+                continue
+
+            target = PirateAIDirector._select_expansion_target(
+                origin=origin,
+                non_pirate_homes=non_pirate_homes,
+                home_buffer_distance=buffer_distance,
+            )
+            if not target:
+                continue
+
+            source_fleet = (
+                Fleet.query.filter(
+                    Fleet.user_id == int(pirate_user.id),
+                    Fleet.start_planet_id == int(origin.id),
+                    Fleet.status.in_(["stationed", "defending"]),
+                    Fleet.colony_ship > 0,
+                )
+                .order_by(Fleet.id.asc())
+                .first()
+            )
+            if not source_fleet:
+                continue
+
+            source_fleet.colony_ship = max(0, int(source_fleet.colony_ship or 0) - 1)
+
+            fleet = Fleet(
+                user_id=int(pirate_user.id),
+                mission="colonize",
+                status=f"colonizing:{int(target.x)}:{int(target.y)}:{int(target.z)}",
+                start_planet_id=int(origin.id),
+                target_planet_id=int(target.id),
+                departure_time=now,
+                arrival_time=now,
+                eta=0,
+                target_coordinates=f"{int(target.x)}:{int(target.y)}:{int(target.z)}",
+                colony_ship=1,
+            )
+            db.session.add(fleet)
+            db.session.flush()
+
+            distance = FleetTravelService.calculate_distance(origin, target)
+            speed = FleetTravelService.calculate_fleet_speed(fleet)
+            travel_time_hours = distance / speed if speed > 0 else 0.0
+
+            min_travel = max(1, int(get_min_travel_time_seconds() or 0))
+            travel_time_seconds = max(int(travel_time_hours * 3600), min_travel)
+            forced = get_forced_travel_time_seconds()
+            if forced is not None:
+                travel_time_seconds = max(1, int(forced))
+
+            fleet.departure_time = now
+            fleet.arrival_time = now + timedelta(seconds=travel_time_seconds)
+            fleet.eta = int(travel_time_seconds)
+
+            spawned += 1
+            db.session.add(
+                TickLog(
+                    tick_number=0,
+                    planet_id=int(target.id),
+                    fleet_id=int(fleet.id),
+                    event_type="pirate_colonization_started",
+                    event_description=(
+                        f"Pirate colonizer from {origin.name} heading to {target.name} "
+                        f"({target.x}:{target.y}:{target.z}) ETA {int(fleet.eta or 0)}s"
+                    ),
+                )
+            )
+
+        db.session.add(
+            TickLog(
+                tick_number=0,
+                event_type="pirate_expansion_cycle",
+                event_description=f"spawned={spawned}",
+            )
+        )
+        return spawned
+
+    @staticmethod
+    def _expansion_due(*, now: datetime, interval_seconds: int) -> bool:
+        last = (
+            db.session.query(func.max(TickLog.timestamp))
+            .filter(TickLog.event_type == "pirate_expansion_cycle")
+            .scalar()
+        )
+        if not last:
+            return True
+        try:
+            return (now - last).total_seconds() >= int(interval_seconds)
+        except Exception:
+            return True
+
+    @staticmethod
+    def _select_expansion_target(
+        *,
+        origin: Planet,
+        non_pirate_homes: list[Planet],
+        home_buffer_distance: int,
+    ) -> Planet | None:
+        candidates = (
+            Planet.query.filter(
+                Planet.user_id.is_(None),
+                Planet.z == int(origin.z),
+            )
+            .all()
+        )
+        if not candidates:
+            return None
+
+        best = None
+        best_dist = None
+        for p in candidates:
+            if home_buffer_distance > 0 and PirateAIDirector._within_home_buffer(p, non_pirate_homes, home_buffer_distance):
+                continue
+            dist = FleetTravelService.calculate_distance(origin, p)
+            if best is None or dist < (best_dist or 0):
+                best = p
+                best_dist = dist
+        return best
+
+    @staticmethod
+    def _within_home_buffer(candidate: Planet, homes: list[Planet], buffer_distance: int) -> bool:
+        if buffer_distance <= 0:
+            return False
+        for home in homes:
+            if int(getattr(home, "z", 0) or 0) != int(getattr(candidate, "z", 0) or 0):
+                continue
+            dist = FleetTravelService.calculate_distance(home, candidate)
+            if dist <= float(buffer_distance):
+                return True
+        return False
 
     @staticmethod
     def _get_or_create_state(user_id: int) -> PirateAIState:

@@ -136,6 +136,38 @@ class Config:
     PIRATE_AI_SECRET_SALT = os.getenv("PLANETARION_PIRATE_AI_SECRET_SALT")
     # Comma-separated NPC pirate faction usernames.
     PIRATE_FACTION_USERNAMES = os.getenv("PLANETARION_PIRATE_FACTION_USERNAMES", "pirates,pirates_red,pirates_black")
+    # Pirate simulation (phase 2) - disabled by default for safe rollout.
+    PIRATE_SIM_ENABLED = os.getenv("PLANETARION_PIRATE_SIM_ENABLED", "").lower() in ("1", "true", "yes", "on")
+    PIRATE_SIM_EXPANSION_ENABLED = os.getenv("PLANETARION_PIRATE_SIM_EXPANSION_ENABLED", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    try:
+        PIRATE_SIM_EXPANSION_INTERVAL_SECONDS = max(
+            60, int(os.getenv("PLANETARION_PIRATE_SIM_EXPANSION_INTERVAL_SECONDS", "7200"))
+        )
+    except (TypeError, ValueError):
+        PIRATE_SIM_EXPANSION_INTERVAL_SECONDS = 7200
+    try:
+        PIRATE_SIM_PLANET_CAP_PER_FACTION = max(1, int(os.getenv("PLANETARION_PIRATE_SIM_PLANET_CAP_PER_FACTION", "6")))
+    except (TypeError, ValueError):
+        PIRATE_SIM_PLANET_CAP_PER_FACTION = 6
+    try:
+        PIRATE_SIM_PLANET_CAP_PER_Z_SLICE = max(1, int(os.getenv("PLANETARION_PIRATE_SIM_PLANET_CAP_PER_Z_SLICE", "3")))
+    except (TypeError, ValueError):
+        PIRATE_SIM_PLANET_CAP_PER_Z_SLICE = 3
+    try:
+        PIRATE_SIM_TOTAL_PLANET_CAP = max(1, int(os.getenv("PLANETARION_PIRATE_SIM_TOTAL_PLANET_CAP", "18")))
+    except (TypeError, ValueError):
+        PIRATE_SIM_TOTAL_PLANET_CAP = 18
+    try:
+        PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE = max(
+            0, int(os.getenv("PLANETARION_PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE", "1200"))
+        )
+    except (TypeError, ValueError):
+        PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE = 1200
 
     # Economy sinks (fleet upkeep lite) - disabled by default for safe rollout.
     ECONOMY_SINKS_ENABLED = os.getenv("PLANETARION_ECONOMY_SINKS_ENABLED", "").lower() in ("1", "true", "yes", "on")
