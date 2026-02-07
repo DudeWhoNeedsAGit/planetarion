@@ -12,7 +12,7 @@ from backend.services.planet_traits import PlanetTraitService
 from backend.config import calculate_fuel_consumption
 from backend.services.fleet_state_machine import FleetStateMachine
 from backend.services.commander_xp import CommanderXPService, xp_from_resources
-from backend.services.pirate_factions import is_pirate_username
+from backend.services.pirate_factions import is_pirate_username, is_pirate_user
 import json
 
 # Enhanced error handling constants
@@ -687,6 +687,21 @@ class FleetArrivalService:
                 from backend.services.combat_engine import CombatEngine
                 combat_result = CombatEngine.calculate_battle(fleet, defending_fleet, target_planet)
                 CombatEngine.process_combat_result(combat_result, fleet, defending_fleet, target_planet)
+                attacker_user = FleetArrivalService._get_fleet_user(fleet)
+                defender_user = FleetArrivalService._get_fleet_user(defending_fleet)
+                if is_pirate_user(attacker_user) and is_pirate_user(defender_user):
+                    db.session.add(
+                        TickLog(
+                            tick_number=0,
+                            planet_id=int(target_planet.id),
+                            fleet_id=int(fleet.id),
+                            event_type="pirate_skirmish_resolved",
+                            event_description=(
+                                f"Pirate skirmish resolved at {target_planet.x}:{target_planet.y}:{target_planet.z} "
+                                f"winner={combat_result.get('winner', 'unknown')}"
+                            ),
+                        )
+                    )
             else:
                 # Attack on undefended planet.
                 #

@@ -491,6 +491,7 @@ def create_app(config_name=None):
                         ensure_commander_xp_event_table,
                         ensure_pirate_ai_state_table,
                         ensure_pirate_ai_config_overrides_table,
+                        ensure_pirate_faction_state_table,
                     )
                     ensure_planet_storage_columns(db.engine)
                     ensure_planet_trait_columns(db.engine)
@@ -503,6 +504,7 @@ def create_app(config_name=None):
                     ensure_commander_xp_event_table(db.engine)
                     ensure_pirate_ai_state_table(db.engine)
                     ensure_pirate_ai_config_overrides_table(db.engine)
+                    ensure_pirate_faction_state_table(db.engine)
                     from .services.pirate_ai import PirateAILiveOps
                     PirateAILiveOps.apply_persisted_overrides()
                     print("✅ SQLite schema ensured (planet storage columns)")
@@ -534,6 +536,7 @@ def create_app(config_name=None):
                         ensure_commander_xp_event_table,
                         ensure_pirate_ai_state_table,
                         ensure_pirate_ai_config_overrides_table,
+                        ensure_pirate_faction_state_table,
                     )
                     ensure_planet_storage_columns(db.engine)
                     ensure_planet_trait_columns(db.engine)
@@ -546,6 +549,7 @@ def create_app(config_name=None):
                     ensure_commander_xp_event_table(db.engine)
                     ensure_pirate_ai_state_table(db.engine)
                     ensure_pirate_ai_config_overrides_table(db.engine)
+                    ensure_pirate_faction_state_table(db.engine)
                     from .services.pirate_ai import PirateAILiveOps
                     PirateAILiveOps.apply_persisted_overrides()
                 except Exception:

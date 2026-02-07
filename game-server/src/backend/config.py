@@ -186,6 +186,61 @@ class Config:
         )
     except (TypeError, ValueError):
         PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE = 1200
+    # Growth loop tuning:
+    # - `PIRATE_SIM_BUILD_ENABLED`: toggles pirate structure growth loop.
+    # - `PIRATE_SIM_BUILD_INTERVAL_SECONDS`: cadence for growth/build decisions.
+    # - `PIRATE_SIM_FLEET_GROWTH_ENABLED`: toggles pirate fleet growth loop.
+    # - `PIRATE_SIM_FLEET_CAP_SCORE`: per-faction soft/hard cap for fleet score.
+    # - `PIRATE_SIM_ATTRITION_PERCENT`: percent removed per growth cycle when over cap.
+    PIRATE_SIM_BUILD_ENABLED = os.getenv("PLANETARION_PIRATE_SIM_BUILD_ENABLED", "1").lower() in ("1", "true", "yes", "on")
+    PIRATE_SIM_FLEET_GROWTH_ENABLED = os.getenv("PLANETARION_PIRATE_SIM_FLEET_GROWTH_ENABLED", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    try:
+        PIRATE_SIM_BUILD_INTERVAL_SECONDS = max(60, int(os.getenv("PLANETARION_PIRATE_SIM_BUILD_INTERVAL_SECONDS", "7200")))
+    except (TypeError, ValueError):
+        PIRATE_SIM_BUILD_INTERVAL_SECONDS = 7200
+    try:
+        PIRATE_SIM_FLEET_CAP_SCORE = max(100, int(os.getenv("PLANETARION_PIRATE_SIM_FLEET_CAP_SCORE", "6000")))
+    except (TypeError, ValueError):
+        PIRATE_SIM_FLEET_CAP_SCORE = 6000
+    try:
+        PIRATE_SIM_ATTRITION_PERCENT = max(0.0, min(0.5, float(os.getenv("PLANETARION_PIRATE_SIM_ATTRITION_PERCENT", "0.02"))))
+    except (TypeError, ValueError):
+        PIRATE_SIM_ATTRITION_PERCENT = 0.02
+    # Skirmish loop tuning:
+    # - `PIRATE_SIM_SKIRMISH_ENABLED`: toggles pirate-vs-pirate attack loop.
+    # - `PIRATE_SIM_SKIRMISH_INTERVAL_SECONDS`: cadence for skirmish decisions.
+    PIRATE_SIM_SKIRMISH_ENABLED = os.getenv("PLANETARION_PIRATE_SIM_SKIRMISH_ENABLED", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    try:
+        PIRATE_SIM_SKIRMISH_INTERVAL_SECONDS = max(
+            60, int(os.getenv("PLANETARION_PIRATE_SIM_SKIRMISH_INTERVAL_SECONDS", "1200"))
+        )
+    except (TypeError, ValueError):
+        PIRATE_SIM_SKIRMISH_INTERVAL_SECONDS = 1200
+    # Global anti-snowball + recovery:
+    # - `PIRATE_SIM_MAX_PIRATE_OWNERSHIP_RATIO`: halt expansion when pirate ownership exceeds ratio.
+    # - `PIRATE_SIM_RESEED_COOLDOWN_SECONDS`: cooldown for re-seeding a wiped pirate faction.
+    try:
+        PIRATE_SIM_MAX_PIRATE_OWNERSHIP_RATIO = max(
+            0.0, min(1.0, float(os.getenv("PLANETARION_PIRATE_SIM_MAX_PIRATE_OWNERSHIP_RATIO", "0.20")))
+        )
+    except (TypeError, ValueError):
+        PIRATE_SIM_MAX_PIRATE_OWNERSHIP_RATIO = 0.20
+    try:
+        PIRATE_SIM_RESEED_COOLDOWN_SECONDS = max(
+            60, int(os.getenv("PLANETARION_PIRATE_SIM_RESEED_COOLDOWN_SECONDS", "86400"))
+        )
+    except (TypeError, ValueError):
+        PIRATE_SIM_RESEED_COOLDOWN_SECONDS = 86400
 
     # Economy sinks (fleet upkeep lite) - disabled by default for safe rollout.
     ECONOMY_SINKS_ENABLED = os.getenv("PLANETARION_ECONOMY_SINKS_ENABLED", "").lower() in ("1", "true", "yes", "on")

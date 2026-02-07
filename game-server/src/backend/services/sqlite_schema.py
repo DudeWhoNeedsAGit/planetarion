@@ -245,3 +245,34 @@ def ensure_pirate_ai_config_overrides_table(db_engine) -> None:
                 "CREATE INDEX IF NOT EXISTS ix_pirate_ai_config_overrides_config_key ON pirate_ai_config_overrides (config_key)"
             )
         )
+
+
+def ensure_pirate_faction_state_table(db_engine) -> None:
+    """Ensure pirate faction simulation state table exists for SQLite DBs."""
+    if db_engine.dialect.name != "sqlite":
+        return
+
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS pirate_faction_state (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    expansion_cooldown_until DATETIME,
+                    build_cooldown_until DATETIME,
+                    skirmish_cooldown_until DATETIME,
+                    expansion_points INTEGER DEFAULT 0,
+                    fleet_points INTEGER DEFAULT 0,
+                    planet_cap INTEGER DEFAULT 0,
+                    fleet_cap INTEGER DEFAULT 0,
+                    last_target_faction_user_id INTEGER,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY(user_id) REFERENCES users (id),
+                    FOREIGN KEY(last_target_faction_user_id) REFERENCES users (id)
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_pirate_faction_state_user_id ON pirate_faction_state (user_id)"))

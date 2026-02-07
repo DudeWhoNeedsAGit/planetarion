@@ -77,6 +77,33 @@ class PirateAIConfigOverride(db.Model):
         return f"<PirateAIConfigOverride {self.config_key}={self.config_value}>"
 
 
+class PirateFactionState(db.Model):
+    __tablename__ = "pirate_faction_state"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True, index=True)
+
+    expansion_cooldown_until = db.Column(db.DateTime)
+    build_cooldown_until = db.Column(db.DateTime)
+    skirmish_cooldown_until = db.Column(db.DateTime)
+
+    expansion_points = db.Column(db.Integer, default=0)
+    fleet_points = db.Column(db.Integer, default=0)
+    planet_cap = db.Column(db.Integer, default=0)
+    fleet_cap = db.Column(db.Integer, default=0)
+
+    last_target_faction_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", foreign_keys=[user_id], backref=db.backref("pirate_faction_state", uselist=False))
+    last_target_faction_user = db.relationship("User", foreign_keys=[last_target_faction_user_id])
+
+    def __repr__(self):
+        return f"<PirateFactionState user:{self.user_id} planet_cap:{self.planet_cap} fleet_cap:{self.fleet_cap}>"
+
+
 class Planet(db.Model):
     __tablename__ = 'planets'
 

@@ -25,6 +25,7 @@ def test_pirate_expansion_spawns_colonizer_and_respects_home_buffer(app, db_sess
         app.config["PIRATE_SIM_PLANET_CAP_PER_Z_SLICE"] = 3
         app.config["PIRATE_SIM_TOTAL_PLANET_CAP"] = 18
         app.config["PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE"] = 300
+        app.config["PIRATE_SIM_MAX_PIRATE_OWNERSHIP_RATIO"] = 0.95
 
         player = _create_user(db_session, username="exp_player", email="exp_player@example.com")
         pirates = _create_user(db_session, username="pirates", email="exp_pirates@example.com")
