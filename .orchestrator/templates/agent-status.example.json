@@ -1,0 +1,20 @@
+{
+  "task_id": "task-204-scenario-packs",
+  "worker_slug": "scenario-packs",
+  "progress": 65,
+  "summary": "Implemented named endpoints and shared payload schema; finishing deterministic tests.",
+  "files_touched": [
+    "game-server/src/backend/routes/admin.py",
+    "game-server/tests/integration/test_scenario_packs.py"
+  ],
+  "tests": [
+    {
+      "command": "cd game-server && pytest tests/integration/test_scenario_packs.py -q",
+      "result": "pass"
+    }
+  ],
+  "blocker": "",
+  "eta": "45m",
+  "commit_sha": "",
+  "last_update": "2026-02-07T12:15:00Z"
+}

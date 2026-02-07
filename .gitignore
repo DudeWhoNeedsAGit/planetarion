@@ -9,3 +9,6 @@ docs/assets/images/portrait/**/_originals_*/
 docs/assets/images/portrait/**/_backup_pre_rembg_*
 docs/assets/images/portrait/**/*.TMP
 docs/assets/images/portrait/**/*~*.TMP
+
+# Multi-agent temporary worker heartbeat/status file
+.agent-status.json

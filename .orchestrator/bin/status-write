@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'EOF'
+Usage:
+  .orchestrator/bin/status-write [task_id worker_slug progress_int eta summary [blocker] [commit_sha]]
+
+Input source:
+  1) Positional args (highest priority)
+  2) Environment variables:
+     TASK_ID, WORKER_SLUG, PROGRESS, ETA, SUMMARY, BLOCKER, COMMIT_SHA
+
+Examples:
+  export TASK_ID=task-204-scenario-packs WORKER_SLUG=scenario-packs PROGRESS=80 ETA="30m" SUMMARY="Endpoints done"
+  .orchestrator/bin/status-write
+
+  .orchestrator/bin/status-write task-204-scenario-packs scenario-packs 80 "30m" "Endpoints done, tests in progress"
+EOF
+  exit 0
+fi
+
+task_id="${1:-${TASK_ID:-}}"
+worker_slug="${2:-${WORKER_SLUG:-}}"
+progress="${3:-${PROGRESS:-}}"
+eta="${4:-${ETA:-}}"
+summary="${5:-${SUMMARY:-}}"
+blocker="${6:-${BLOCKER:-}}"
+commit_sha="${7:-${COMMIT_SHA:-}}"
+
+if [[ -z "$task_id" || -z "$worker_slug" || -z "$progress" || -z "$eta" || -z "$summary" ]]; then
+  echo "Missing required values. Provide args or env vars. Run with --help for details." >&2
+  exit 1
+fi
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "${repo_root}" ]]; then
+  echo "Not inside a git repository." >&2
+  exit 1
+fi
+
+outfile="${repo_root}/.agent-status.json"
+
+python3 - "$outfile" "$task_id" "$worker_slug" "$progress" "$eta" "$summary" "$blocker" "$commit_sha" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+outfile, task_id, worker_slug, progress, eta, summary, blocker, commit_sha = sys.argv[1:]
+
+payload = {
+    "task_id": task_id,
+    "worker_slug": worker_slug,
+    "progress": int(progress),
+    "summary": summary,
+    "files_touched": [],
+    "tests": [],
+    "blocker": blocker,
+    "eta": eta,
+    "commit_sha": commit_sha,
+    "last_update": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+}
+
+with open(outfile, "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2)
+    f.write("\n")
+
+print(f"Wrote {outfile}")
+PY

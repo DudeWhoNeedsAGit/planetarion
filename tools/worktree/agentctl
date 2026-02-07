@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "${REPO_ROOT}" ]]; then
+  echo "error: run inside a git repository" >&2
+  exit 1
+fi
+
+REPO_NAME="$(basename "$REPO_ROOT")"
+DEFAULT_WT_ROOT="$(cd "$REPO_ROOT/.." && pwd)/${REPO_NAME}-worktrees"
+WT_ROOT="${WORKTREE_ROOT:-$DEFAULT_WT_ROOT}"
+TASKS_DIR="$REPO_ROOT/.orchestrator/tasks"
+TEMPLATES_DIR="$REPO_ROOT/.orchestrator/templates"
+
+usage() {
+  cat <<USAGE
+agentctl - multi-agent git worktree helper
+
+Usage:
+  agentctl init
+  agentctl list
+  agentctl new orchestrator <slug> [base_branch]
+  agentctl new worker <slug> [base_branch]
+  agentctl spawn <task_id> <slug> [base_branch]
+  agentctl rm <slug> [--delete-branch]
+  agentctl paths
+
+Env:
+  WORKTREE_ROOT=/abs/path   Override default: $DEFAULT_WT_ROOT
+
+Examples:
+  agentctl init
+  agentctl new orchestrator planning main
+  agentctl spawn task-007 quest-helper main
+  agentctl list
+  agentctl rm quest-helper --delete-branch
+USAGE
+}
+
+ensure_initialized() {
+  mkdir -p "$WT_ROOT" "$TASKS_DIR" "$REPO_ROOT/.orchestrator/archive" "$TEMPLATES_DIR"
+}
+
+resolve_branch_for_slug() {
+  local slug="$1"
+  local out
+  out="$(git for-each-ref --format='%(refname:short)' refs/heads | grep -E "^(orchestrator|agent)/${slug}$" || true)"
+  if [[ -n "$out" ]]; then
+    echo "$out"
+  fi
+}
+
+resolve_path_for_slug() {
+  local slug="$1"
+  local p
+  p="$(git worktree list --porcelain | awk '/^worktree /{print $2}' | grep -E "/(orchestrator|worker)-${slug}$" || true)"
+  if [[ -n "$p" ]]; then
+    echo "$p" | head -n1
+  fi
+}
+
+cmd_init() {
+  ensure_initialized
+  echo "Initialized multi-agent workspace"
+  echo "Repo:      $REPO_ROOT"
+  echo "Worktrees: $WT_ROOT"
+  echo "Tasks:     $TASKS_DIR"
+}
+
+cmd_paths() {
+  echo "REPO_ROOT=$REPO_ROOT"
+  echo "WORKTREE_ROOT=$WT_ROOT"
+  echo "TASKS_DIR=$TASKS_DIR"
+  echo "TEMPLATES_DIR=$TEMPLATES_DIR"
+}
+
+cmd_list() {
+  echo "Worktrees (git):"
+  git worktree list
+  echo
+  echo "Managed root: $WT_ROOT"
+  if [[ -d "$WT_ROOT" ]]; then
+    find "$WT_ROOT" -maxdepth 1 -mindepth 1 -type d -printf '  %f\n' | sort || true
+  fi
+}
+
+create_worktree() {
+  local role="$1"
+  local slug="$2"
+  local base_branch="$3"
+  local prefix=""
+  local dir_prefix=""
+
+  case "$role" in
+    orchestrator)
+      prefix="orchestrator"
+      dir_prefix="orchestrator"
+      ;;
+    worker)
+      prefix="agent"
+      dir_prefix="worker"
+      ;;
+    *)
+      echo "error: role must be orchestrator or worker" >&2
+      exit 1
+      ;;
+  esac
+
+  ensure_initialized
+
+  local branch="${prefix}/${slug}"
+  local dir="${WT_ROOT}/${dir_prefix}-${slug}"
+
+  if [[ -d "$dir" ]]; then
+    echo "error: worktree dir already exists: $dir" >&2
+    exit 1
+  fi
+
+  if git show-ref --verify --quiet "refs/heads/${branch}"; then
+    git worktree add "$dir" "$branch"
+  else
+    git worktree add "$dir" -b "$branch" "$base_branch"
+  fi
+
+  if [[ "$role" == "orchestrator" ]]; then
+    cp -n "$TEMPLATES_DIR/orchestrator-session.md" "$dir/.agent-task.md" 2>/dev/null || true
+  else
+    cp -n "$TEMPLATES_DIR/subagent-task.md" "$dir/.agent-task.md" 2>/dev/null || true
+  fi
+
+  echo "Created $role worktree"
+  echo "Path:   $dir"
+  echo "Branch: $branch"
+}
+
+cmd_new() {
+  local role="${1:-}"
+  local slug="${2:-}"
+  local base_branch="${3:-main}"
+
+  if [[ -z "$role" || -z "$slug" ]]; then
+    usage
+    exit 1
+  fi
+
+  create_worktree "$role" "$slug" "$base_branch"
+}
+
+cmd_spawn() {
+  local task_id="${1:-}"
+  local slug="${2:-}"
+  local base_branch="${3:-main}"
+
+  if [[ -z "$task_id" || -z "$slug" ]]; then
+    usage
+    exit 1
+  fi
+
+  local task_file="$TASKS_DIR/${task_id}.md"
+  if [[ ! -f "$task_file" ]]; then
+    echo "error: task file not found: $task_file" >&2
+    echo "hint: create it from template first:" >&2
+    echo "  cp $TEMPLATES_DIR/task-brief.md $task_file" >&2
+    exit 1
+  fi
+
+  create_worktree worker "$slug" "$base_branch"
+  local worker_path
+  worker_path="$(resolve_path_for_slug "$slug")"
+  if [[ -n "$worker_path" ]]; then
+    {
+      echo "# Subagent Task"
+      echo "Task ID: $task_id"
+      echo
+      cat "$task_file"
+    } > "$worker_path/.agent-task.md"
+  fi
+
+  echo "Spawned subagent from task: $task_id"
+}
+
+cmd_rm() {
+  local slug="${1:-}"
+  local delete_branch="${2:-}"
+  if [[ -z "$slug" ]]; then
+    usage
+    exit 1
+  fi
+
+  local path
+  path="$(resolve_path_for_slug "$slug")"
+  local branch
+  branch="$(resolve_branch_for_slug "$slug")"
+
+  if [[ -z "$path" ]]; then
+    echo "error: no managed worktree found for slug: $slug" >&2
+    exit 1
+  fi
+
+  git worktree remove "$path"
+  echo "Removed worktree: $path"
+
+  if [[ "$delete_branch" == "--delete-branch" && -n "$branch" ]]; then
+    git branch -D "$branch"
+    echo "Deleted branch: $branch"
+  fi
+}
+
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    init)
+      shift
+      cmd_init "$@"
+      ;;
+    list)
+      shift
+      cmd_list "$@"
+      ;;
+    new)
+      shift
+      cmd_new "$@"
+      ;;
+    spawn)
+      shift
+      cmd_spawn "$@"
+      ;;
+    rm)
+      shift
+      cmd_rm "$@"
+      ;;
+    paths)
+      shift
+      cmd_paths "$@"
+      ;;
+    -h|--help|help|"")
+      usage
+      ;;
+    *)
+      echo "error: unknown command: $cmd" >&2
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "${repo_root}" ]]; then
+  echo "Not inside a git repository." >&2
+  exit 1
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+tool_repo_root="$(cd "${script_dir}/../.." && pwd)"
+
+workers_cfg="${repo_root}/.orchestrator/workers.json"
+if [[ ! -f "${workers_cfg}" ]]; then
+  workers_cfg="${tool_repo_root}/.orchestrator/workers.json"
+fi
+if [[ ! -f "${workers_cfg}" ]]; then
+  echo "Missing workers config: ${repo_root}/.orchestrator/workers.json or ${tool_repo_root}/.orchestrator/workers.json" >&2
+  exit 1
+fi
+
+worktree_root="${WORKTREE_ROOT:-${tool_repo_root%/*}/planetarion-worktrees}"
+
+python3 - "$repo_root" "$worktree_root" "$workers_cfg" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+worktree_root = Path(sys.argv[2])
+workers_cfg = Path(sys.argv[3])
+
+cfg = json.loads(workers_cfg.read_text())
+workers = sorted(cfg.get("workers", []), key=lambda w: int(w.get("priority", 999)))
+
+
+def run(cmd, cwd=None):
+    p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return p.returncode, p.stdout.strip(), p.stderr.strip()
+
+rows = []
+for w in workers:
+    wt_path = worktree_root / w["path"]
+    status_file = wt_path / ".agent-status.json"
+    branch = w["branch"]
+    head = "-"
+    dirty = "-"
+    progress = "-"
+    blocker = "-"
+    eta = "-"
+    commit_sha = ""
+    tests = "0"
+    status_ok = False
+
+    if wt_path.exists():
+      rc, out, _ = run(["git", "-C", str(wt_path), "rev-parse", "--short", "HEAD"])
+      if rc == 0:
+          head = out
+      rc, out, _ = run(["git", "-C", str(wt_path), "status", "--porcelain"])
+      if rc == 0:
+          dirty = str(len([ln for ln in out.splitlines() if ln.strip()]))
+
+    if status_file.exists():
+        try:
+            data = json.loads(status_file.read_text())
+            progress = str(data.get("progress", "-"))
+            blocker = (data.get("blocker") or "").strip() or "none"
+            eta = str(data.get("eta", "-"))
+            commit_sha = str(data.get("commit_sha", "")).strip()
+            tests_arr = data.get("tests", [])
+            tests = str(len(tests_arr))
+            status_ok = True
+        except Exception:
+            blocker = "invalid-status-json"
+
+    rows.append({
+        "priority": w["priority"],
+        "task_id": w["task_id"],
+        "slug": w["slug"],
+        "branch": branch,
+        "head": head,
+        "dirty": dirty,
+        "progress": progress,
+        "tests": tests,
+        "blocker": blocker,
+        "eta": eta,
+        "commit_sha": commit_sha,
+        "status_ok": status_ok,
+        "wt_path": str(wt_path),
+    })
+
+print("Worker Status")
+print("priority | task | branch | head | dirty | progress | tests | blocker | eta")
+print("---|---|---|---|---:|---:|---:|---|---")
+for r in rows:
+    print(f"{r['priority']} | {r['task_id']} | {r['branch']} | {r['head']} | {r['dirty']} | {r['progress']} | {r['tests']} | {r['blocker']} | {r['eta']}")
+
+print("\nNotes")
+for r in rows:
+    status_note = "status:ok" if r["status_ok"] else "status:missing"
+    commit_note = r["commit_sha"][:12] if r["commit_sha"] else "no-commit-sha"
+    print(f"- {r['slug']}: {status_note}, {commit_note}, path={r['wt_path']}")
+PY

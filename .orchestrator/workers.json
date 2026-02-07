@@ -1,0 +1,36 @@
+{
+  "orchestrator": {
+    "path": "orchestrator-roi-remaining",
+    "branch": "orchestrator/roi-remaining"
+  },
+  "workers": [
+    {
+      "task_id": "task-204-scenario-packs",
+      "slug": "scenario-packs",
+      "path": "worker-scenario-packs",
+      "branch": "agent/scenario-packs",
+      "priority": 1
+    },
+    {
+      "task_id": "task-201-pirate-ai-live-ops",
+      "slug": "pirate-ai-ops",
+      "path": "worker-pirate-ai-ops",
+      "branch": "agent/pirate-ai-ops",
+      "priority": 2
+    },
+    {
+      "task_id": "task-202-fleet-rebalance",
+      "slug": "fleet-rebalance",
+      "path": "worker-fleet-rebalance",
+      "branch": "agent/fleet-rebalance",
+      "priority": 3
+    },
+    {
+      "task_id": "task-203-economy-sinks-lite",
+      "slug": "economy-sinks",
+      "path": "worker-economy-sinks",
+      "branch": "agent/economy-sinks",
+      "priority": 4
+    }
+  ]
+}

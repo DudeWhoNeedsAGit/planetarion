@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "${repo_root}" ]]; then
+  echo "Not inside a git repository." >&2
+  exit 1
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+tool_repo_root="$(cd "${script_dir}/../.." && pwd)"
+
+workers_cfg="${repo_root}/.orchestrator/workers.json"
+if [[ ! -f "${workers_cfg}" ]]; then
+  workers_cfg="${tool_repo_root}/.orchestrator/workers.json"
+fi
+if [[ ! -f "${workers_cfg}" ]]; then
+  echo "Missing workers config: ${repo_root}/.orchestrator/workers.json or ${tool_repo_root}/.orchestrator/workers.json" >&2
+  exit 1
+fi
+
+worktree_root="${WORKTREE_ROOT:-${tool_repo_root%/*}/planetarion-worktrees}"
+
+python3 - "$repo_root" "$worktree_root" "$workers_cfg" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+worktree_root = Path(sys.argv[2])
+workers_cfg = Path(sys.argv[3])
+
+cfg = json.loads(workers_cfg.read_text())
+orchestrator_branch = cfg["orchestrator"]["branch"]
+workers = sorted(cfg.get("workers", []), key=lambda w: int(w.get("priority", 999)))
+
+
+def run(cmd):
+    p = subprocess.run(cmd, cwd=repo_root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return p.returncode, p.stdout.strip(), p.stderr.strip()
+
+
+def is_ancestor(a, b):
+    rc, _, _ = run(["git", "merge-base", "--is-ancestor", a, b])
+    return rc == 0
+
+
+def has_branch(br):
+    rc, _, _ = run(["git", "show-ref", "--verify", f"refs/heads/{br}"])
+    if rc == 0:
+        return True
+    rc, _, _ = run(["git", "show-ref", "--verify", f"refs/remotes/origin/{br}"])
+    return rc == 0
+
+
+def test_results_ok(tests):
+    if not tests:
+        return False
+    for t in tests:
+        result = str(t.get("result", "")).strip().lower()
+        if "pass" not in result:
+            return False
+    return True
+
+if not has_branch(orchestrator_branch):
+    print(f"ERROR: orchestrator branch not found: {orchestrator_branch}")
+    sys.exit(2)
+
+print("Merge Gate")
+print(f"orchestrator_branch: {orchestrator_branch}")
+print("priority | task | branch | merged | gate | reason")
+print("---|---|---|---|---|---")
+
+all_prior_merged = True
+next_cmd = ""
+
+for w in workers:
+    task = w["task_id"]
+    branch = w["branch"]
+    wt_path = worktree_root / w["path"]
+    status_file = wt_path / ".agent-status.json"
+
+    if not has_branch(branch):
+        print(f"{w['priority']} | {task} | {branch} | no | HOLD | branch-missing")
+        all_prior_merged = False
+        continue
+
+    merged = is_ancestor(branch, orchestrator_branch)
+    if merged:
+        print(f"{w['priority']} | {task} | {branch} | yes | OK | already-merged")
+        continue
+
+    gate = "HOLD"
+    reason = ""
+
+    if not all_prior_merged:
+        reason = "waiting-prior-merge-order"
+    elif not status_file.exists():
+        reason = "missing-.agent-status.json"
+    else:
+        try:
+            data = json.loads(status_file.read_text())
+        except Exception:
+            data = None
+            reason = "invalid-status-json"
+
+        if data is not None:
+            progress = int(data.get("progress", 0))
+            blocker = str(data.get("blocker", "")).strip()
+            commit_sha = str(data.get("commit_sha", "")).strip()
+            tests = data.get("tests", [])
+
+            if progress < 90:
+                reason = f"progress<{90}"
+            elif blocker:
+                reason = f"blocker:{blocker}"
+            elif not commit_sha:
+                reason = "missing-commit-sha"
+            elif not test_results_ok(tests):
+                reason = "tests-not-all-pass"
+            else:
+                gate = "READY"
+                reason = "all-gates-passed"
+                if not next_cmd:
+                    next_cmd = f"git checkout {orchestrator_branch} && git merge --no-ff {branch}"
+
+    print(f"{w['priority']} | {task} | {branch} | no | {gate} | {reason}")
+    all_prior_merged = False
+
+print("\nNext")
+if next_cmd:
+    print(next_cmd)
+else:
+    print("No branch is READY for ordered merge.")
+PY
