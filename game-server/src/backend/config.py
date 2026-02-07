@@ -95,7 +95,11 @@ class Config:
     except (TypeError, ValueError):
         RESEARCH_DURATION_SECONDS_PER_LEVEL = 60
 
-    # Pirate AI (Encounter Director) — disabled by default until tuned.
+    # Pirate AI (Encounter Director) parameters:
+    # - `PIRATE_AI_ENABLED`: master switch for raid spawning logic.
+    # - `PIRATE_AI_INTERVAL_SECONDS`: minimum cadence between per-player evaluations.
+    # - `PIRATE_AI_MAX_RAIDS_PER_24H`: hard cap per player in rolling 24h window.
+    # - `PIRATE_AI_COOLDOWN_SECONDS`: post-raid cooldown for the same player.
     PIRATE_AI_ENABLED = os.getenv("PLANETARION_PIRATE_AI_ENABLED", "").lower() in ("1", "true", "yes", "on")
     try:
         PIRATE_AI_INTERVAL_SECONDS = max(1, int(os.getenv("PLANETARION_PIRATE_AI_INTERVAL_SECONDS", "3600")))
@@ -110,6 +114,10 @@ class Config:
     except (TypeError, ValueError):
         PIRATE_AI_COOLDOWN_SECONDS = 6 * 3600
 
+    # Peak-hours tuning (server-time hours):
+    # - `PIRATE_AI_PEAK_START_HOUR` / `PIRATE_AI_PEAK_END_HOUR`: active peak window.
+    # - `PIRATE_AI_PEAK_PROB_MULT`: multiplies spawn probability during peak.
+    # - `PIRATE_AI_PEAK_POWER_MULT`: multiplies spawned pirate fleet power during peak.
     try:
         PIRATE_AI_PEAK_START_HOUR = int(os.getenv("PLANETARION_PIRATE_AI_PEAK_START_HOUR", "18"))
     except (TypeError, ValueError):
@@ -132,11 +140,21 @@ class Config:
     except (TypeError, ValueError):
         PIRATE_AI_DIFFICULTY_FACTOR = 0.8
 
-    # Deterministic RNG salt (falls back to SECRET_KEY if unset).
+    # Raid balance tuning:
+    # - `PIRATE_AI_DIFFICULTY_FACTOR`: scales pirate fleet strength from player power.
+    # - `PIRATE_AI_SECRET_SALT`: deterministic RNG salt (falls back to SECRET_KEY if unset).
+    # - `PIRATE_FACTION_USERNAMES`: comma-separated NPC usernames treated as pirate factions.
     PIRATE_AI_SECRET_SALT = os.getenv("PLANETARION_PIRATE_AI_SECRET_SALT")
-    # Comma-separated NPC pirate faction usernames.
     PIRATE_FACTION_USERNAMES = os.getenv("PLANETARION_PIRATE_FACTION_USERNAMES", "pirates,pirates_red,pirates_black")
-    # Pirate simulation (phase 2) - disabled by default for safe rollout.
+
+    # Pirate Simulation (Phase 2) parameters:
+    # - `PIRATE_SIM_ENABLED`: master switch for autonomous pirate expansion simulation.
+    # - `PIRATE_SIM_EXPANSION_ENABLED`: toggles colonization expansion loop only.
+    # - `PIRATE_SIM_EXPANSION_INTERVAL_SECONDS`: minimum interval between expansion cycles.
+    # - `PIRATE_SIM_PLANET_CAP_PER_FACTION`: max pirate-owned planets per faction.
+    # - `PIRATE_SIM_PLANET_CAP_PER_Z_SLICE`: per-faction cap on a single Z slice.
+    # - `PIRATE_SIM_TOTAL_PLANET_CAP`: global pirate-owned planet cap across all factions.
+    # - `PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE`: no-colonize radius around non-pirate home worlds.
     PIRATE_SIM_ENABLED = os.getenv("PLANETARION_PIRATE_SIM_ENABLED", "").lower() in ("1", "true", "yes", "on")
     PIRATE_SIM_EXPANSION_ENABLED = os.getenv("PLANETARION_PIRATE_SIM_EXPANSION_ENABLED", "1").lower() in (
         "1",

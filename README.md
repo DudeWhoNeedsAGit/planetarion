@@ -101,6 +101,7 @@ For detailed information about the game, development, and technical implementati
 ### 🛠️ **Development & Testing**
 - **[🧪 Testing Guide](./game-server/README.md#testing)** - How to run unit/integration/e2e
 - **[💻 Development](./game-server/README.md#development)** - Contributing to the project
+- **[🤖 Multi-Agent Worktrees](./docs/dev/multi-agent-worktrees.md)** - Orchestrator + subagent parallel workflow
 - **[⚙️ Automated Testing](./.clinerules)** - CI/CD configuration and testing rules
 - **[🐳 Docker Commands](./.clinerules/docker-commands.md)** - Container management guide
 - **[🔍 Repository Analyzer](./cline-scripts/repo-analyzer.sh)** - Project structure analysis tool
@@ -146,6 +147,31 @@ Planetarion is built with modern web technologies:
 - **Deployment**: A-B deployment automation with QNAP NAS support
 - **Real-time**: Tick-based resource generation and fleet movement/arrival processing
 - **Monitoring**: Comprehensive logging and error handling systems
+
+## ⚙️ Pirate Config Reference
+
+Backend env vars (prefix `PLANETARION_`) for Pirate AI and Phase 2 simulation:
+
+| Variable | Default | Description |
+|---|---:|---|
+| `PIRATE_AI_ENABLED` | `false` | Master switch for raid encounter director. |
+| `PIRATE_AI_INTERVAL_SECONDS` | `3600` | Minimum seconds between per-player raid evaluations. |
+| `PIRATE_AI_MAX_RAIDS_PER_24H` | `2` | Per-player raid cap in rolling 24h window. |
+| `PIRATE_AI_COOLDOWN_SECONDS` | `21600` | Cooldown after a raid against the same player. |
+| `PIRATE_AI_PEAK_START_HOUR` | `18` | Peak window start hour (server time). |
+| `PIRATE_AI_PEAK_END_HOUR` | `20` | Peak window end hour (server time, end-exclusive in logic). |
+| `PIRATE_AI_PEAK_PROB_MULT` | `1.5` | Raid spawn probability multiplier during peak hours. |
+| `PIRATE_AI_PEAK_POWER_MULT` | `1.25` | Pirate fleet power multiplier during peak hours. |
+| `PIRATE_AI_DIFFICULTY_FACTOR` | `0.8` | Base pirate fleet strength scaling factor from player power. |
+| `PIRATE_AI_SECRET_SALT` | unset | Optional deterministic RNG salt (falls back to `SECRET_KEY`). |
+| `PIRATE_FACTION_USERNAMES` | `pirates,pirates_red,pirates_black` | Comma-separated usernames treated as pirate NPC factions. |
+| `PIRATE_SIM_ENABLED` | `false` | Master switch for autonomous pirate simulation loops. |
+| `PIRATE_SIM_EXPANSION_ENABLED` | `true` | Enable pirate colonization/expansion loop. |
+| `PIRATE_SIM_EXPANSION_INTERVAL_SECONDS` | `7200` | Minimum seconds between expansion cycles. |
+| `PIRATE_SIM_PLANET_CAP_PER_FACTION` | `6` | Hard cap of pirate-owned planets per faction. |
+| `PIRATE_SIM_PLANET_CAP_PER_Z_SLICE` | `3` | Per-faction cap within a single Z slice. |
+| `PIRATE_SIM_TOTAL_PLANET_CAP` | `18` | Global cap of pirate-owned planets across all factions. |
+| `PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE` | `1200` | No-colonize radius around non-pirate home planets. |
 
 ## 🔍 Repository Analysis Tool
 
