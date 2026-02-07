@@ -2008,6 +2008,7 @@ function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, onSplit, onTr
   const rawTargetPlanet = fleet.target_planet || planets.find(p => p.id === fleet.target_planet_id) || null;
   // Keep From/To stable (start -> target) even while returning; the status already communicates direction.
   const displayTargetPlanet = rawTargetPlanet;
+  const upkeepPerHour = Number(fleet?.upkeep?.deuterium_per_hour || 0);
 
   return (
     <div className="pa-panel p-4" data-testid="fleet-tile">
@@ -2074,7 +2075,7 @@ function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, onSplit, onTr
       </div>
 
       {/* Fleet Details */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-3">
         <div>
           <div className="text-slate-300/70">Ships</div>
           <div className="text-white">
@@ -2103,6 +2104,10 @@ function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, onSplit, onTr
         <div>
           <div className="text-slate-300/70">ETA</div>
           <div className="text-white" data-testid="fleet-eta-value">{formatTimeRemaining(fleet.arrival_time, fleet.status)}</div>
+        </div>
+        <div>
+          <div className="text-slate-300/70">Upkeep</div>
+          <div className="text-amber-300" data-testid="fleet-upkeep-value">-{upkeepPerHour.toLocaleString()} D/h</div>
         </div>
       </div>
 

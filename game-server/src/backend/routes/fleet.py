@@ -10,13 +10,14 @@ This module handles all fleet-related operations including:
 All endpoints require JWT authentication and operate on the user's own fleets.
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.database import db
 from backend.models import User, Planet, Fleet, Research, TickLog
 from backend.config import get_forced_travel_time_seconds, get_min_travel_time_seconds
 from backend.services.fleet_arrival import FleetArrivalService, COLONIZATION_ERRORS
 from backend.services.fleet_state_machine import FleetStateMachine, FleetStateError
+from backend.services.economy_sinks import fleet_upkeep_deuterium_per_tick, fleet_upkeep_deuterium_per_hour
 from datetime import datetime, timedelta, timezone
 import math
 
@@ -99,6 +100,7 @@ def serialize_fleet(fleet, planet_dict=None):
     from backend.services.fleet_travel import FleetTravelService
 
     planet_dict = planet_dict or {}
+    upkeep_tick = fleet_upkeep_deuterium_per_tick(fleet, current_app.config)
     return {
         'id': fleet.id,
         'mission': fleet.mission,
@@ -110,6 +112,11 @@ def serialize_fleet(fleet, planet_dict=None):
         'arrival_time': _iso_utc(fleet.arrival_time),
         'eta': fleet.eta,
         'travel_info': FleetTravelService.calculate_travel_info(fleet),
+        'upkeep': {
+            'deuterium_per_tick': upkeep_tick,
+            'deuterium_per_hour': fleet_upkeep_deuterium_per_hour(fleet, current_app.config),
+            'enabled': bool(current_app.config.get("ECONOMY_SINKS_ENABLED", False)),
+        },
         'start_planet': get_planet_info(fleet.start_planet_id, planet_dict),
         'target_planet': get_planet_info(fleet.target_planet_id, planet_dict) if fleet.target_planet_id and fleet.target_planet_id > 0 else None
     }
