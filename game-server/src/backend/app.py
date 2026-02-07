@@ -459,16 +459,24 @@ def create_app(config_name=None):
 
         # Start scheduler when app starts (only in development)
         print(f"🎯 Environment: {app.config['FLASK_ENV']}")
+
+        def _create_all_safely() -> None:
+            try:
+                db.create_all()
+            except Exception as e:
+                # Rare test/dev race: metadata/table state can briefly disagree on sqlite.
+                # If the table already exists, proceed (schema ensure hooks run right after).
+                if "already exists" in str(e).lower():
+                    return
+                if _maybe_repair_malformed_sqlite_db(e):
+                    db.create_all()
+                else:
+                    raise
+
         if app.config['FLASK_ENV'] == 'development':
             print("🗄️ Creating database tables...")
             with app.app_context():
-                try:
-                    db.create_all()
-                except Exception as e:
-                    if _maybe_repair_malformed_sqlite_db(e):
-                        db.create_all()
-                    else:
-                        raise
+                _create_all_safely()
                 print("✅ Database tables created")
                 try:
                     from .services.sqlite_schema import (
@@ -482,6 +490,7 @@ def create_app(config_name=None):
                         ensure_research_tech_columns,
                         ensure_commander_xp_event_table,
                         ensure_pirate_ai_state_table,
+                        ensure_pirate_ai_config_overrides_table,
                     )
                     ensure_planet_storage_columns(db.engine)
                     ensure_planet_trait_columns(db.engine)
@@ -493,6 +502,9 @@ def create_app(config_name=None):
                     ensure_research_tech_columns(db.engine)
                     ensure_commander_xp_event_table(db.engine)
                     ensure_pirate_ai_state_table(db.engine)
+                    ensure_pirate_ai_config_overrides_table(db.engine)
+                    from .services.pirate_ai import PirateAILiveOps
+                    PirateAILiveOps.apply_persisted_overrides()
                     print("✅ SQLite schema ensured (planet storage columns)")
                 except Exception as e:
                     print(f"⚠️ SQLite schema ensure failed: {e}")
@@ -507,13 +519,7 @@ def create_app(config_name=None):
         elif app.config['FLASK_ENV'] == 'testing':
             print("🧪 Setting up test database...")
             with app.app_context():
-                try:
-                    db.create_all()
-                except Exception as e:
-                    if _maybe_repair_malformed_sqlite_db(e):
-                        db.create_all()
-                    else:
-                        raise
+                _create_all_safely()
                 print("✅ Test database tables created")
                 try:
                     from .services.sqlite_schema import (
@@ -527,6 +533,7 @@ def create_app(config_name=None):
                         ensure_research_tech_columns,
                         ensure_commander_xp_event_table,
                         ensure_pirate_ai_state_table,
+                        ensure_pirate_ai_config_overrides_table,
                     )
                     ensure_planet_storage_columns(db.engine)
                     ensure_planet_trait_columns(db.engine)
@@ -538,6 +545,9 @@ def create_app(config_name=None):
                     ensure_research_tech_columns(db.engine)
                     ensure_commander_xp_event_table(db.engine)
                     ensure_pirate_ai_state_table(db.engine)
+                    ensure_pirate_ai_config_overrides_table(db.engine)
+                    from .services.pirate_ai import PirateAILiveOps
+                    PirateAILiveOps.apply_persisted_overrides()
                 except Exception:
                     # Tests recreate DB frequently; missing migration isn't fatal here.
                     pass

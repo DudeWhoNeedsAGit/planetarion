@@ -64,6 +64,19 @@ class PirateAIState(db.Model):
         return f"<PirateAIState user:{self.user_id} threat:{self.threat_level} raids24h:{self.raids_last_24h}>"
 
 
+class PirateAIConfigOverride(db.Model):
+    __tablename__ = "pirate_ai_config_overrides"
+
+    id = db.Column(db.Integer, primary_key=True)
+    config_key = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    config_value = db.Column(db.String(128), nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<PirateAIConfigOverride {self.config_key}={self.config_value}>"
+
+
 class Planet(db.Model):
     __tablename__ = 'planets'
 

@@ -219,3 +219,29 @@ def ensure_pirate_ai_state_table(db_engine) -> None:
             )
         )
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_pirate_ai_state_user_id ON pirate_ai_state (user_id)"))
+
+
+def ensure_pirate_ai_config_overrides_table(db_engine) -> None:
+    """Ensure Pirate AI live-ops config override table exists for SQLite DBs."""
+    if db_engine.dialect.name != "sqlite":
+        return
+
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS pirate_ai_config_overrides (
+                    id INTEGER PRIMARY KEY,
+                    config_key VARCHAR(64) NOT NULL UNIQUE,
+                    config_value VARCHAR(128) NOT NULL,
+                    updated_at DATETIME,
+                    created_at DATETIME
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_pirate_ai_config_overrides_config_key ON pirate_ai_config_overrides (config_key)"
+            )
+        )
