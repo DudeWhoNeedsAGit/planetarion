@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 import hashlib
 import math
 import random
 
 from flask import current_app
+from sqlalchemy import func
 
 from backend.database import db
-from backend.models import Fleet, Planet, TickLog, User, PirateAIState
+from backend.models import Fleet, Planet, TickLog, User, PirateAIState, PirateAIConfigOverride
 from backend.services.fleet_travel import FleetTravelService
 from backend.config import get_forced_travel_time_seconds, get_min_travel_time_seconds
 
@@ -21,6 +23,183 @@ class PirateRaidDecision:
     is_peak: bool
     player_power: float
     pirate_power: float
+
+
+class PirateAILiveOps:
+    """Runtime-safe Pirate AI config + status helpers for admin operations."""
+
+    CONFIG_SPECS: dict[str, dict] = {
+        "PIRATE_AI_ENABLED": {"type": "bool"},
+        "PIRATE_AI_INTERVAL_SECONDS": {"type": "int", "min": 1, "max": 86400},
+        "PIRATE_AI_MAX_RAIDS_PER_24H": {"type": "int", "min": 0, "max": 48},
+        "PIRATE_AI_COOLDOWN_SECONDS": {"type": "int", "min": 0, "max": 172800},
+        "PIRATE_AI_PEAK_START_HOUR": {"type": "int", "min": 0, "max": 23},
+        "PIRATE_AI_PEAK_END_HOUR": {"type": "int", "min": 0, "max": 24},
+        "PIRATE_AI_PEAK_PROB_MULT": {"type": "float", "min": 0.1, "max": 5.0},
+        "PIRATE_AI_PEAK_POWER_MULT": {"type": "float", "min": 0.1, "max": 5.0},
+        "PIRATE_AI_DIFFICULTY_FACTOR": {"type": "float", "min": 0.1, "max": 5.0},
+        "PIRATE_AI_P_MAX": {"type": "float", "min": 0.0, "max": 1.0},
+    }
+
+    @staticmethod
+    def apply_persisted_overrides() -> dict[str, object]:
+        """Load persisted overrides from DB into app runtime config."""
+        applied: dict[str, object] = {}
+        rows = PirateAIConfigOverride.query.all()
+        for row in rows:
+            spec = PirateAILiveOps.CONFIG_SPECS.get(str(row.config_key))
+            if not spec:
+                continue
+            ok, parsed, _err = PirateAILiveOps._parse_value(row.config_key, row.config_value)
+            if not ok:
+                continue
+            current_app.config[row.config_key] = parsed
+            applied[row.config_key] = parsed
+        return applied
+
+    @staticmethod
+    def get_effective_config() -> dict[str, object]:
+        cfg: dict[str, object] = {}
+        for key in PirateAILiveOps.CONFIG_SPECS.keys():
+            cfg[key] = current_app.config.get(key)
+        return cfg
+
+    @staticmethod
+    def set_overrides(payload: dict[str, object]) -> tuple[dict[str, object], dict[str, str]]:
+        applied: dict[str, object] = {}
+        errors: dict[str, str] = {}
+
+        for key, raw in (payload or {}).items():
+            if key not in PirateAILiveOps.CONFIG_SPECS:
+                errors[str(key)] = "Not allowlisted"
+                continue
+
+            ok, parsed, err = PirateAILiveOps._parse_value(key, raw)
+            if not ok:
+                errors[str(key)] = err or "Invalid value"
+                continue
+
+            row = PirateAIConfigOverride.query.filter_by(config_key=key).first()
+            if not row:
+                row = PirateAIConfigOverride(config_key=key, config_value=str(parsed))
+                db.session.add(row)
+            else:
+                row.config_value = str(parsed)
+            current_app.config[key] = parsed
+            applied[key] = parsed
+
+        if applied:
+            db.session.commit()
+        return applied, errors
+
+    @staticmethod
+    def build_status_summary(now: datetime | None = None) -> dict:
+        now = now or datetime.utcnow()
+        enabled = bool(current_app.config.get("PIRATE_AI_ENABLED"))
+        users = User.query.all()
+        non_pirates = [u for u in users if (u.username or "").lower() != "pirates"]
+        pirates = next((u for u in users if (u.username or "").lower() == "pirates"), None)
+
+        states_by_user_id: dict[int, PirateAIState] = {
+            int(s.user_id): s for s in PirateAIState.query.all() if getattr(s, "user_id", None) is not None
+        }
+
+        blocked_reasons = {
+            "disabled": 0,
+            "pirates_user_missing": 0,
+            "not_due": 0,
+            "protected": 0,
+            "no_planets": 0,
+            "cooldown": 0,
+            "daily_cap": 0,
+            "ready": 0,
+        }
+
+        if not enabled:
+            blocked_reasons["disabled"] = len(non_pirates)
+        elif pirates is None:
+            blocked_reasons["pirates_user_missing"] = len(non_pirates)
+        else:
+            for user in non_pirates:
+                state = states_by_user_id.get(int(user.id))
+                if state and not PirateAIDirector._is_due(state=state, now=now):
+                    blocked_reasons["not_due"] += 1
+                    continue
+
+                state_for_check = state or SimpleNamespace(
+                    raids_last_24h=0,
+                    cooldown_until=None,
+                    threat_level=0.0,
+                    raids_window_start_at=None,
+                )
+                eligible, reason = PirateAIDirector._is_eligible(user=user, state=state_for_check, now=now)
+                if eligible:
+                    blocked_reasons["ready"] += 1
+                else:
+                    blocked_reasons[reason] = int(blocked_reasons.get(reason, 0) or 0) + 1
+
+        last_run_at = db.session.query(func.max(PirateAIState.last_action_at)).scalar()
+        last_run_evaluated = 0
+        if last_run_at is not None:
+            last_run_evaluated = PirateAIState.query.filter_by(last_action_at=last_run_at).count()
+
+        raids_last_24h = TickLog.query.filter(
+            TickLog.event_type == "pirate_raid_spawned",
+            TickLog.timestamp >= (now - timedelta(hours=24)),
+        ).count()
+
+        return {
+            "enabled": enabled,
+            "now": now.isoformat() + "Z",
+            "last_run_at": last_run_at.isoformat() + "Z" if last_run_at else None,
+            "last_run_evaluated": int(last_run_evaluated),
+            "raids_spawned_last_24h": int(raids_last_24h),
+            "users_total": len(users),
+            "users_considered": len(non_pirates),
+            "blocked_reasons": blocked_reasons,
+            "config": PirateAILiveOps.get_effective_config(),
+        }
+
+    @staticmethod
+    def _parse_value(key: str, raw: object) -> tuple[bool, object | None, str | None]:
+        spec = PirateAILiveOps.CONFIG_SPECS.get(str(key))
+        if not spec:
+            return False, None, "Not allowlisted"
+
+        t = spec["type"]
+        val: object
+        try:
+            if t == "bool":
+                if isinstance(raw, bool):
+                    val = raw
+                elif isinstance(raw, str):
+                    norm = raw.strip().lower()
+                    if norm in ("1", "true", "yes", "on"):
+                        val = True
+                    elif norm in ("0", "false", "no", "off"):
+                        val = False
+                    else:
+                        return False, None, "Expected boolean"
+                else:
+                    return False, None, "Expected boolean"
+            elif t == "int":
+                val = int(raw)
+            elif t == "float":
+                val = float(raw)
+            else:
+                return False, None, "Unsupported type"
+        except (TypeError, ValueError):
+            return False, None, f"Expected {t}"
+
+        if t in ("int", "float"):
+            min_v = spec.get("min")
+            max_v = spec.get("max")
+            if min_v is not None and val < min_v:
+                return False, None, f"Must be >= {min_v}"
+            if max_v is not None and val > max_v:
+                return False, None, f"Must be <= {max_v}"
+
+        return True, val, None
 
 
 class PirateAIDirector:
@@ -443,4 +622,3 @@ class PirateAIDirector:
         except (TypeError, ValueError):
             v = lo
         return max(lo, min(hi, v))
-

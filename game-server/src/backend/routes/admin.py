@@ -66,6 +66,28 @@ def _require_admin_or_dev_token() -> tuple[bool, tuple[dict, int] | None]:
 
     return True, None
 
+
+def _require_admin_or_dev_token_readonly() -> tuple[bool, tuple[dict, int] | None]:
+    """Allow dev token in dev/test, admin JWT everywhere."""
+    if _is_dev_or_test_env() and _has_dev_admin_token():
+        return True, None
+
+    verify_jwt_in_request(optional=True)
+    identity = get_jwt_identity()
+    if identity is None:
+        return False, ({"error": "Admin access required"}, 403)
+
+    try:
+        user_id = int(identity)
+    except (TypeError, ValueError):
+        return False, ({"error": "Admin access required"}, 403)
+
+    if not is_admin(user_id):
+        return False, ({"error": "Admin access required"}, 403)
+
+    return True, None
+
+
 def _get_sqlite_db_path() -> str:
     # Only supports sqlite for this fast-reset workflow.
     url = str(db.engine.url)
@@ -248,6 +270,7 @@ def restore_db():
                     ensure_research_tech_columns,
                     ensure_commander_xp_event_table,
                     ensure_pirate_ai_state_table,
+                    ensure_pirate_ai_config_overrides_table,
                 )
                 ensure_planet_storage_columns(db.engine)
                 ensure_planet_trait_columns(db.engine)
@@ -258,6 +281,9 @@ def restore_db():
                 ensure_research_tech_columns(db.engine)
                 ensure_commander_xp_event_table(db.engine)
                 ensure_pirate_ai_state_table(db.engine)
+                ensure_pirate_ai_config_overrides_table(db.engine)
+                from backend.services.pirate_ai import PirateAILiveOps
+                PirateAILiveOps.apply_persisted_overrides()
         except Exception:
             # Non-fatal: restore should still succeed even if schema ensure fails.
             pass
@@ -464,6 +490,67 @@ def reset_two_player_scenario():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route("/pirate-ai/status", methods=["GET"])
+def get_pirate_ai_status():
+    allowed, err = _require_admin_or_dev_token_readonly()
+    if not allowed:
+        payload, code = err
+        return jsonify(payload), code
+
+    from backend.services.pirate_ai import PirateAILiveOps
+
+    try:
+        summary = PirateAILiveOps.build_status_summary()
+        return jsonify(summary), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to build pirate ai status: {str(e)}"}), 500
+
+
+@admin_bp.route("/pirate-ai/config", methods=["GET"])
+def get_pirate_ai_config():
+    allowed, err = _require_admin_or_dev_token_readonly()
+    if not allowed:
+        payload, code = err
+        return jsonify(payload), code
+
+    from backend.services.pirate_ai import PirateAILiveOps
+
+    return jsonify({
+        "allowlist": PirateAILiveOps.CONFIG_SPECS,
+        "effective": PirateAILiveOps.get_effective_config(),
+    }), 200
+
+
+@admin_bp.route("/pirate-ai/config", methods=["POST"])
+def set_pirate_ai_config():
+    allowed, err = _require_admin_or_dev_token_readonly()
+    if not allowed:
+        payload, code = err
+        return jsonify(payload), code
+
+    if not _is_dev_or_test_env():
+        return jsonify({"error": "Config mutation not allowed outside development/testing"}), 403
+
+    payload = request.get_json(silent=True) or {}
+    updates = payload.get("updates")
+    if not isinstance(updates, dict) or not updates:
+        return jsonify({"error": "Expected non-empty object at 'updates'"}), 400
+
+    from backend.services.pirate_ai import PirateAILiveOps
+
+    try:
+        applied, errors = PirateAILiveOps.set_overrides(updates)
+        status = 200 if applied and not errors else 400
+        return jsonify({
+            "applied": applied,
+            "errors": errors,
+            "effective": PirateAILiveOps.get_effective_config(),
+        }), status
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to apply pirate ai config: {str(e)}"}), 500
 
 @admin_bp.route('/fleet-health', methods=['GET'])
 @jwt_required()
