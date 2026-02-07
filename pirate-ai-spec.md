@@ -226,3 +226,316 @@ Scenario:
 1) Peak time: currently specified as **server time 18:00–20:00**. Confirm this (vs player-local time).
 2) Daily raid cap: confirm desired cap (suggest: 1–2 per 24h).
 3) Do we allow pirate raids against players with 1 planet and very low fleet power (or keep a grace threshold)?
+
+---
+
+## 11) Phase 2 Spec — Autonomous Pirate Simulation (Implementation-Ready)
+
+Date: 2026-02-07  
+Status: Draft for implementation
+
+### 11.1 GOAL
+
+Turn pirates into a visible, bounded galaxy simulation:
+- Pirates can colonize unowned planets and build up locally.
+- Pirate factions can attack other pirate factions, producing combat reports + debris.
+- Galaxy map feels alive (moving fleets, changing ownership), but remains fair and readable.
+- Hard anti-snowball limits prevent runaway pirate empires.
+
+### 11.2 GAP (Current vs Target)
+
+Current state (implemented):
+- Per-player pirate raid director exists (`PirateAIDirector.run_hourly`).
+- Single canonical NPC user (`username="pirates"`).
+- Pirate raids on players are supported and tested.
+- Debris generation from pirate-vs-player combat is supported and tested.
+
+Missing for the new goal:
+- No pirate colonization loop.
+- No pirate-vs-pirate combat loop (single pirate owner cannot self-attack).
+- No pirate faction economy/build budget with hard growth caps.
+- Multiple services hardcode `username == "pirates"` and must be generalized.
+
+### 11.3 Scope
+
+In scope:
+- Pirate faction model (multiple pirate NPC users).
+- Colonization behavior for pirate factions.
+- Pirate-vs-pirate skirmish behavior.
+- Growth caps: structures, fleet power, planets.
+- New logs/events and map-visible state changes.
+- Automated tests for all new behavior.
+
+Out of scope (Phase 2):
+- Pirate diplomacy/alliances.
+- Pirate trading/transport economy.
+- Complex tactical AI beyond current combat engine.
+
+### 11.4 Core Design
+
+#### A) Pirate faction model
+
+Introduce multiple pirate NPC users:
+- Keep existing `pirates` user for backward compatibility.
+- Add additional factions, default:
+  - `pirates_red`
+  - `pirates_black`
+
+Implementation rule:
+- Add helper `is_pirate_username(name: str) -> bool` in backend services.
+- Replace hardcoded checks `username == "pirates"` with `is_pirate_username(...)` where appropriate.
+
+Required touchpoints:
+- `backend/services/pirate_ai.py`
+- `backend/services/fleet_arrival.py` (pirate attacker special path)
+- `backend/services/tick.py` (NPC processing exclusions)
+- `backend/services/idle_catchup.py`
+- `backend/services/commander_xp.py` (exclude all pirate NPCs from XP systems)
+- `backend/routes/fleet.py` (PvP protection exceptions for pirate targets)
+- map relation derivation in API/frontend where pirate ownership is inferred
+
+#### B) Pirate faction state (new table)
+
+Add `pirate_faction_state` table (one row per pirate NPC user):
+- `user_id` (unique FK users.id)
+- `expansion_cooldown_until` (datetime)
+- `build_cooldown_until` (datetime)
+- `skirmish_cooldown_until` (datetime)
+- `expansion_points` (int)
+- `fleet_points` (int)
+- `planet_cap` (int)
+- `fleet_cap` (int)
+- `last_target_faction_user_id` (nullable int FK users.id)
+- `created_at`, `updated_at`
+
+Purpose:
+- deterministic throttling + anti-snowball controls without overloading `PirateAIState`.
+
+#### C) Simulation loops (cadence)
+
+Keep existing raid loop. Add two loops:
+- `run_expansion_cycle(now)` every 2h
+- `run_skirmish_cycle(now)` every 20m
+
+Orchestration entrypoint:
+- `PirateAIDirector.run_simulation(now)` calls:
+  - raids (existing)
+  - expansion
+  - skirmish
+
+Cadence config:
+- env-gated and independently toggleable.
+
+### 11.5 Behavior Spec
+
+#### 1) Pirate colonization
+
+Eligibility:
+- Faction has fewer owned planets than `planet_cap`.
+- Faction has at least one valid colony fleet source (camp/outpost with colony ships).
+- Expansion cooldown elapsed.
+
+Target selection:
+- Unowned planets only.
+- Same z-slice preference as faction core planet.
+- Avoid player home planets and avoid protected buffer radius around each player home.
+- Prefer unexplored/low-value neutral planets first.
+
+Mission:
+- Spawn `mission='colonize'` fleet (same mission contract as players).
+- Use existing colonization arrival path.
+
+Post-colonization bootstrap (bounded):
+- New pirate colony starts with capped baseline structures only.
+- Seed inventory fleet from faction budget (not from unlimited spawn).
+
+#### 2) Pirate building growth
+
+Each faction can perform at most one build action per owned pirate planet per build cycle.
+
+Priority order:
+1. `metal_mine`
+2. `crystal_mine`
+3. `deuterium_synthesizer`
+4. `solar_plant`
+
+Hard per-planet structure caps:
+- `metal_mine <= 12`
+- `crystal_mine <= 12`
+- `deuterium_synthesizer <= 10`
+- `solar_plant <= 12`
+- storage/fusion/research stay at current values (no growth in Phase 2)
+
+#### 3) Pirate fleet growth
+
+Faction fleet budget is bounded by `fleet_cap` (power score, not raw hull count).
+
+Hard ship caps per pirate planet (inventory + stationed combined):
+- `light_fighter <= 250`
+- `heavy_fighter <= 120`
+- `cruiser <= 50`
+- `battleship <= 20`
+- `battlecruiser <= 10`
+- `colony_ship <= 3`
+
+If faction exceeds `fleet_cap`:
+- no new ship growth
+- optional attrition: remove 2% of combat ships per cycle until below cap
+
+#### 4) Pirate-vs-pirate skirmish
+
+Eligibility:
+- At least two pirate factions exist with planets in same z-slice.
+- Attacker and target are different pirate users.
+- Cooldowns satisfied.
+
+Target selection:
+- Prefer nearest hostile pirate planet with highest pirate value score.
+- Avoid repeating same target faction consecutively if alternatives exist.
+
+Mission:
+- Spawn `attack` fleet from attacker faction to target faction planet.
+- Resolve through normal combat arrival pipeline.
+
+Expected outcomes:
+- Combat report generated.
+- Debris field generated from losses.
+- Planet ownership may change only if normal combat rules allow; if not, remain as is.
+
+### 11.6 Anti-Snowball Guardrails (Mandatory)
+
+Global caps:
+- `PIRATE_SIM_PLANET_CAP_PER_FACTION` default `6`
+- `PIRATE_SIM_PLANET_CAP_PER_Z_SLICE` default `3`
+- `PIRATE_SIM_TOTAL_PLANET_CAP` default `18`
+
+Growth throttles:
+- `PIRATE_SIM_BUILD_COOLDOWN_SECONDS` default `7200`
+- `PIRATE_SIM_EXPANSION_COOLDOWN_SECONDS` default `7200`
+- `PIRATE_SIM_SKIRMISH_COOLDOWN_SECONDS` default `1200`
+
+Fairness rules:
+- Do not colonize within `PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE` (default `1200`) of any non-pirate home planet.
+- If pirate-owned planets exceed `PIRATE_SIM_MAX_PIRATE_OWNERSHIP_RATIO` (default `0.20`) of total colonized planets, expansion halts.
+
+Cleanup rule:
+- If a pirate faction is reduced to 0 planets, auto-seed one camp with starter capped fleet (once per 24h max).
+
+### 11.7 Events, Telemetry, and UX Surface
+
+Add TickLog event types:
+- `pirate_colonization_started`
+- `pirate_colonization_completed`
+- `pirate_build_applied`
+- `pirate_skirmish_spawned`
+- `pirate_skirmish_resolved`
+- `pirate_growth_blocked_cap`
+
+Admin status endpoint additions:
+- per-faction planets, fleet score, cap utilization
+- last expansion/skirmish action timestamps
+- blocked reasons counters (cap, cooldown, buffer, ownership ratio)
+
+Galaxy map UX expectations:
+- multiple pirate owners still render as pirate relation
+- skirmish/colonization fleets visible on travel lines
+- debris appears after pirate-vs-pirate fights in intel/combat surfaces
+
+### 11.8 Implementation Milestones and Checklists
+
+#### Milestone M1 — Pirate Faction Foundation
+- [ ] Add `is_pirate_username` helper and replace hardcoded checks.
+- [ ] Add `pirate_faction_state` model + schema ensure migration.
+- [ ] Seed additional pirate faction users (`pirates_red`, `pirates_black`) in scenario/bootstrap paths.
+- [ ] Extend admin status payload with per-faction summary.
+
+Exit criteria:
+- backend starts cleanly; existing pirate AI tests remain green.
+
+#### Milestone M2 — Colonization Loop
+- [ ] Implement `run_expansion_cycle`.
+- [ ] Spawn pirate colonization fleets with existing mission contracts.
+- [ ] Add target filters (unowned only, home-buffer exclusion).
+- [ ] Emit `pirate_colonization_started/completed` logs.
+
+Exit criteria:
+- deterministic integration test proves pirates colonize at least one neutral planet when eligible.
+
+#### Milestone M3 — Capped Pirate Growth
+- [ ] Implement build cycle with per-planet structure caps.
+- [ ] Implement fleet growth with ship caps and faction `fleet_cap`.
+- [ ] Implement over-cap block/attrition behavior.
+- [ ] Emit `pirate_build_applied` and `pirate_growth_blocked_cap`.
+
+Exit criteria:
+- integration tests prove caps are never exceeded after repeated cycles.
+
+#### Milestone M4 — Pirate-vs-Pirate Skirmishes
+- [ ] Implement `run_skirmish_cycle`.
+- [ ] Select rival pirate targets and spawn attack missions.
+- [ ] Ensure combat/debris pipeline works for non-`pirates` pirate usernames.
+- [ ] Emit `pirate_skirmish_spawned/resolved`.
+
+Exit criteria:
+- integration tests prove combat report + debris generated for pirate-vs-pirate battle.
+
+#### Milestone M5 — Balance, Guardrails, and Observability
+- [ ] Enforce global ownership ratio and total cap halts.
+- [ ] Enforce z-slice caps and anti-home-buffer checks.
+- [ ] Expose cap utilization + blocked reasons in admin status.
+- [ ] Update docs for tuning values and operational playbook.
+
+Exit criteria:
+- long-run simulation test (multi-cycle) shows bounded growth and no runaway snowball.
+
+### 11.9 Test Plan (Required)
+
+Unit tests:
+- `is_pirate_username` behavior (`pirates`, `pirates_red`, case handling).
+- expansion eligibility and target filter logic.
+- cap math and attrition behavior.
+- skirmish target selection avoids same-faction and respects cooldown.
+
+Integration tests:
+- `test_pirate_sim_colonization.py`:
+  - eligible faction colonizes neutral planet
+  - blocked by home-buffer
+- `test_pirate_sim_caps.py`:
+  - repeated cycles never exceed structure/fleet caps
+- `test_pirate_sim_skirmish.py`:
+  - pirate-vs-pirate attack resolves with combat report + debris
+- `test_pirate_sim_anti_snowball.py`:
+  - ownership ratio cap halts expansion
+
+Regression tests:
+- Existing `test_pirate_ai.py` and `test_pirate_ai_admin_ops.py` must pass.
+- Existing combat and colonization pipelines must pass unchanged.
+
+### 11.10 Configuration Additions
+
+Add env/config flags:
+- `PIRATE_SIM_ENABLED` (default false)
+- `PIRATE_SIM_EXPANSION_ENABLED` (default true)
+- `PIRATE_SIM_SKIRMISH_ENABLED` (default true)
+- `PIRATE_SIM_BUILD_ENABLED` (default true)
+- `PIRATE_SIM_EXPANSION_INTERVAL_SECONDS` (default 7200)
+- `PIRATE_SIM_SKIRMISH_INTERVAL_SECONDS` (default 1200)
+- `PIRATE_SIM_BUILD_INTERVAL_SECONDS` (default 7200)
+- `PIRATE_SIM_PLANET_CAP_PER_FACTION` (default 6)
+- `PIRATE_SIM_PLANET_CAP_PER_Z_SLICE` (default 3)
+- `PIRATE_SIM_TOTAL_PLANET_CAP` (default 18)
+- `PIRATE_SIM_MAX_PIRATE_OWNERSHIP_RATIO` (default 0.20)
+- `PIRATE_SIM_PLAYER_HOME_BUFFER_DISTANCE` (default 1200)
+- `PIRATE_SIM_FLEET_CAP_SCORE` (default 6000)
+
+### 11.11 Rollout Plan
+
+Phase rollout:
+1. Enable in staging with `PIRATE_SIM_ENABLED=false` (deploy code dark).
+2. Enable only expansion in low cadence, monitor telemetry.
+3. Enable skirmish with strict low caps.
+4. Tune caps and intervals based on debris volume, planet ownership ratio, and player feedback.
+
+Abort switches:
+- `PIRATE_SIM_ENABLED=false` hard stop.
+- per-loop toggles to disable expansion or skirmish independently.
