@@ -4,6 +4,7 @@ import { useToast } from './ToastContext';
 import AnimatedButton from './AnimatedButton';
 import { backendBaseUrl } from './apiBase';
 import { deriveFleetDisplayState } from './fleetStateView';
+import { formatCompactNumber } from './numberFormat';
 
 const FLEET_SHIP_KEYS = [
   'small_cargo',
@@ -1480,7 +1481,7 @@ function SendFleetModal({ fleet, fleetOptions = [], onSelectFleet, onCreateFleet
           <div>
             <h3 className="text-xl font-bold text-white">Send Fleet</h3>
             <div className="text-xs text-slate-300/70 mt-1">
-              Fleet #{fleet.id} • {fleetSummary.total.toLocaleString()} ships{fleetSummary.top ? ` • ${fleetSummary.top}` : ''}
+              Fleet #{fleet.id} • {formatCompactNumber(fleetSummary.total)} ships{fleetSummary.top ? ` • ${fleetSummary.top}` : ''}
             </div>
           </div>
           {typeof onCreateFleet === 'function' && (
@@ -1535,7 +1536,7 @@ function SendFleetModal({ fleet, fleetOptions = [], onSelectFleet, onCreateFleet
           <div className="mb-4 pa-panel p-3" data-testid="fleet-send-composition">
             <div className="flex items-center justify-between mb-2">
               <div className="text-slate-200/90 text-sm font-semibold">Fleet composition</div>
-              <div className="text-slate-300/70 text-xs">{fleetSummary.total.toLocaleString()} total</div>
+              <div className="text-slate-300/70 text-xs">{formatCompactNumber(fleetSummary.total)} total</div>
             </div>
             {fleetSummary.entries.length === 0 ? (
               <div className="text-xs text-slate-300/70">No ships in this fleet.</div>
@@ -1544,7 +1545,7 @@ function SendFleetModal({ fleet, fleetOptions = [], onSelectFleet, onCreateFleet
                 {fleetSummary.entries.map(([k, v]) => (
                   <div key={k} className="flex items-center justify-between text-slate-200/90">
                     <span className="text-slate-200/80">{formatShipLabel(k)}</span>
-                    <span className="font-semibold text-white">{Number(v).toLocaleString()}</span>
+                    <span className="font-semibold text-white">{formatCompactNumber(Number(v))}</span>
                   </div>
                 ))}
               </div>
@@ -2109,7 +2110,7 @@ function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, onSplit, onTr
         </div>
         <div>
           <div className="text-slate-300/70">Upkeep</div>
-          <div className="text-amber-300" data-testid="fleet-upkeep-value">-{upkeepPerHour.toLocaleString()} D/h</div>
+          <div className="text-amber-300" data-testid="fleet-upkeep-value">-{formatCompactNumber(upkeepPerHour)} D/h</div>
         </div>
       </div>
 

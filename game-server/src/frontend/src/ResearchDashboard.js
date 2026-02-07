@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useToast } from './ToastContext';
+import { formatCompactNumber } from './numberFormat';
 
 const RESEARCH_LABELS = {
   colonization_tech: 'Colonization Tech',
@@ -104,10 +105,10 @@ export default function ResearchDashboard() {
         <div className="pa-card p-6">
           <div className="text-slate-300/70 text-sm mb-1">Research Points</div>
           <div className="text-3xl font-bold text-blue-300" data-testid="research-points">
-            {(data?.research_points ?? 0).toLocaleString()}
+            {formatCompactNumber(data?.research_points ?? 0)}
           </div>
           <div className="mt-2 text-xs text-slate-300/70">
-            +{Math.floor(rates?.rp_per_hour || 0).toLocaleString()}/h • ~{Math.floor(rates?.rp_per_tick || 0).toLocaleString()}/tick
+            +{formatCompactNumber(Math.floor(rates?.rp_per_hour || 0))}/h • ~{formatCompactNumber(Math.floor(rates?.rp_per_tick || 0))}/tick
           </div>
         </div>
 
@@ -239,7 +240,7 @@ export default function ResearchDashboard() {
 
           <div className="text-sm text-slate-200/80">
             <div>Next level: <span className="text-white font-medium">L{(levels?.[selectedKey] ?? 0) + 1}</span></div>
-            <div>Cost: <span className="text-white font-medium">{(selectedCost ?? 0).toLocaleString()} RP</span></div>
+            <div>Cost: <span className="text-white font-medium">{formatCompactNumber(selectedCost ?? 0)} RP</span></div>
             <div>Duration: <span className="text-white font-medium">{formatSeconds(selectedDuration ?? 0)}</span></div>
           </div>
 

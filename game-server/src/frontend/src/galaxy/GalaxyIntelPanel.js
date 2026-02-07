@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { formatCompactNumber } from '../numberFormat';
 
 function PlanetCard({
   planet,
@@ -45,7 +46,7 @@ function PlanetCard({
             {isMine ? 'Owned' : isEnemy ? 'Enemy' : 'Available'}
           </div>
           {debrisTotal > 0 && (
-            <div className="mt-1 text-xs text-purple-300">💥 Debris: {debrisTotal.toLocaleString()}</div>
+            <div className="mt-1 text-xs text-purple-300">💥 Debris: {formatCompactNumber(debrisTotal)}</div>
           )}
         </div>
       </div>
@@ -56,15 +57,15 @@ function PlanetCard({
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="text-center pa-panel p-2">
               <div className="text-slate-200/80">Metal</div>
-              <div className="text-white font-bold">{(planet?.debris?.metal || 0).toLocaleString()}</div>
+              <div className="text-white font-bold">{formatCompactNumber(planet?.debris?.metal || 0)}</div>
             </div>
             <div className="text-center pa-panel p-2">
               <div className="text-slate-200/80">Crystal</div>
-              <div className="text-white font-bold">{(planet?.debris?.crystal || 0).toLocaleString()}</div>
+              <div className="text-white font-bold">{formatCompactNumber(planet?.debris?.crystal || 0)}</div>
             </div>
             <div className="text-center pa-panel p-2">
               <div className="text-slate-200/80">Deut</div>
-              <div className="text-white font-bold">{(planet?.debris?.deuterium || 0).toLocaleString()}</div>
+              <div className="text-white font-bold">{formatCompactNumber(planet?.debris?.deuterium || 0)}</div>
             </div>
           </div>
           <button
@@ -138,7 +139,7 @@ function SystemStatistics({ planets }) {
           <div className="text-slate-300/70 text-xs">Available</div>
         </div>
         <div className="text-center pa-panel p-3">
-          <div className="text-2xl font-bold text-purple-300">{totalDebris.toLocaleString()}</div>
+          <div className="text-2xl font-bold text-purple-300">{formatCompactNumber(totalDebris)}</div>
           <div className="text-slate-300/70 text-xs">Debris Total</div>
         </div>
       </div>

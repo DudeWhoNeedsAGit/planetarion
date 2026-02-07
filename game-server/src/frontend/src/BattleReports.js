@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import './BattleReports.css';
+import { formatCompactNumber } from './numberFormat';
 
 const formatShipLabel = (key) =>
   String(key || '')
@@ -8,9 +9,7 @@ const formatShipLabel = (key) =>
     .replace(/\b\w/g, (l) => l.toUpperCase());
 
 const formatNumber = (value) => {
-  const n = Number(value || 0);
-  if (!Number.isFinite(n)) return '0';
-  return n.toLocaleString();
+  return formatCompactNumber(value || 0);
 };
 
 const BattleReports = ({ user, onNavigateSection }) => {

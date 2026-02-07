@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { backendBaseUrl } from './apiBase';
+import { formatCompactNumber } from './numberFormat';
 
 function Overview({ user, planets, onNavigateSection }) {
   const [activity, setActivity] = useState([]);
@@ -258,19 +259,19 @@ function Overview({ user, planets, onNavigateSection }) {
 		          <div className="text-sm text-slate-200/85 mt-3" data-testid="overview-idle-summary">
 		            While you were away ({formatDuration(idleGains.duration_seconds)}):{' '}
 		            <span className="text-slate-50 font-semibold">
-		              +{Number(idleGains.resources?.metal || 0).toLocaleString()}M
+		              +{formatCompactNumber(Number(idleGains.resources?.metal || 0))}M
 		            </span>{' '}
 		            <span className="text-slate-50 font-semibold">
-		              +{Number(idleGains.resources?.crystal || 0).toLocaleString()}C
+		              +{formatCompactNumber(Number(idleGains.resources?.crystal || 0))}C
 		            </span>{' '}
 		            <span className="text-slate-50 font-semibold">
-		              +{Number(idleGains.resources?.deuterium || 0).toLocaleString()}D
+		              +{formatCompactNumber(Number(idleGains.resources?.deuterium || 0))}D
 		            </span>
 		            {Number(idleGains.research_points || 0) > 0 && (
 		              <>
 		                {' • '}
 		                <span className="text-slate-50 font-semibold">
-		                  +{Number(idleGains.research_points || 0).toLocaleString()} RP
+		                  +{formatCompactNumber(Number(idleGains.research_points || 0))} RP
 		                </span>
 		              </>
 		            )}
@@ -310,7 +311,7 @@ function Overview({ user, planets, onNavigateSection }) {
             </div>
           </div>
           <div className="text-2xl font-bold text-green-400">
-            {(totalResources.metal + totalResources.crystal + totalResources.deuterium).toLocaleString()}
+            {formatCompactNumber(totalResources.metal + totalResources.crystal + totalResources.deuterium)}
           </div>
         </div>
 
@@ -324,11 +325,11 @@ function Overview({ user, planets, onNavigateSection }) {
             </div>
           </div>
           <div className="text-2xl font-bold text-yellow-400">
-            {(netProduction.metal + netProduction.crystal + netProduction.deuterium).toLocaleString()}
+            {formatCompactNumber(netProduction.metal + netProduction.crystal + netProduction.deuterium)}
           </div>
           {hasUpkeepImpact && (
             <div className="text-xs text-slate-300/70 mt-2">
-              Deuterium upkeep: -{totalUpkeep.deuterium.toLocaleString()}/h
+              Deuterium upkeep: -{formatCompactNumber(totalUpkeep.deuterium)}/h
             </div>
           )}
         </div>
@@ -442,7 +443,7 @@ function Overview({ user, planets, onNavigateSection }) {
             <div className="text-white font-semibold mb-1">♻️ Recycle known debris</div>
             <div className="text-slate-200/80 mb-3">
               {debrisSummary.count > 0
-                ? `${debrisSummary.count} debris field(s) visible • ~${debrisSummary.total.toLocaleString()} total resources`
+                ? `${debrisSummary.count} debris field(s) visible • ~${formatCompactNumber(debrisSummary.total)} total resources`
                 : 'No known debris fields right now.'}
             </div>
             <button
@@ -461,7 +462,7 @@ function Overview({ user, planets, onNavigateSection }) {
             <div className="text-slate-200/80 mb-3">
               {researchSummary.queue
                 ? `Research in progress: ${researchSummary.queue.key} → L${researchSummary.queue.target_level}`
-                : `No research in progress • ${Number(researchSummary.points || 0).toLocaleString()} RP available`}
+                : `No research in progress • ${formatCompactNumber(Number(researchSummary.points || 0))} RP available`}
             </div>
             <button
               type="button"
@@ -518,11 +519,11 @@ function Overview({ user, planets, onNavigateSection }) {
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-slate-300/70">Current:</span>
-              <span className="text-metal font-bold">{totalResources.metal.toLocaleString()}</span>
+              <span className="text-metal font-bold">{formatCompactNumber(totalResources.metal)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-300/70">Production:</span>
-              <span className="text-metal">{totalProduction.metal.toLocaleString()}/h</span>
+              <span className="text-metal">{formatCompactNumber(totalProduction.metal)}/h</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-300/70">Mines:</span>
@@ -536,11 +537,11 @@ function Overview({ user, planets, onNavigateSection }) {
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-slate-300/70">Current:</span>
-              <span className="text-crystal font-bold">{totalResources.crystal.toLocaleString()}</span>
+              <span className="text-crystal font-bold">{formatCompactNumber(totalResources.crystal)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-300/70">Production:</span>
-              <span className="text-crystal">{totalProduction.crystal.toLocaleString()}/h</span>
+              <span className="text-crystal">{formatCompactNumber(totalProduction.crystal)}/h</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-300/70">Mines:</span>
@@ -554,22 +555,22 @@ function Overview({ user, planets, onNavigateSection }) {
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-slate-300/70">Current:</span>
-              <span className="text-deuterium font-bold">{totalResources.deuterium.toLocaleString()}</span>
+              <span className="text-deuterium font-bold">{formatCompactNumber(totalResources.deuterium)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-300/70">Production:</span>
-              <span className="text-deuterium">{totalProduction.deuterium.toLocaleString()}/h</span>
+              <span className="text-deuterium">{formatCompactNumber(totalProduction.deuterium)}/h</span>
             </div>
             {hasUpkeepImpact && (
               <div className="flex justify-between">
                 <span className="text-slate-300/70">Upkeep:</span>
-                <span className="text-amber-300">-{totalUpkeep.deuterium.toLocaleString()}/h</span>
+                <span className="text-amber-300">-{formatCompactNumber(totalUpkeep.deuterium)}/h</span>
               </div>
             )}
             {hasUpkeepImpact && (
               <div className="flex justify-between">
                 <span className="text-slate-300/70">Net:</span>
-                <span className={`${netProduction.deuterium >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{netProduction.deuterium.toLocaleString()}/h</span>
+                <span className={`${netProduction.deuterium >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{formatCompactNumber(netProduction.deuterium)}/h</span>
               </div>
             )}
             <div className="flex justify-between">

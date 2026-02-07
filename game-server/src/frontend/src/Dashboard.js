@@ -14,6 +14,7 @@ import AnimatedButton from './AnimatedButton';
 import planetarionLogo from './assets/branding/planetarion-logo.png';
 import CommanderPortrait from './CommanderPortrait';
 import BackgroundMusicToggle from './BackgroundMusicToggle';
+import { formatCompactNumber } from './numberFormat';
 
 function Dashboard({ user, onLogout, onUserRefresh = null }) {
   const [activeSection, setActiveSection] = useState('overview');
@@ -93,7 +94,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 		        <div className="flex items-center justify-between text-[11px] text-slate-300/80">
 		          <span>XP</span>
 		          <span className="text-slate-100/90 font-semibold">
-		            {into.toLocaleString()} / {toNext.toLocaleString()} • {pct}%
+		            {formatCompactNumber(into)} / {formatCompactNumber(toNext)} • {pct}%
 		          </span>
 		        </div>
 		        <div className="mt-1 h-2 rounded-full bg-slate-900/60 border border-slate-200/10 overflow-hidden">
@@ -637,10 +638,10 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	                    <div className="flex justify-between items-center">
 	                      <span className="text-metal">Metal:</span>
 	                      <span className="text-metal font-bold">
-	                        {selectedPlanet.resources.metal.toLocaleString()}
+	                        {formatCompactNumber(selectedPlanet.resources.metal)}
 	                        {selectedPlanet.storage?.metal != null && (
 	                          <span className="text-slate-300/70 text-xs font-normal ml-2">
-	                            / {selectedPlanet.storage.metal.toLocaleString()}
+	                            / {formatCompactNumber(selectedPlanet.storage.metal)}
 	                          </span>
 	                        )}
 	                      </span>
@@ -648,10 +649,10 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	                    <div className="flex justify-between items-center">
 	                      <span className="text-crystal">Crystal:</span>
 	                      <span className="text-crystal font-bold">
-	                        {selectedPlanet.resources.crystal.toLocaleString()}
+	                        {formatCompactNumber(selectedPlanet.resources.crystal)}
 	                        {selectedPlanet.storage?.crystal != null && (
 	                          <span className="text-slate-300/70 text-xs font-normal ml-2">
-	                            / {selectedPlanet.storage.crystal.toLocaleString()}
+	                            / {formatCompactNumber(selectedPlanet.storage.crystal)}
 	                          </span>
 	                        )}
 	                      </span>
@@ -659,10 +660,10 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	                    <div className="flex justify-between items-center">
 	                      <span className="text-deuterium">Deuterium:</span>
 	                      <span className="text-deuterium font-bold">
-	                        {selectedPlanet.resources.deuterium.toLocaleString()}
+	                        {formatCompactNumber(selectedPlanet.resources.deuterium)}
 	                        {selectedPlanet.storage?.deuterium != null && (
 	                          <span className="text-slate-300/70 text-xs font-normal ml-2">
-	                            / {selectedPlanet.storage.deuterium.toLocaleString()}
+	                            / {formatCompactNumber(selectedPlanet.storage.deuterium)}
 	                          </span>
 	                        )}
 	                      </span>
@@ -834,7 +835,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
                             <div className="text-xs text-yellow-400">
                               {Object.entries(calculateUpgradeCost(building.key, currentLevel))
                                 .filter(([_, cost]) => cost > 0)
-                                .map(([resource, cost]) => `${resource}: ${cost.toLocaleString()}`)
+                                .map(([resource, cost]) => `${resource}: ${formatCompactNumber(cost)}`)
                                 .join(' | ')}
                             </div>
                           </div>
@@ -1004,19 +1005,19 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
                   <div className="grid grid-cols-3 gap-6">
                     <div className="text-center">
                       <div className="text-metal text-2xl font-bold">
-                        {selectedPlanet.resources.metal.toLocaleString()}
+                        {formatCompactNumber(selectedPlanet.resources.metal)}
                       </div>
                       <div className="text-metal text-sm">Metal</div>
                     </div>
                     <div className="text-center">
                       <div className="text-crystal text-2xl font-bold">
-                        {selectedPlanet.resources.crystal.toLocaleString()}
+                        {formatCompactNumber(selectedPlanet.resources.crystal)}
                       </div>
                       <div className="text-crystal text-sm">Crystal</div>
                     </div>
                     <div className="text-center">
                       <div className="text-deuterium text-2xl font-bold">
-                        {selectedPlanet.resources.deuterium.toLocaleString()}
+                        {formatCompactNumber(selectedPlanet.resources.deuterium)}
                       </div>
                       <div className="text-deuterium text-sm">Deuterium</div>
                     </div>
@@ -1089,9 +1090,9 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
                           <div className="text-right">
                             <div className="text-xs text-slate-300/70 mb-1">Cost per ship</div>
                             <div className="text-yellow-400 font-medium">
-                              {costs?.metal > 0 && `${costs.metal.toLocaleString()}M`}
-                              {costs?.crystal > 0 && ` ${costs.crystal.toLocaleString()}C`}
-                              {costs?.deuterium > 0 && ` ${costs.deuterium.toLocaleString()}D`}
+                              {costs?.metal > 0 && `${formatCompactNumber(costs.metal)}M`}
+                              {costs?.crystal > 0 && ` ${formatCompactNumber(costs.crystal)}C`}
+                              {costs?.deuterium > 0 && ` ${formatCompactNumber(costs.deuterium)}D`}
                             </div>
                           </div>
                         </div>
@@ -1156,7 +1157,7 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	                              </button>
 	                            </div>
 	                            <div className="mt-2 text-xs text-slate-300/70">
-	                              Max buildable: {getMaxBuildableShipCount(shipType).toLocaleString()}
+	                              Max buildable: {formatCompactNumber(getMaxBuildableShipCount(shipType))}
 	                            </div>
 	                          </div>
 
@@ -1347,19 +1348,19 @@ function Dashboard({ user, onLogout, onUserRefresh = null }) {
 	                  <div className="text-xs text-slate-300/80 mt-0.5" data-testid="idle-summary">
 	                    While you were away ({formatDuration(idleGains.duration_seconds)}):{' '}
 	                    <span className="text-slate-100/95 font-semibold">
-	                      +{Number(idleGains.resources?.metal || 0).toLocaleString()}M
+	                      +{formatCompactNumber(Number(idleGains.resources?.metal || 0))}M
                     </span>{' '}
                     <span className="text-slate-100/95 font-semibold">
-                      +{Number(idleGains.resources?.crystal || 0).toLocaleString()}C
+                      +{formatCompactNumber(Number(idleGains.resources?.crystal || 0))}C
                     </span>{' '}
                     <span className="text-slate-100/95 font-semibold">
-                      +{Number(idleGains.resources?.deuterium || 0).toLocaleString()}D
+                      +{formatCompactNumber(Number(idleGains.resources?.deuterium || 0))}D
                     </span>
                     {Number(idleGains.research_points || 0) > 0 && (
                       <>
                         {' • '}
                         <span className="text-slate-100/95 font-semibold">
-                          +{Number(idleGains.research_points || 0).toLocaleString()} RP
+                          +{formatCompactNumber(Number(idleGains.research_points || 0))} RP
                         </span>
                       </>
                     )}

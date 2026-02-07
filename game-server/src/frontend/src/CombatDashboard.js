@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import BattleReports, { BattleReportDetailModal } from './BattleReports';
 import './CombatDashboard.css';
+import { formatCompactNumber } from './numberFormat';
 
 const CombatDashboard = ({ user, planets = [], onNavigateSection }) => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -189,7 +190,7 @@ const SpyReports = () => {
                     </div>
                     {resources && (
                       <div className="battle-description">
-                        Metal {Number(resources.metal || 0).toLocaleString()} • Crystal {Number(resources.crystal || 0).toLocaleString()} • Deut {Number(resources.deuterium || 0).toLocaleString()}
+                        Metal {formatCompactNumber(resources.metal || 0)} • Crystal {formatCompactNumber(resources.crystal || 0)} • Deut {formatCompactNumber(resources.deuterium || 0)}
                       </div>
                     )}
                   </div>
@@ -392,7 +393,7 @@ const CombatOverview = ({ user, planets, onNavigate, onSelectReport, onNavigateS
         />
         <StatCard
           title="Visible Debris"
-          value={stats.visibleDebris.toLocaleString()}
+          value={formatCompactNumber(stats.visibleDebris)}
           icon="💎"
           color="warning"
         />
@@ -585,11 +586,11 @@ const CombatStatistics = ({ user }) => {
           <div className="casualty-stats">
             <div className="stat-item">
               <span>Ships Lost:</span>
-              <span className="value loss">{stats.totalShipsLost.toLocaleString()}</span>
+              <span className="value loss">{formatCompactNumber(stats.totalShipsLost)}</span>
             </div>
             <div className="stat-item">
               <span>Ships Destroyed:</span>
-              <span className="value victory">{stats.totalShipsDestroyed.toLocaleString()}</span>
+              <span className="value victory">{formatCompactNumber(stats.totalShipsDestroyed)}</span>
             </div>
           </div>
         </div>
