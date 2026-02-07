@@ -18,6 +18,7 @@ from backend.config import get_forced_travel_time_seconds, get_min_travel_time_s
 from backend.services.fleet_arrival import FleetArrivalService, COLONIZATION_ERRORS
 from backend.services.fleet_state_machine import FleetStateMachine, FleetStateError
 from backend.services.economy_sinks import fleet_upkeep_deuterium_per_tick, fleet_upkeep_deuterium_per_hour
+from backend.services.pirate_factions import is_pirate_username
 from datetime import datetime, timedelta, timezone
 import math
 
@@ -560,7 +561,7 @@ def send_fleet():
         target_protection_until = getattr(target_owner, 'protection_until', None)
         if (
             target_owner
-            and target_owner_name != 'pirates'
+            and not is_pirate_username(target_owner_name)
             and target_protection_until is not None
             and target_protection_until > datetime.utcnow()
         ):

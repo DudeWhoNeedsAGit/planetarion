@@ -18,6 +18,7 @@ from backend.database import db
 from backend.models import Planet, Research, TickLog, User
 from backend.services.commander_xp import CommanderXPService
 from backend.services.fleet_arrival import FleetArrivalService
+from backend.services.pirate_factions import is_pirate_user
 from backend.services.research_defs import RESEARCH_DEF_BY_KEY
 from backend.services.tick import calculate_production_rate
 
@@ -131,7 +132,7 @@ def _complete_research_queue_if_due(user: User, now: datetime) -> int:
 def apply_idle_catchup(user_id: int, now: datetime | None = None) -> IdleCatchupResult | None:
     """Apply offline progression for a user and return a summary suitable for UI display."""
     user = User.query.get(user_id)
-    if not user or user.username == "pirates":
+    if not user or is_pirate_user(user):
         return None
 
     now = now or datetime.utcnow()

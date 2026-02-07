@@ -69,3 +69,16 @@ def test_award_xp_ignores_pirates_user(db_session):
     )
     assert res is None
 
+
+def test_award_xp_ignores_pirate_faction_users(db_session):
+    pirate_faction = User(username="pirates_red", email="pirates_red@example.com", password_hash="x")
+    db_session.add(pirate_faction)
+    db_session.commit()
+
+    res = CommanderXPService.award_xp(
+        user_id=int(pirate_faction.id),
+        xp=250,
+        source_type="combat",
+        source_id="report:2:attacker",
+    )
+    assert res is None

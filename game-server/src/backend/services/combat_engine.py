@@ -15,9 +15,10 @@ import json
 import math
 from datetime import datetime
 from backend.database import db
-from backend.models import Fleet, Planet, CombatReport, DebrisField, User, TickLog
+from backend.models import Fleet, Planet, CombatReport, DebrisField, TickLog
 from backend.config import COMBAT_SHIP_STATS
 from backend.services.commander_xp import CommanderXPService, xp_from_ship_losses
+from backend.services.pirate_factions import is_pirate_username
 
 
 class CombatEngine:
@@ -247,19 +248,16 @@ class CombatEngine:
         """Process the results of a combat engagement"""
         print("DEBUG: Processing combat result")
 
-        pirate_user = None
-        try:
-            pirate_user = User.query.filter_by(username="pirates").first()
-        except Exception:
-            pirate_user = None
-        is_pirate_attacker = bool(pirate_user and getattr(attacker_fleet, "user_id", None) == pirate_user.id)
+        attacker_username = getattr(getattr(attacker_fleet, "owner", None), "username", None)
+        defender_username = getattr(getattr(defender_fleet, "owner", None), "username", None)
+        is_pirate_attacker = is_pirate_username(attacker_username)
 
         def _maybe_rename_captured_planet(*, previous_owner_username: str | None, attacker_username: str):
             # Normalize NPC/testing names to something that feels like a real captured colony.
             # Examples today: "Pirate Camp ...", "Enemy Base ...".
             name = (planet.name or "").strip()
             lower = name.lower()
-            if previous_owner_username == "pirates" or lower.startswith("pirate camp") or lower.startswith("enemy base"):
+            if is_pirate_username(previous_owner_username) or lower.startswith("pirate camp") or lower.startswith("enemy base"):
                 planet.name = f"{attacker_username} Outpost {planet.x}:{planet.y}:{planet.z}"
 
         # Update fleet combat statistics
@@ -303,7 +301,7 @@ class CombatEngine:
 
             # Pirate loot: if the defender is the pirate NPC, steal a percentage of resources.
             try:
-                if pirate_user and getattr(defender_fleet, "user_id", None) == pirate_user.id:
+                if is_pirate_username(defender_username):
                     origin = Planet.query.get(getattr(attacker_fleet, "start_planet_id", None))
                     if origin:
                         loot_metal = int((planet.metal or 0) * 0.25)
@@ -431,12 +429,8 @@ class CombatEngine:
         """Process the results of a planet attack"""
         print("DEBUG: Processing planet attack result")
 
-        pirate_user = None
-        try:
-            pirate_user = User.query.filter_by(username="pirates").first()
-        except Exception:
-            pirate_user = None
-        is_pirate_attacker = bool(pirate_user and getattr(fleet, "user_id", None) == pirate_user.id)
+        attacker_username = getattr(getattr(fleet, "owner", None), "username", None)
+        is_pirate_attacker = is_pirate_username(attacker_username)
 
         # Update fleet combat statistics
         if combat_result.get('planet_captured', False) and not is_pirate_attacker:
@@ -446,7 +440,7 @@ class CombatEngine:
             planet.user_id = fleet.user_id  # Transfer ownership
             name = (planet.name or "").strip()
             lower = name.lower()
-            if previous_owner_username == "pirates" or lower.startswith("pirate camp") or lower.startswith("enemy base"):
+            if is_pirate_username(previous_owner_username) or lower.startswith("pirate camp") or lower.startswith("enemy base"):
                 planet.name = f"{attacker_username} Outpost {planet.x}:{planet.y}:{planet.z}"
 
             # Create tick log entry

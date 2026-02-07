@@ -17,6 +17,7 @@ import os
 import json
 from backend.database import db
 from backend.models import Planet, User, DebrisField
+from backend.services.pirate_factions import is_pirate_username
 
 planets_bp = Blueprint('planets', __name__, url_prefix='/api')
 
@@ -255,7 +256,7 @@ def get_nearby_systems(center_x, center_y, center_z):
                 relation = 'contested'
             elif owner_id == user_id:
                 relation = 'self'
-            elif owner_name == 'pirates':
+            elif is_pirate_username(owner_name):
                 relation = 'pirates'
             elif user and user.alliance_id and owners.get(owner_id, {}).get("alliance_id") == user.alliance_id:
                 relation = 'ally'

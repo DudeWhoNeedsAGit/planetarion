@@ -5,6 +5,7 @@ from datetime import datetime
 
 from backend.database import db
 from backend.models import CommanderXPEvent, User
+from backend.services.pirate_factions import is_pirate_user
 
 
 def xp_to_next_level(level: int) -> int:
@@ -68,7 +69,7 @@ class CommanderXPService:
             return None
 
         user = User.query.get(int(user_id))
-        if not user or user.username == "pirates":
+        if not user or is_pirate_user(user):
             return None
 
         st = str(source_type or "").strip().lower()
@@ -136,4 +137,3 @@ def xp_from_ship_losses(losses: dict[str, int] | None) -> int:
         value += n * (int(cost["metal"]) + int(cost["crystal"]))
     # MVP: 1 XP per 1,000 resources destroyed.
     return int(value // 1000)
-

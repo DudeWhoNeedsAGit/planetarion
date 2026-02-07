@@ -7,6 +7,7 @@ from flask import current_app
 import math
 from backend.config import get_planet_storage_caps
 from backend.services.economy_sinks import upkeep_by_start_planet_per_tick
+from backend.services.pirate_factions import is_pirate_user
 import json
 
 RESPAWN_PROTECTION_MINUTES_DEFAULT = 10
@@ -67,7 +68,7 @@ def process_player_elimination_and_respawn(tick_start_time: datetime) -> None:
     # Exclude pirates NPC user.
     users = User.query.all()
     for user in users:
-        if user.username == "pirates":
+        if is_pirate_user(user):
             continue
         planet_count = Planet.query.filter_by(user_id=user.id).count()
         if planet_count == 0 and user.eliminated_at is None:
@@ -87,7 +88,7 @@ def process_player_elimination_and_respawn(tick_start_time: datetime) -> None:
 
     # Respawn users that have been eliminated on a *previous* tick.
     for user in users:
-        if user.username == "pirates":
+        if is_pirate_user(user):
             continue
         planet_count = Planet.query.filter_by(user_id=user.id).count()
         if planet_count != 0:
@@ -245,7 +246,7 @@ def process_research_points():
     changes = []
 
     for user in users:
-        if user.username == "pirates":
+        if is_pirate_user(user):
             continue
 
         research = Research.query.filter_by(user_id=user.id).first()

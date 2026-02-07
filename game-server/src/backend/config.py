@@ -134,6 +134,8 @@ class Config:
 
     # Deterministic RNG salt (falls back to SECRET_KEY if unset).
     PIRATE_AI_SECRET_SALT = os.getenv("PLANETARION_PIRATE_AI_SECRET_SALT")
+    # Comma-separated NPC pirate faction usernames.
+    PIRATE_FACTION_USERNAMES = os.getenv("PLANETARION_PIRATE_FACTION_USERNAMES", "pirates,pirates_red,pirates_black")
 
     # Economy sinks (fleet upkeep lite) - disabled by default for safe rollout.
     ECONOMY_SINKS_ENABLED = os.getenv("PLANETARION_ECONOMY_SINKS_ENABLED", "").lower() in ("1", "true", "yes", "on")

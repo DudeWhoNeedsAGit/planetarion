@@ -12,6 +12,7 @@ from backend.services.planet_traits import PlanetTraitService
 from backend.config import calculate_fuel_consumption
 from backend.services.fleet_state_machine import FleetStateMachine
 from backend.services.commander_xp import CommanderXPService, xp_from_resources
+from backend.services.pirate_factions import is_pirate_username
 import json
 
 # Enhanced error handling constants
@@ -683,7 +684,7 @@ class FleetArrivalService:
                 # debris via ship losses (MVP spec). If the defender has no stationed fleet,
                 # synthesize a minimal defending fleet from the planet's legacy ship columns.
                 attacker_username = getattr(getattr(fleet, "owner", None), "username", None)
-                is_pirate_attacker = attacker_username == "pirates"
+                is_pirate_attacker = is_pirate_username(attacker_username)
 
                 if is_pirate_attacker:
                     print(f"DEBUG: Pirate raid against undefended planet {target_planet.id}; creating defender inventory fleet")

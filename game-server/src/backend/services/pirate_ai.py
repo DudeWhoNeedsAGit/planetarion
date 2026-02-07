@@ -14,6 +14,11 @@ from backend.database import db
 from backend.models import Fleet, Planet, TickLog, User, PirateAIState, PirateAIConfigOverride
 from backend.services.fleet_travel import FleetTravelService
 from backend.config import get_forced_travel_time_seconds, get_min_travel_time_seconds
+from backend.services.pirate_factions import (
+    configured_pirate_usernames,
+    is_pirate_user,
+    select_primary_pirate_user,
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,7 @@ class PirateAILiveOps:
         "PIRATE_AI_PEAK_POWER_MULT": {"type": "float", "min": 0.1, "max": 5.0},
         "PIRATE_AI_DIFFICULTY_FACTOR": {"type": "float", "min": 0.1, "max": 5.0},
         "PIRATE_AI_P_MAX": {"type": "float", "min": 0.0, "max": 1.0},
+        "PIRATE_FACTION_USERNAMES": {"type": "str"},
     }
 
     @staticmethod
@@ -97,8 +103,8 @@ class PirateAILiveOps:
         now = now or datetime.utcnow()
         enabled = bool(current_app.config.get("PIRATE_AI_ENABLED"))
         users = User.query.all()
-        non_pirates = [u for u in users if (u.username or "").lower() != "pirates"]
-        pirates = next((u for u in users if (u.username or "").lower() == "pirates"), None)
+        non_pirates = [u for u in users if not is_pirate_user(u)]
+        pirates = select_primary_pirate_user(users)
 
         states_by_user_id: dict[int, PirateAIState] = {
             int(s.user_id): s for s in PirateAIState.query.all() if getattr(s, "user_id", None) is not None
@@ -186,6 +192,8 @@ class PirateAILiveOps:
                 val = int(raw)
             elif t == "float":
                 val = float(raw)
+            elif t == "str":
+                val = str(raw).strip()
             else:
                 return False, None, "Unsupported type"
         except (TypeError, ValueError):
@@ -235,7 +243,8 @@ class PirateAIDirector:
         only_user_ids = set(only_user_ids or [])
         force_spawn_for_user_ids = set(force_spawn_for_user_ids or [])
 
-        pirates = User.query.filter_by(username="pirates").first()
+        pirate_users = User.query.filter(User.username.in_(configured_pirate_usernames())).all()
+        pirates = select_primary_pirate_user(pirate_users)
         if not pirates:
             return {"enabled": True, "evaluated": 0, "spawned": 0, "error": "pirates_user_missing"}
 
@@ -244,7 +253,7 @@ class PirateAIDirector:
         spawned = 0
 
         for user in users:
-            if user.username == "pirates":
+            if is_pirate_user(user):
                 continue
             if only_user_ids and int(user.id) not in only_user_ids:
                 continue
