@@ -2032,6 +2032,7 @@ function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, onSplit, onTr
             <button
               onClick={() => onSend(fleet)}
               className="pa-btn-primary px-3 py-1 text-sm"
+              data-testid="fleet-send-button"
             >
               Send
             </button>
@@ -2067,6 +2068,7 @@ function FleetTile({ fleet, planets, onSend, onRecall, onDissolve, onSplit, onTr
             <button
               onClick={() => onRecall(fleet.id)}
               className="pa-btn-secondary px-3 py-1 text-sm bg-amber-500/20 hover:bg-amber-500/25 border-amber-500/30 text-amber-100"
+              data-testid="fleet-recall-button"
             >
               Recall
             </button>

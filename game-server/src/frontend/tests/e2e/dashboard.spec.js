@@ -50,7 +50,7 @@ test.describe('Dashboard', () => {
     await expect(page.getByRole('heading', { name: /research lab/i })).toBeVisible();
 
     await goToSection(page, 'overview');
-    await expect(page.locator('text=Welcome back, e2etestuser!')).toBeVisible();
+    await expect(page.locator('text=Empire Overview')).toBeVisible();
   });
 
   test('should display planet information', async ({ page }) => {

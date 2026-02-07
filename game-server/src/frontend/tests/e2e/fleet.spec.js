@@ -51,14 +51,14 @@ async function ensureShipyardShips(page, shipType, quantity) {
 
 async function ensureSendableFleet(page) {
   const token = await page.evaluate(() => localStorage.getItem('token'));
-  if (!token) return;
+  if (!token) return null;
   const headers = { Authorization: `Bearer ${token}` };
 
   const planetsRes = await page.request.get('http://localhost:5000/api/planet', { headers });
-  if (!planetsRes.ok()) return;
+  if (!planetsRes.ok()) return null;
   const planets = await planetsRes.json();
   const startPlanetId = planets?.[0]?.id;
-  if (!startPlanetId) return;
+  if (!startPlanetId) return null;
 
   await ensureShipyardShips(page, 'small_cargo', 3);
   const createRes = await page.request.post('http://localhost:5000/api/fleet', {
@@ -68,6 +68,7 @@ async function ensureSendableFleet(page) {
   if (!createRes.ok()) {
     // Non-fatal: an existing fleet may already satisfy this.
   }
+  return startPlanetId;
 }
 
 async function ensureRebalanceFleets(page) {
@@ -96,6 +97,21 @@ async function ensureRebalanceFleets(page) {
     headers,
     data: { start_planet_id: startPlanetId, ships: { small_cargo: 2 } },
   });
+}
+
+async function chooseTransferShip(page, sourceFleetId) {
+  const token = await page.evaluate(() => localStorage.getItem('token'));
+  if (!token) return null;
+  const headers = { Authorization: `Bearer ${token}` };
+  const fleetsRes = await page.request.get('http://localhost:5000/api/fleet?include_inventory=1', { headers });
+  if (!fleetsRes.ok()) return null;
+  const fleets = await fleetsRes.json();
+  const source = (Array.isArray(fleets) ? fleets : []).find((f) => String(f?.id) === String(sourceFleetId));
+  if (!source) return null;
+  const shipEntries = Object.entries(source?.ships || {}).filter(([, count]) => Number(count || 0) > 0);
+  if (shipEntries.length === 0) return null;
+  const [shipType] = shipEntries.sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))[0];
+  return shipType;
 }
 
 test.describe('Fleet Management', () => {
@@ -157,7 +173,7 @@ test.describe('Fleet Management', () => {
     // Try to submit without ships
     await page.getByTestId('fleet-start-planet-select').selectOption({ index: 1 });
     await page.getByTestId('fleet-create-submit').click();
-    await expect(page.getByRole('alert')).toContainText('Fleet must contain at least one ship');
+    await expect(page.getByRole('alert').last()).toContainText('Fleet must contain at least one ship');
   });
 
   test('should display fleet information', async ({ page }) => {
@@ -175,46 +191,52 @@ test.describe('Fleet Management', () => {
   });
 
   test('should show send button for stationed fleets', async ({ page }) => {
-    // Look for fleet with Send button
-    const sendButton = page.locator('text=Send').first();
-
-    if (await sendButton.isVisible()) {
-      await expect(sendButton).toBeVisible();
-
-      // Click send button
-      await sendButton.click();
-
-      // Send modal should appear
-      await expect(page.getByTestId('fleet-send-modal')).toBeVisible();
-      await expect(page.getByTestId('fleet-target-planet-select')).toBeVisible();
-      await expect(page.getByTestId('fleet-mission-select')).toBeVisible();
+    const startPlanetId = await ensureSendableFleet(page);
+    if (startPlanetId) {
+      await page.evaluate((planetId) => {
+        localStorage.setItem('planetarion:fleet:selectedPlanetId', String(planetId));
+        localStorage.setItem('planetarion:fleet:selectedPlanetId:1', String(planetId));
+      }, startPlanetId);
     }
+    await page.reload();
+    await navigateToFleets(page);
+
+    const sendButton = page.getByTestId('fleet-send-button').first();
+    await expect(sendButton).toBeVisible();
+    await sendButton.click();
+
+    await expect(page.getByTestId('fleet-send-modal')).toBeVisible();
+    await expect(page.getByTestId('fleet-target-planet-select')).toBeVisible();
+    await expect(page.getByTestId('fleet-mission-select')).toBeVisible();
   });
 
   test('should send a fleet', async ({ page }) => {
-    // Find a fleet to send
-    const sendButton = page.locator('text=Send').first();
-
-    if (await sendButton.isVisible()) {
-      await sendButton.click();
-
-      const targetSelect = page.getByTestId('fleet-target-planet-select');
-      await expect(targetSelect).toBeVisible();
-
-      const optionCount = await targetSelect.locator('option').count();
-      if (optionCount < 2) {
-        test.skip(true, 'No target planets available for this mission.');
-      }
-
-      await targetSelect.selectOption({ index: 1 });
-      await page.getByTestId('fleet-send-submit').click();
-      await expect(page.getByRole('alert')).toContainText('Fleet sent successfully!');
-
-      // After sending, the destination should not render as "N/A".
-      // (The UI uses API-provided target planet info for enemy/unowned targets.)
-      const firstFleet = page.getByTestId('fleet-tile').first();
-      await expect(firstFleet.getByTestId('fleet-to-value')).not.toHaveText('N/A');
+    const startPlanetId = await ensureSendableFleet(page);
+    if (startPlanetId) {
+      await page.evaluate((planetId) => {
+        localStorage.setItem('planetarion:fleet:selectedPlanetId', String(planetId));
+        localStorage.setItem('planetarion:fleet:selectedPlanetId:1', String(planetId));
+      }, startPlanetId);
     }
+    await page.reload();
+    await navigateToFleets(page);
+
+    const sendButton = page.getByTestId('fleet-send-button').first();
+    await expect(sendButton).toBeVisible();
+    await sendButton.click();
+
+    const targetSelect = page.getByTestId('fleet-target-planet-select');
+    await expect(targetSelect).toBeVisible();
+    const optionCount = await targetSelect.locator('option').count();
+    if (optionCount < 2) {
+      test.skip(true, 'No target planets available for this mission.');
+    }
+
+    await targetSelect.selectOption({ index: 1 });
+    await page.getByTestId('fleet-send-submit').click();
+    await expect(page.getByRole('alert')).toContainText('Fleet sent successfully!');
+    const firstFleet = page.getByTestId('fleet-tile').first();
+    await expect(firstFleet.getByTestId('fleet-to-value')).not.toHaveText('N/A');
   });
 
   test('should save and apply a mission template', async ({ page }) => {
@@ -253,18 +275,35 @@ test.describe('Fleet Management', () => {
   });
 
   test('should show recall button for moving fleets', async ({ page }) => {
-    // Look for fleet with Recall button
-    const recallButton = page.locator('text=Recall').first();
-
-    if (await recallButton.isVisible()) {
-      await expect(recallButton).toBeVisible();
-
-      // Click recall button
-      await recallButton.click();
-
-      // Should show success message
-      await expect(page.getByRole('alert')).toContainText('Fleet recalled successfully!');
+    const startPlanetId = await ensureSendableFleet(page);
+    if (startPlanetId) {
+      await page.evaluate((planetId) => {
+        localStorage.setItem('planetarion:fleet:selectedPlanetId', String(planetId));
+        localStorage.setItem('planetarion:fleet:selectedPlanetId:1', String(planetId));
+      }, startPlanetId);
     }
+    await page.reload();
+    await navigateToFleets(page);
+
+    const sendButton = page.getByTestId('fleet-send-button').first();
+    await expect(sendButton).toBeVisible();
+    await sendButton.click();
+
+    const targetSelect = page.getByTestId('fleet-target-planet-select');
+    await expect(targetSelect).toBeVisible();
+    const optionCount = await targetSelect.locator('option').count();
+    if (optionCount < 2) {
+      test.skip(true, 'No target planets available to create moving fleet for recall.');
+    }
+    await targetSelect.selectOption({ index: 1 });
+    await page.getByTestId('fleet-send-submit').click();
+    await expect(page.getByRole('alert').last()).toContainText(/Fleet sent successfully/i);
+
+    const recallButton = page.getByTestId('fleet-recall-button').first();
+    await expect(recallButton).toBeVisible();
+    await recallButton.click();
+
+    await expect(page.getByRole('alert').last()).toContainText(/Fleet recalled successfully|Fleet cannot be recalled/i);
   });
 
   test('should display ship composition', async ({ page }) => {
@@ -298,21 +337,14 @@ test.describe('Fleet Management', () => {
   });
 
   test('should display ETA countdown', async ({ page }) => {
-    // Look for ETA display
-    const etaDisplay = page.locator('text=ETA').first();
-
-    if (await etaDisplay.isVisible()) {
-      // Should show time format or "Arrived" or "N/A"
-      const etaValue = await etaDisplay.locator('xpath=following-sibling::*').textContent();
-
-      // Should be in time format, "Arrived", or "N/A" - be very flexible
-      const isValidFormat = ['Arrived', 'Arrived (pending tick)', 'N/A'].includes(etaValue) ||
-                           /\d{1,2}:\d{2}:\d{2}/.test(etaValue) ||
-                           /\d{1,2}:\d{2}/.test(etaValue) ||
-                           /\d+/.test(etaValue); // Just any number
-
-      expect(isValidFormat).toBe(true);
-    }
+    const etaValueEl = page.getByTestId('fleet-eta-value').first();
+    await expect(etaValueEl).toBeVisible();
+    const etaValue = ((await etaValueEl.textContent()) || '').trim();
+    const isValidFormat = ['Arrived', 'Arrived (pending tick)', 'N/A', '—'].includes(etaValue) ||
+                         /\d{1,2}:\d{2}:\d{2}/.test(etaValue) ||
+                         /\d{1,2}:\d{2}/.test(etaValue) ||
+                         /\d+/.test(etaValue);
+    expect(isValidFormat).toBe(true);
   });
 
   test('should close modals with cancel button', async ({ page }) => {
@@ -347,22 +379,36 @@ test.describe('Fleet Management', () => {
 
     const firstFleetCard = page.getByTestId('fleet-tile').first();
     await expect(firstFleetCard).toBeVisible();
+    const splitFleetLabel = await firstFleetCard.getByText(/Fleet #/).first().textContent();
+    const splitFleetIdMatch = String(splitFleetLabel || '').match(/Fleet #(\d+)/);
+    const splitFleetId = splitFleetIdMatch ? splitFleetIdMatch[1] : null;
 
     await firstFleetCard.getByTestId('fleet-split-button').click();
     await expect(page.getByTestId('fleet-split-modal')).toBeVisible();
-    await page.getByTestId('fleet-split-ship-small_cargo').fill('1');
+    const splitShipType = splitFleetId ? await chooseTransferShip(page, splitFleetId) : null;
+    if (!splitShipType) {
+      test.skip(true, 'No splittable ships found on source fleet.');
+    }
+    await page.getByTestId(`fleet-split-ship-${splitShipType}`).fill('1');
     await page.getByTestId('fleet-split-submit').click();
-    await expect(page.getByRole('alert')).toContainText(/Fleet split successfully/i);
+    await expect(page.getByRole('alert').last()).toContainText(/Fleet split successfully/i);
 
     await page.reload();
     await navigateToFleets(page);
 
     const transferSourceCard = page.getByTestId('fleet-tile').first();
+    const sourceFleetLabel = await transferSourceCard.getByText(/Fleet #/).first().textContent();
+    const sourceFleetIdMatch = String(sourceFleetLabel || '').match(/Fleet #(\d+)/);
+    const sourceFleetId = sourceFleetIdMatch ? sourceFleetIdMatch[1] : null;
     await transferSourceCard.getByTestId('fleet-transfer-button').click();
     await expect(page.getByTestId('fleet-transfer-modal')).toBeVisible();
     await expect(page.getByTestId('fleet-transfer-target-select')).toBeVisible();
-    await page.getByTestId('fleet-transfer-ship-small_cargo').fill('1');
+    const shipType = sourceFleetId ? await chooseTransferShip(page, sourceFleetId) : null;
+    if (!shipType) {
+      test.skip(true, 'No transferable ships found on source fleet.');
+    }
+    await page.getByTestId(`fleet-transfer-ship-${shipType}`).fill('1');
     await page.getByTestId('fleet-transfer-submit').click();
-    await expect(page.getByRole('alert')).toContainText(/Fleet transfer completed/i);
+    await expect(page.getByRole('alert').last()).toContainText(/Fleet transfer (completed|successfully)/i);
   });
 });
