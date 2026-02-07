@@ -147,3 +147,45 @@ What `merge-gate` checks:
 - readiness based on status file (`progress`, `blocker`, `commit_sha`, passing tests list)
 
 When a branch is `READY`, `merge-gate` prints the exact next merge command.
+
+## Shared Scratchpad Orchestration (Simple Mode)
+
+You can run a lighter orchestration model with separate worktrees while all agents report into a shared scratchpad in the orchestrator repo.
+
+### Goal
+- Keep parallel implementation work in isolated worktrees.
+- Keep status tracking in one shared place the orchestrator can read quickly.
+
+### Recommended write model
+Avoid concurrent edits to the same lines. Use one of these patterns:
+
+1. Per-agent status files (recommended)
+- Path pattern: `.orchestrator/status/<worker-slug>.md`
+- Each agent owns only its own file.
+- Orchestrator reads all files and synthesizes decisions.
+
+2. Single append-only log file
+- Path: `.orchestrator/status/scratchpad.log`
+- Each agent appends one-line updates only.
+- No edits/deletes; orchestrator uses latest line per worker.
+
+3. Single table file with lock
+- Path: `.orchestrator/status/scratchpad.md` or `.json`
+- Agents must acquire a lock before writing (e.g. `flock`).
+- Use when you need one canonical table view.
+
+### Minimal table shape (if using one file)
+- `task_id`
+- `worker_slug`
+- `branch`
+- `progress` (0-100)
+- `eta`
+- `summary`
+- `blocker`
+- `last_commit`
+- `last_update_utc`
+
+### Practical recommendation for this repo
+- Keep current `.orchestrator/bin/status-write` flow.
+- Back it with per-agent files under `.orchestrator/status/` to avoid merge/write conflicts.
+- Let orchestrator run `status-poll` + `merge-gate` to derive merge order and readiness.
